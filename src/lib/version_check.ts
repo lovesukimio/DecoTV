@@ -14,6 +14,7 @@ const VERSION_CHECK_ENDPOINT = '/api/version/check';
 type VersionCheckPayload = {
   success?: boolean;
   hasUpdate?: boolean;
+  checkFailed?: boolean;
   current?: {
     timestamp?: string;
   };
@@ -47,6 +48,10 @@ export async function checkForUpdates(): Promise<{
 
     if (!payload?.success || !payload?.current?.timestamp) {
       throw new Error('版本检测响应无效');
+    }
+
+    if (payload.checkFailed) {
+      return { status: UpdateStatus.FETCH_FAILED };
     }
 
     return {

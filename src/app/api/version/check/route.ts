@@ -1,6 +1,14 @@
+/* eslint-disable no-console */
+import { promises as fs } from 'fs';
 import { NextResponse } from 'next/server';
+import path from 'path';
 
-import { checkForUpdates, getCurrentVersionInfo } from '@/lib/version';
+import {
+  checkForUpdates,
+  CURRENT_VERSION,
+  getCurrentVersionInfo,
+  parseVersionTimestamp,
+} from '@/lib/version';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +18,30 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   try {
-    const currentVersion = await getCurrentVersionInfo();
+    // 1. 尝试从文件系统读取本地版本信息 (更可靠)
+    let currentVersion;
+    try {
+      const filePath = path.join(process.cwd(), 'public', 'VERSION.txt');
+      const timestamp = (await fs.readFile(filePath, 'utf-8')).trim();
+      const buildTime = parseVersionTimestamp(timestamp) || new Date();
+
+      currentVersion = {
+        version: CURRENT_VERSION,
+        timestamp,
+        buildTime,
+        isLatest: true,
+        updateAvailable: false,
+        displayVersion: `v${CURRENT_VERSION}`,
+      };
+    } catch (e) {
+      // 降级到默认方法
+      console.warn(
+        'Failed to read local VERSION.txt via fs, falling back to fetch:',
+        e
+      );
+      currentVersion = await getCurrentVersionInfo();
+    }
+
     const updateCheck = await checkForUpdates(currentVersion.timestamp);
 
     const response = {
@@ -18,6 +49,7 @@ export async function GET() {
       current: currentVersion,
       hasUpdate: updateCheck.hasUpdate,
       remote: updateCheck.remoteVersion,
+      checkFailed: updateCheck.checkFailed,
       timestamp: Date.now(),
     };
 

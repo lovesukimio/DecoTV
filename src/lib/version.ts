@@ -228,6 +228,7 @@ async function fetchRemoteSemanticVersion(): Promise<string | null> {
 export async function checkForUpdates(currentTimestamp: string): Promise<{
   hasUpdate: boolean;
   remoteVersion?: RemoteVersionInfo;
+  checkFailed?: boolean;
 }> {
   try {
     // 同时获取远程时间戳和语义版本号
@@ -275,9 +276,10 @@ export async function checkForUpdates(currentTimestamp: string): Promise<{
       hasUpdate: false,
     };
   } catch (error) {
-    // 静默处理错误
+    // 标记检查失败
     return {
       hasUpdate: false,
+      checkFailed: true,
     };
   }
 }
