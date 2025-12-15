@@ -16,13 +16,15 @@ const REMOTE_FETCH_TIMEOUT = 5000;
 const VERSION_SOURCE_URLS = [
   `https://raw.githubusercontent.com/${UPDATE_REPO}/${UPDATE_REF}/VERSION.txt`,
   `https://cdn.jsdelivr.net/gh/${UPDATE_REPO}@${UPDATE_REF}/VERSION.txt`,
-  `https://raw.fastgit.org/${UPDATE_REPO}/${UPDATE_REF}/VERSION.txt`,
+  `https://fastly.jsdelivr.net/gh/${UPDATE_REPO}@${UPDATE_REF}/VERSION.txt`,
+  `https://ghproxy.net/https://raw.githubusercontent.com/${UPDATE_REPO}/${UPDATE_REF}/VERSION.txt`,
 ];
 
 const PACKAGE_SOURCE_URLS = [
   `https://raw.githubusercontent.com/${UPDATE_REPO}/${UPDATE_REF}/package.json`,
   `https://cdn.jsdelivr.net/gh/${UPDATE_REPO}@${UPDATE_REF}/package.json`,
-  `https://raw.fastgit.org/${UPDATE_REPO}/${UPDATE_REF}/package.json`,
+  `https://fastly.jsdelivr.net/gh/${UPDATE_REPO}@${UPDATE_REF}/package.json`,
+  `https://ghproxy.net/https://raw.githubusercontent.com/${UPDATE_REPO}/${UPDATE_REF}/package.json`,
 ];
 
 export interface VersionInfo {

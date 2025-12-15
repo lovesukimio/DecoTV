@@ -51,14 +51,14 @@ function VersionDisplay() {
       className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-colors cursor-pointer'
     >
       <span className='font-mono'>v{CURRENT_VERSION}</span>
-      {!isChecking && updateStatus?.status !== UpdateStatus.FETCH_FAILED && (
+      {!isChecking && (
         <div
           className={`flex items-center gap-1.5 ${
             updateStatus?.status === UpdateStatus.HAS_UPDATE
               ? 'text-yellow-600 dark:text-yellow-400'
               : updateStatus?.status === UpdateStatus.NO_UPDATE
               ? 'text-purple-500 dark:text-purple-400'
-              : ''
+              : 'text-gray-400'
           }`}
         >
           {updateStatus?.status === UpdateStatus.HAS_UPDATE && (
@@ -71,6 +71,12 @@ function VersionDisplay() {
             <>
               <CheckCircle className='w-3.5 h-3.5' />
               <span className='font-semibold text-xs'>当前为最新版本</span>
+            </>
+          )}
+          {updateStatus?.status === UpdateStatus.FETCH_FAILED && (
+            <>
+              <AlertCircle className='w-3.5 h-3.5' />
+              <span className='font-semibold text-xs'>检测失败</span>
             </>
           )}
         </div>
