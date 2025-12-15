@@ -3,58 +3,40 @@ import { promises as fs } from 'fs';
 import { NextResponse } from 'next/server';
 import path from 'path';
 
-import {
-  checkForUpdates,
-  CURRENT_VERSION,
-  getCurrentVersionInfo,
-  parseVersionTimestamp,
-} from '@/lib/version';
+import { CURRENT_VERSION } from '@/lib/version';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * 版本检查 API
- * GET /api/version/check - 检查当前版本状态和是否有更新
+ * GET /api/version/check - 返回当前版本信息
+ *
+ * 注意: 实际的版本比较逻辑已移至客户端 (src/lib/version_check.ts)
+ * 此 API 仅作为备用，提供服务端的版本信息
  */
 export async function GET() {
   try {
-    // 1. 尝试从文件系统读取本地版本信息 (更可靠)
-    let currentVersion;
+    let timestamp = '';
+
+    // 尝试从文件系统读取版本时间戳
     try {
       const filePath = path.join(process.cwd(), 'public', 'VERSION.txt');
-      const timestamp = (await fs.readFile(filePath, 'utf-8')).trim();
-      const buildTime = parseVersionTimestamp(timestamp) || new Date();
-
-      currentVersion = {
-        version: CURRENT_VERSION,
-        timestamp,
-        buildTime,
-        isLatest: true,
-        updateAvailable: false,
-        displayVersion: `v${CURRENT_VERSION}`,
-      };
+      timestamp = (await fs.readFile(filePath, 'utf-8')).trim();
     } catch (e) {
-      // 降级到默认方法
-      console.warn(
-        'Failed to read local VERSION.txt via fs, falling back to fetch:',
-        e
-      );
-      currentVersion = await getCurrentVersionInfo();
+      console.warn('无法读取 VERSION.txt:', e);
+      // 使用硬编码的默认值
+      timestamp = '20251212140536';
     }
 
-    const updateCheck = await checkForUpdates(currentVersion.timestamp);
-
-    const response = {
+    return NextResponse.json({
       success: true,
-      current: currentVersion,
-      hasUpdate: updateCheck.hasUpdate,
-      remote: updateCheck.remoteVersion,
-      checkFailed: updateCheck.checkFailed,
-      timestamp: Date.now(),
-    };
-
-    return NextResponse.json(response);
+      version: CURRENT_VERSION,
+      timestamp,
+      displayVersion: `v${CURRENT_VERSION}`,
+      serverTime: Date.now(),
+    });
   } catch (error) {
+    console.error('版本检查 API 错误:', error);
     return NextResponse.json(
       {
         success: false,
