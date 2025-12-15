@@ -13,7 +13,7 @@ const UPDATE_REF = process.env.NEXT_PUBLIC_UPDATE_REF || 'main';
 const VERSION_TIMESTAMP_REGEX = /^\d{14}$/;
 const REMOTE_FETCH_TIMEOUT = 5000;
 
-const VERSION_SOURCE_URLS = [
+export const VERSION_SOURCE_URLS = [
   `https://raw.githubusercontent.com/${UPDATE_REPO}/${UPDATE_REF}/VERSION.txt`,
   `https://cdn.jsdelivr.net/gh/${UPDATE_REPO}@${UPDATE_REF}/VERSION.txt`,
   `https://fastly.jsdelivr.net/gh/${UPDATE_REPO}@${UPDATE_REF}/VERSION.txt`,
@@ -48,7 +48,7 @@ function appendCacheBuster(url: string): string {
   return url.includes('?') ? `${url}&${cacheBuster}` : `${url}?${cacheBuster}`;
 }
 
-async function fetchPlainTextWithTimeout(
+export async function fetchPlainTextWithTimeout(
   url: string,
   accept = 'text/plain'
 ): Promise<string | null> {
