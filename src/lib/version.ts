@@ -7,6 +7,10 @@
 const CURRENT_SEMANTIC_VERSION = '0.8.0';
 export const CURRENT_VERSION = CURRENT_SEMANTIC_VERSION;
 
+// 硬编码的构建时间戳（每次发布时更新）
+// 这是最后的回退值，确保即使所有文件读取都失败也能有一个基准
+export const BUILD_TIMESTAMP = '20251215234321';
+
 const DEFAULT_UPDATE_REPO = 'Decohererk/DecoTV';
 const UPDATE_REPO = process.env.NEXT_PUBLIC_UPDATE_REPO || DEFAULT_UPDATE_REPO;
 const UPDATE_REF = process.env.NEXT_PUBLIC_UPDATE_REF || 'main';
