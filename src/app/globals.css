@@ -745,6 +745,39 @@ html:not(.dark) .text-slate-600 {
   color: #475569 !important;
 }
 
+html:not(.dark) .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* 亮色模式背景颜色强制覆盖 */
+html:not(.dark) .bg-slate-50 {
+  background-color: #f8fafc !important;
+}
+
+html:not(.dark) .bg-slate-100 {
+  background-color: #f1f5f9 !important;
+}
+
+html:not(.dark) .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+html:not(.dark) .from-slate-50 {
+  --tw-gradient-from: #f8fafc !important;
+}
+
+html:not(.dark) .to-slate-100 {
+  --tw-gradient-to: #f1f5f9 !important;
+}
+
+html:not(.dark) .hover\:bg-slate-100:hover {
+  background-color: #f1f5f9 !important;
+}
+
+html:not(.dark) .hover\:bg-slate-50:hover {
+  background-color: #f8fafc !important;
+}
+
 /* 动态渐变闪烁背景粒子层（轻量） */
 .bg-animated-gradient::before {
   content: '';

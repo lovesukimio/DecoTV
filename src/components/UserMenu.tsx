@@ -493,12 +493,12 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 菜单面板 - 固定到视口右上角，使位置稳定且美观 */}
-      <div className='fixed top-2 right-2 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-xl z-[1001] border border-gray-200/50 dark:border-gray-700/50 overflow-hidden select-none'>
+      <div className='fixed top-2 right-2 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-2xl z-[1001] border border-slate-200 dark:border-gray-700/50 overflow-hidden select-none'>
         {/* 用户信息区域 */}
-        <div className='px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-800/50'>
+        <div className='px-3 py-2.5 border-b border-slate-200 dark:border-gray-700 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-gray-800 dark:to-gray-800/50'>
           <div className='space-y-1'>
             <div className='flex items-center justify-between'>
-              <span className='text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+              <span className='text-xs font-medium text-slate-600 dark:text-gray-400 uppercase tracking-wider'>
                 当前用户
               </span>
               <span
@@ -514,10 +514,10 @@ export const UserMenu: React.FC = () => {
               </span>
             </div>
             <div className='flex items-center justify-between'>
-              <div className='font-semibold text-gray-900 dark:text-gray-100 text-sm truncate'>
+              <div className='font-semibold text-slate-900 dark:text-gray-100 text-sm truncate'>
                 {authInfo?.username || 'default'}
               </div>
-              <div className='text-[10px] text-gray-400 dark:text-gray-500'>
+              <div className='text-[10px] text-slate-500 dark:text-gray-500'>
                 数据存储：
                 {storageType === 'localstorage' ? '本地' : storageType}
               </div>
@@ -530,9 +530,9 @@ export const UserMenu: React.FC = () => {
           {/* 设置按钮 */}
           <button
             onClick={handleSettings}
-            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm'
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
           >
-            <Settings className='w-4 h-4 text-gray-500 dark:text-gray-400' />
+            <Settings className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
 
@@ -540,9 +540,9 @@ export const UserMenu: React.FC = () => {
           {showAdminPanel && (
             <button
               onClick={handleAdminPanel}
-              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm'
+              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
             >
-              <Shield className='w-4 h-4 text-gray-500 dark:text-gray-400' />
+              <Shield className='w-4 h-4 text-slate-500 dark:text-gray-400' />
               <span className='font-medium'>管理面板</span>
             </button>
           )}
@@ -551,15 +551,15 @@ export const UserMenu: React.FC = () => {
           {showChangePassword && (
             <button
               onClick={handleChangePassword}
-              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm'
+              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
             >
-              <KeyRound className='w-4 h-4 text-gray-500 dark:text-gray-400' />
+              <KeyRound className='w-4 h-4 text-slate-500 dark:text-gray-400' />
               <span className='font-medium'>修改密码</span>
             </button>
           )}
 
           {/* 分割线 */}
-          <div className='my-1 border-t border-gray-200 dark:border-gray-700'></div>
+          <div className='my-1 border-t border-slate-200 dark:border-gray-700'></div>
 
           {/* 登出按钮 */}
           <button
@@ -571,7 +571,7 @@ export const UserMenu: React.FC = () => {
           </button>
 
           {/* 分割线 */}
-          <div className='my-1 border-t border-gray-200 dark:border-gray-700'></div>
+          <div className='my-1 border-t border-slate-200 dark:border-gray-700'></div>
 
           {/* 版本信息 */}
           <button
@@ -579,7 +579,7 @@ export const UserMenu: React.FC = () => {
               setIsVersionPanelOpen(true);
               handleCloseMenu();
             }}
-            className='w-full px-3 py-2 text-center flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-xs'
+            className='w-full px-3 py-2 text-center flex items-center justify-center text-slate-600 dark:text-gray-400 hover:bg-slate-50 dark:hover:bg-gray-800/50 transition-colors text-xs'
           >
             <div className='flex items-center gap-1'>
               <span className='font-mono'>v{CURRENT_VERSION}</span>
