@@ -404,7 +404,15 @@ body {
 .chip-theme {
   position: relative;
   isolation: isolate;
+  /* 亮色模式下使用深色文字 */
+  color: #374151;
 }
+
+/* 暗色模式下使用浅色文字 */
+:is(.dark .chip-theme) {
+  color: #f3f4f6;
+}
+
 .chip-theme::before {
   content: '';
   position: absolute;

@@ -2109,7 +2109,7 @@ function PlayPageClient() {
           <div className='md:col-span-3'>
             <div className='p-6 flex flex-col min-h-0'>
               {/* 标题 */}
-              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center flex-shrink-0 text-center md:text-left w-full'>
+              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center flex-shrink-0 text-center md:text-left w-full text-gray-900 dark:text-gray-100'>
                 {videoTitle || '影片标题'}
                 <button
                   onClick={(e) => {
@@ -2123,26 +2123,26 @@ function PlayPageClient() {
               </h1>
 
               {/* 关键信息行 */}
-              <div className='flex flex-wrap items-center gap-3 text-base mb-4 opacity-80 flex-shrink-0'>
+              <div className='flex flex-wrap items-center gap-3 text-base mb-4 flex-shrink-0 text-gray-700 dark:text-gray-300'>
                 {detail?.class && (
-                  <span className='text-green-600 font-semibold'>
+                  <span className='text-green-600 dark:text-green-400 font-semibold'>
                     {detail.class}
                   </span>
                 )}
                 {(detail?.year || videoYear) && (
-                  <span>{detail?.year || videoYear}</span>
+                  <span className='text-gray-600 dark:text-gray-400'>{detail?.year || videoYear}</span>
                 )}
                 {detail?.source_name && (
-                  <span className='border border-gray-500/60 px-2 py-[1px] rounded'>
+                  <span className='border border-gray-400 dark:border-gray-500 px-2 py-[1px] rounded text-gray-700 dark:text-gray-300'>
                     {detail.source_name}
                   </span>
                 )}
-                {detail?.type_name && <span>{detail.type_name}</span>}
+                {detail?.type_name && <span className='text-gray-600 dark:text-gray-400'>{detail.type_name}</span>}
               </div>
               {/* 剧情简介 */}
               {detail?.desc && (
                 <div
-                  className='mt-0 text-base leading-relaxed opacity-90 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
+                  className='mt-0 text-base leading-relaxed text-gray-700 dark:text-gray-300 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
                   style={{ whiteSpace: 'pre-line' }}
                 >
                   {detail.desc}
