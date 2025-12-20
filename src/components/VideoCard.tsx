@@ -953,7 +953,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             } as React.CSSProperties}
           >
             <span
-              className='block text-sm font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer'
+              className='block text-sm font-semibold truncate text-gray-800 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer'
               style={{
                 WebkitUserSelect: 'none',
                 userSelect: 'none',
@@ -992,7 +992,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           </div>
           {config.showSourceName && source_name && (
             <span
-              className='block text-xs text-gray-500 dark:text-gray-400 mt-1'
+              className='block text-xs text-gray-600 dark:text-gray-400 mt-1'
               style={{
                 WebkitUserSelect: 'none',
                 userSelect: 'none',
