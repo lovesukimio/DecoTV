@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Changed
+
+- ⬆️ **重大升级**: Next.js 14 → 16.1.0，获得更好的性能与 React 19 支持
+- ⬆️ **重大升级**: Tailwind CSS 3.4 → 4.1.18，使用新的 CSS 原生配置方式
+- ⬆️ React 18 → 19.0.0，支持最新的 React 特性
+- ⬆️ TypeScript 4.9 → 5.8.3，获得更好的类型检查与语言特性
+- ⬆️ ESLint 8 → 9.28.0，迁移到新的 flat config 格式
+- ⬆️ Jest 27 → 29.7.0，支持最新的测试特性
+- ⬆️ Prettier 2 → 3.5.3，支持最新的代码格式化规则
+- 🔧 移除 `next-pwa` 依赖（不兼容 Next.js 16）
+- 🔧 Tailwind 配置迁移到 CSS 原生 `@theme` 指令
+
 ## [0.8.0] - 2025-12-12
 
 ### Added
