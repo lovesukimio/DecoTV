@@ -902,7 +902,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         </div>
 
         {/* 用户组列表 */}
-        <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[20rem] overflow-y-auto overflow-x-auto relative'>
+        <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-80 overflow-y-auto overflow-x-auto relative'>
           <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
             <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
               <tr>
@@ -1149,7 +1149,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
 
         {/* 用户列表 */}
         <div
-          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-112 overflow-y-auto overflow-x-auto relative'
           data-table='user-list'
         >
           <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
@@ -3273,18 +3273,18 @@ const VideoSourceConfig = ({
           {source.key}
         </td>
         <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[12rem] truncate'
+          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-48 truncate'
           title={source.api}
         >
           {source.api}
         </td>
         <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[8rem] truncate'
+          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-32 truncate'
           title={source.detail || '-'}
         >
           {source.detail || '-'}
         </td>
-        <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
+        <td className='px-6 py-4 whitespace-nowrap max-w-4'>
           <span
             className={`px-2 py-1 text-xs rounded-full ${
               !source.disabled
@@ -3301,7 +3301,7 @@ const VideoSourceConfig = ({
             disabled={isLoading(`toggleAdult_${source.key}`)}
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
               source.is_adult
-                ? 'bg-gradient-to-r from-red-500 to-pink-500'
+                ? 'bg-linear-to-r from-red-500 to-pink-500'
                 : 'bg-gray-300 dark:bg-gray-600'
             } ${
               isLoading(`toggleAdult_${source.key}`)
@@ -3317,7 +3317,7 @@ const VideoSourceConfig = ({
             />
           </button>
         </td>
-        <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
+        <td className='px-6 py-4 whitespace-nowrap max-w-4'>
           {(() => {
             const status = getValidationStatus(source.key);
             if (!status) {
@@ -3551,7 +3551,7 @@ const VideoSourceConfig = ({
       {sources.some((s) => s.from === 'config') && (
         <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4'>
           <div className='flex items-start space-x-3'>
-            <div className='flex-shrink-0 mt-0.5'>
+            <div className='shrink-0 mt-0.5'>
               <svg
                 className='w-5 h-5 text-blue-600 dark:text-blue-400'
                 fill='currentColor'
@@ -3638,7 +3638,7 @@ const VideoSourceConfig = ({
                   className={`px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 ${
                     isLoading('batchSource_mark_adult')
                       ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white'
+                      : 'bg-linear-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white'
                   }`}
                   title='将选中的视频源标记为成人资源'
                 >
@@ -3670,7 +3670,7 @@ const VideoSourceConfig = ({
               onClick={() =>
                 setImportExportModal({ isOpen: true, mode: 'import' })
               }
-              className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white'
+              className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-linear-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white'
               title='从 JSON 文件导入视频源'
             >
               <Upload className='w-4 h-4' />
@@ -3681,7 +3681,7 @@ const VideoSourceConfig = ({
               onClick={() =>
                 setImportExportModal({ isOpen: true, mode: 'export' })
               }
-              className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white'
+              className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-linear-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white'
               title={
                 selectedSources.size > 0
                   ? `导出选中的 ${selectedSources.size} 个视频源`
@@ -3814,7 +3814,7 @@ const VideoSourceConfig = ({
               }
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
                 newSource.is_adult
-                  ? 'bg-gradient-to-r from-red-500 to-pink-500'
+                  ? 'bg-linear-to-r from-red-500 to-pink-500'
                   : 'bg-gray-300 dark:bg-gray-600'
               }`}
             >
@@ -3852,7 +3852,7 @@ const VideoSourceConfig = ({
 
       {/* 视频源表格 */}
       <div
-        className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+        className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-112 overflow-y-auto overflow-x-auto relative'
         data-table='source-list'
       >
         <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
@@ -4258,12 +4258,12 @@ const CategoryConfig = ({
           </span>
         </td>
         <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[12rem] truncate'
+          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-48 truncate'
           title={category.query}
         >
           {category.query}
         </td>
-        <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
+        <td className='px-6 py-4 whitespace-nowrap max-w-4'>
           <span
             className={`px-2 py-1 text-xs rounded-full ${
               !category.disabled
@@ -4395,7 +4395,7 @@ const CategoryConfig = ({
       )}
 
       {/* 分类表格 */}
-      <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'>
+      <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-112 overflow-y-auto overflow-x-auto relative'>
         <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
           <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
             <tr>
@@ -5002,7 +5002,7 @@ const SiteConfigComponent = ({
                   >
                     <span className='truncate'>{option.label}</span>
                     {siteSettings.DoubanProxyType === option.value && (
-                      <Check className='w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 ml-2' />
+                      <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
                     )}
                   </button>
                 ))}
@@ -5112,7 +5112,7 @@ const SiteConfigComponent = ({
                   >
                     <span className='truncate'>{option.label}</span>
                     {siteSettings.DoubanImageProxyType === option.value && (
-                      <Check className='w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 ml-2' />
+                      <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
                     )}
                   </button>
                 ))}
@@ -5535,19 +5535,19 @@ const LiveSourceConfig = ({
           {liveSource.key}
         </td>
         <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[12rem] truncate'
+          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-48 truncate'
           title={liveSource.url}
         >
           {liveSource.url}
         </td>
         <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[8rem] truncate'
+          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-32 truncate'
           title={liveSource.epg || '-'}
         >
           {liveSource.epg || '-'}
         </td>
         <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[8rem] truncate'
+          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-32 truncate'
           title={liveSource.ua || '-'}
         >
           {liveSource.ua || '-'}
@@ -5557,7 +5557,7 @@ const LiveSourceConfig = ({
             ? liveSource.channelNumber
             : '-'}
         </td>
-        <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
+        <td className='px-6 py-4 whitespace-nowrap max-w-4'>
           <span
             className={`px-2 py-1 text-xs rounded-full ${
               !liveSource.disabled
@@ -5847,7 +5847,7 @@ const LiveSourceConfig = ({
 
       {/* 直播源表格 */}
       <div
-        className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+        className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-112 overflow-y-auto overflow-x-auto relative'
         data-table='live-source-list'
       >
         <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
@@ -6329,7 +6329,7 @@ function AdminPageClient() {
                   <div className='p-5 space-y-6'>
                     {/* 链接输入框区域 */}
                     <div className='flex flex-col sm:flex-row gap-3'>
-                      <div className='relative flex-grow'>
+                      <div className='relative grow'>
                         <input
                           type='text'
                           readOnly
@@ -6352,7 +6352,7 @@ function AdminPageClient() {
                           </svg>
                         </div>
                       </div>
-                      <div className='flex gap-2 flex-shrink-0'>
+                      <div className='flex gap-2 shrink-0'>
                         <button
                           onClick={handleTvboxCopy}
                           className='flex-1 sm:flex-none px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-sm hover:shadow-md font-medium flex items-center justify-center gap-2'
@@ -6540,11 +6540,11 @@ function AdminPageClient() {
                 </div>
 
                 {/* 中部：成人内容过滤 (保持原有风格但微调) */}
-                <div className='bg-gradient-to-br from-pink-50 to-rose-50 dark:from-pink-900/10 dark:to-rose-900/10 rounded-xl border border-pink-100 dark:border-pink-800/30 p-1'>
+                <div className='bg-linear-to-br from-pink-50 to-rose-50 dark:from-pink-900/10 dark:to-rose-900/10 rounded-xl border border-pink-100 dark:border-pink-800/30 p-1'>
                   <div className='bg-white/50 dark:bg-gray-800/50 rounded-lg p-4 backdrop-blur-sm'>
                     <div className='flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4'>
                       <div className='flex items-center gap-3'>
-                        <div className='w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/30'>
+                        <div className='w-10 h-10 rounded-full bg-linear-to-br from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/30'>
                           🔒
                         </div>
                         <div>
@@ -6663,7 +6663,7 @@ function AdminPageClient() {
                       </button>
                     </div>
 
-                    <div className='flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 min-h-[80px]'>
+                    <div className='flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 min-h-20'>
                       {diagnosisResult ? (
                         <div className='flex items-start gap-3'>
                           <div
@@ -6760,7 +6760,7 @@ function AdminPageClient() {
                       </div>
                     </div>
 
-                    <div className='flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 min-h-[80px]'>
+                    <div className='flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 min-h-20'>
                       {jarStatus ? (
                         <div className='flex items-start gap-3'>
                           <div
@@ -6786,7 +6786,7 @@ function AdminPageClient() {
                                     ) + 'KB'
                                   : '-'}
                               </span>
-                              <span className='truncate max-w-[80px]'>
+                              <span className='truncate max-w-20'>
                                 {jarStatus.fresh_status?.md5?.substring(0, 6)}
                                 ...
                               </span>
