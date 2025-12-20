@@ -2109,7 +2109,7 @@ function PlayPageClient() {
           <div className='md:col-span-3'>
             <div className='p-6 flex flex-col min-h-0'>
               {/* 标题 */}
-              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center shrink-0 text-center md:text-left w-full text-gray-900 dark:text-gray-100'>
+              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center shrink-0 text-center md:text-left w-full text-slate-900 dark:text-gray-100'>
                 {videoTitle || '影片标题'}
                 <button
                   onClick={(e) => {
@@ -2123,7 +2123,7 @@ function PlayPageClient() {
               </h1>
 
               {/* 关键信息行 */}
-              <div className='flex flex-wrap items-center gap-3 text-base mb-4 shrink-0 text-gray-700 dark:text-gray-300'>
+              <div className='flex flex-wrap items-center gap-3 text-base mb-4 shrink-0 text-slate-700 dark:text-gray-300'>
                 {detail?.class && (
                   <span className='text-green-600 dark:text-green-400 font-semibold'>
                     {detail.class}
@@ -2142,7 +2142,7 @@ function PlayPageClient() {
               {/* 剧情简介 */}
               {detail?.desc && (
                 <div
-                  className='mt-0 text-base leading-relaxed text-gray-700 dark:text-gray-300 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
+                  className='mt-0 text-base leading-relaxed text-slate-700 dark:text-gray-300 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
                   style={{ whiteSpace: 'pre-line' }}
                 >
                   {detail.desc}

@@ -702,6 +702,49 @@ html:not(.dark) body {
   background-attachment: fixed;
 }
 
+/* 亮色模式文字颜色强制覆盖 - 修复 Tailwind 4 OKLCH 灰色过淡问题 */
+html:not(.dark) {
+  /* 覆盖 Tailwind 4 OKLCH 灰色，使用传统高对比度 HEX 值 */
+  --tw-text-opacity: 1;
+}
+
+/* 强制使用深色文字 - 确保亮色模式下可读性 */
+html:not(.dark) .text-gray-900 {
+  color: #111827 !important;
+}
+
+html:not(.dark) .text-gray-800 {
+  color: #1f2937 !important;
+}
+
+html:not(.dark) .text-gray-700 {
+  color: #374151 !important;
+}
+
+html:not(.dark) .text-gray-600 {
+  color: #4b5563 !important;
+}
+
+html:not(.dark) .text-gray-500 {
+  color: #6b7280 !important;
+}
+
+html:not(.dark) .text-slate-900 {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .text-slate-800 {
+  color: #1e293b !important;
+}
+
+html:not(.dark) .text-slate-700 {
+  color: #334155 !important;
+}
+
+html:not(.dark) .text-slate-600 {
+  color: #475569 !important;
+}
+
 /* 动态渐变闪烁背景粒子层（轻量） */
 .bg-animated-gradient::before {
   content: '';
