@@ -132,21 +132,29 @@ const AlertModal = ({
   showConfirm = false,
 }: AlertModalProps) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // 确保组件已挂载到客户端
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
       setIsVisible(true);
       if (timer) {
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           onClose();
         }, timer);
+        return () => clearTimeout(timeoutId);
       }
     } else {
       setIsVisible(false);
     }
   }, [isOpen, timer, onClose]);
 
-  if (!isOpen) return null;
+  // 未挂载或未打开时不渲染
+  if (!mounted || !isOpen) return null;
 
   const getIcon = () => {
     switch (type) {
