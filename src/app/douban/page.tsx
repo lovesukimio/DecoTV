@@ -3,8 +3,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { GetBangumiCalendarData } from '@/lib/bangumi.client';
 import {
@@ -13,10 +12,11 @@ import {
   getDoubanRecommends,
 } from '@/lib/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
+import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
-import DoubanSelector from '@/components/DoubanSelector';
+import DoubanSelector, { SourceCategory } from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 
@@ -78,6 +78,24 @@ function DoubanPageClient() {
   // 星期选择器状态
   const [selectedWeekday, setSelectedWeekday] = useState<string>('');
 
+  // 数据源筛选 Hook
+  const {
+    sources,
+    currentSource,
+    isLoadingSources,
+    isLoadingCategories,
+    setCurrentSource,
+    getFilteredCategories,
+  } = useSourceFilter();
+
+  // 选中的源分类
+  const [selectedSourceCategory, setSelectedSourceCategory] =
+    useState<SourceCategory | null>(null);
+
+  // 源分类数据（用于直接查询源接口）
+  const [sourceData, setSourceData] = useState<DoubanItem[]>([]);
+  const [isLoadingSourceData, setIsLoadingSourceData] = useState(false);
+
   // 获取自定义分类数据
   useEffect(() => {
     const runtimeConfig = (window as any).RUNTIME_CONFIG;
@@ -126,7 +144,7 @@ function DoubanPageClient() {
     if (type === 'custom' && customCategories.length > 0) {
       // 自定义分类模式：优先选择 movie，如果没有 movie 则选择 tv
       const types = Array.from(
-        new Set(customCategories.map((cat) => cat.type))
+        new Set(customCategories.map((cat) => cat.type)),
       );
       if (types.length > 0) {
         // 优先选择 movie，如果没有 movie 则选择 tv
@@ -140,7 +158,7 @@ function DoubanPageClient() {
 
         // 设置选中类型的第一个分类的 query 作为二级选择
         const firstCategory = customCategories.find(
-          (cat) => cat.type === selectedType
+          (cat) => cat.type === selectedType,
         );
         if (firstCategory) {
           setSecondarySelection(firstCategory.query);
@@ -205,7 +223,7 @@ function DoubanPageClient() {
         multiLevelSelection: Record<string, string>;
         selectedWeekday: string;
         currentPage: number;
-      }
+      },
     ) => {
       return (
         snapshot1.type === snapshot2.type &&
@@ -217,7 +235,7 @@ function DoubanPageClient() {
           JSON.stringify(snapshot2.multiLevelSelection)
       );
     },
-    []
+    [],
   );
 
   // 生成API请求参数的辅助函数
@@ -243,7 +261,7 @@ function DoubanPageClient() {
         pageStart,
       };
     },
-    [type, primarySelection, secondarySelection]
+    [type, primarySelection, secondarySelection],
   );
 
   // 防抖的数据加载函数
@@ -272,7 +290,7 @@ function DoubanPageClient() {
         // 自定义分类模式：根据选中的一级和二级选项获取对应的分类
         const selectedCategory = customCategories.find(
           (cat) =>
-            cat.type === primarySelection && cat.query === secondarySelection
+            cat.type === primarySelection && cat.query === secondarySelection,
         );
 
         if (selectedCategory) {
@@ -288,7 +306,7 @@ function DoubanPageClient() {
       } else if (type === 'anime' && primarySelection === '每日放送') {
         const calendarData = await GetBangumiCalendarData();
         const weekdayData = calendarData.find(
-          (item) => item.weekday.en === selectedWeekday
+          (item) => item.weekday.en === selectedWeekday,
         );
         if (weekdayData) {
           data = {
@@ -443,7 +461,7 @@ function DoubanPageClient() {
             const selectedCategory = customCategories.find(
               (cat) =>
                 cat.type === primarySelection &&
-                cat.query === secondarySelection
+                cat.query === secondarySelection,
             );
 
             if (selectedCategory) {
@@ -513,7 +531,7 @@ function DoubanPageClient() {
             });
           } else {
             data = await getDoubanCategories(
-              getRequestParams(currentPage * 25)
+              getRequestParams(currentPage * 25),
             );
           }
 
@@ -568,7 +586,7 @@ function DoubanPageClient() {
           setCurrentPage((prev) => prev + 1);
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     );
 
     observer.observe(loadingRef.current);
@@ -606,7 +624,7 @@ function DoubanPageClient() {
         // 如果是自定义分类模式，同时更新一级和二级选择器
         if (type === 'custom' && customCategories.length > 0) {
           const firstCategory = customCategories.find(
-            (cat) => cat.type === value
+            (cat) => cat.type === value,
           );
           if (firstCategory) {
             // 批量更新状态，避免多次触发数据加载
@@ -630,7 +648,7 @@ function DoubanPageClient() {
         }
       }
     },
-    [primarySelection, type, customCategories]
+    [primarySelection, type, customCategories],
   );
 
   const handleSecondaryChange = useCallback(
@@ -646,7 +664,7 @@ function DoubanPageClient() {
         setSecondarySelection(value);
       }
     },
-    [secondarySelection]
+    [secondarySelection],
   );
 
   const handleMultiLevelChange = useCallback(
@@ -654,7 +672,7 @@ function DoubanPageClient() {
       // 比较两个对象是否相同，忽略顺序
       const isEqual = (
         obj1: Record<string, string>,
-        obj2: Record<string, string>
+        obj2: Record<string, string>,
       ) => {
         const keys1 = Object.keys(obj1).sort();
         const keys2 = Object.keys(obj2).sort();
@@ -677,24 +695,114 @@ function DoubanPageClient() {
       setIsLoadingMore(false);
       setMultiLevelValues(values);
     },
-    [multiLevelValues]
+    [multiLevelValues],
   );
 
   const handleWeekdayChange = useCallback((weekday: string) => {
     setSelectedWeekday(weekday);
   }, []);
 
+  // 处理数据源切换
+  const handleSourceChange = useCallback(
+    (sourceKey: string) => {
+      if (sourceKey !== currentSource) {
+        setLoading(true);
+        setCurrentPage(0);
+        setDoubanData([]);
+        setSourceData([]);
+        setHasMore(true);
+        setIsLoadingMore(false);
+        setSelectedSourceCategory(null);
+        setCurrentSource(sourceKey);
+      }
+    },
+    [currentSource, setCurrentSource],
+  );
+
+  // 处理源分类切换
+  const handleSourceCategoryChange = useCallback(
+    (category: SourceCategory) => {
+      if (selectedSourceCategory?.type_id !== category.type_id) {
+        setLoading(true);
+        setCurrentPage(0);
+        setSourceData([]);
+        setHasMore(true);
+        setIsLoadingMore(false);
+        setSelectedSourceCategory(category);
+        // 触发源分类数据加载
+        fetchSourceCategoryData(category);
+      }
+    },
+    [selectedSourceCategory],
+  );
+
+  // 从源接口获取分类数据
+  const fetchSourceCategoryData = useCallback(
+    async (category: SourceCategory) => {
+      if (currentSource === 'auto') return;
+
+      const source = sources.find((s) => s.key === currentSource);
+      if (!source) {
+        setLoading(false);
+        return;
+      }
+
+      setIsLoadingSourceData(true);
+      try {
+        // 构建分类列表 API URL
+        const apiUrl = source.api.endsWith('/')
+          ? `${source.api}?ac=videolist&t=${category.type_id}&pg=1`
+          : `${source.api}/?ac=videolist&t=${category.type_id}&pg=1`;
+
+        const response = await fetch(apiUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            Accept: 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('获取分类数据失败');
+        }
+
+        const data = await response.json();
+        const items = data.list || [];
+
+        // 转换为 DoubanItem 格式
+        const convertedItems: DoubanItem[] = items.map((item: any) => ({
+          id: item.vod_id?.toString() || '',
+          title: item.vod_name || '',
+          poster: item.vod_pic || '',
+          rating: 0,
+          year: item.vod_year || '',
+          subtitle: item.vod_remarks || '',
+        }));
+
+        setSourceData(convertedItems);
+        setHasMore(items.length >= 20); // 假设每页20条
+      } catch (error) {
+        console.error('获取源分类数据失败:', error);
+        setSourceData([]);
+      } finally {
+        setIsLoadingSourceData(false);
+        setLoading(false);
+      }
+    },
+    [currentSource, sources],
+  );
+
   const getPageTitle = () => {
     // 根据 type 生成标题
     return type === 'movie'
       ? '电影'
       : type === 'tv'
-      ? '电视剧'
-      : type === 'anime'
-      ? '动漫'
-      : type === 'show'
-      ? '综艺'
-      : '自定义';
+        ? '电视剧'
+        : type === 'anime'
+          ? '动漫'
+          : type === 'show'
+            ? '综艺'
+            : '自定义';
   };
 
   const getPageDescription = () => {
@@ -739,6 +847,17 @@ function DoubanPageClient() {
                 onSecondaryChange={handleSecondaryChange}
                 onMultiLevelChange={handleMultiLevelChange}
                 onWeekdayChange={handleWeekdayChange}
+                // 数据源相关 props
+                sources={sources}
+                currentSource={currentSource}
+                sourceCategories={getFilteredCategories(
+                  type as 'movie' | 'tv' | 'anime' | 'show',
+                )}
+                isLoadingSources={isLoadingSources}
+                isLoadingCategories={isLoadingCategories}
+                onSourceChange={handleSourceChange}
+                onSourceCategoryChange={handleSourceCategoryChange}
+                selectedSourceCategory={selectedSourceCategory}
               />
             </div>
           ) : (
@@ -758,26 +877,53 @@ function DoubanPageClient() {
         <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
           {/* 内容网格 */}
           <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-            {loading || !selectorsReady
-              ? // 显示骨架屏
-                skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
-              : // 显示实际数据
-                doubanData.map((item, index) => (
-                  <div key={`${item.title}-${index}`} className='w-full'>
-                    <VideoCard
-                      from='douban'
-                      title={item.title}
-                      poster={item.poster}
-                      douban_id={Number(item.id)}
-                      rate={item.rate}
-                      year={item.year}
-                      type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
-                      isBangumi={
-                        type === 'anime' && primarySelection === '每日放送'
-                      }
-                    />
-                  </div>
-                ))}
+            {loading || isLoadingSourceData || !selectorsReady ? (
+              // 显示骨架屏
+              skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
+            ) : currentSource !== 'auto' && sourceData.length > 0 ? (
+              // 显示源分类数据
+              sourceData.map((item, index) => (
+                <div key={`source-${item.id}-${index}`} className='w-full'>
+                  <VideoCard
+                    from='douban'
+                    title={item.title}
+                    poster={item.poster}
+                    year={item.year}
+                    type={type === 'movie' ? 'movie' : ''}
+                  />
+                </div>
+              ))
+            ) : currentSource !== 'auto' && selectedSourceCategory ? (
+              // 选择了源分类但没有数据
+              <div className='col-span-full text-center py-12 text-gray-500 dark:text-gray-400'>
+                <p>该分类暂无数据</p>
+                <p className='text-sm mt-2'>请尝试选择其他分类</p>
+              </div>
+            ) : currentSource !== 'auto' && !selectedSourceCategory ? (
+              // 选择了源但未选择分类
+              <div className='col-span-full text-center py-12 text-gray-500 dark:text-gray-400'>
+                <p>请选择一个分类</p>
+                <p className='text-sm mt-2'>从上方分类列表中选择</p>
+              </div>
+            ) : (
+              // 显示豆瓣数据
+              doubanData.map((item, index) => (
+                <div key={`${item.title}-${index}`} className='w-full'>
+                  <VideoCard
+                    from='douban'
+                    title={item.title}
+                    poster={item.poster}
+                    douban_id={Number(item.id)}
+                    rate={item.rate}
+                    year={item.year}
+                    type={type === 'movie' ? 'movie' : ''}
+                    isBangumi={
+                      type === 'anime' && primarySelection === '每日放送'
+                    }
+                  />
+                </div>
+              ))
+            )}
           </div>
 
           {/* 加载更多指示器 */}
