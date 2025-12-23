@@ -412,6 +412,13 @@ function DoubanPageClient() {
       return;
     }
 
+    // 如果当前是特定源模式，不加载豆瓣数据
+    if (currentSource !== 'auto') {
+      // 特定源模式下，等待用户选择分类后再加载
+      setLoading(false);
+      return;
+    }
+
     // 清除之前的防抖定时器
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
@@ -436,6 +443,7 @@ function DoubanPageClient() {
     multiLevelValues,
     selectedWeekday,
     loadInitialData,
+    currentSource, // 添加 currentSource 依赖
   ]);
 
   // 单独处理 currentPage 变化（加载更多）
@@ -706,6 +714,7 @@ function DoubanPageClient() {
   const handleSourceChange = useCallback(
     (sourceKey: string) => {
       if (sourceKey !== currentSource) {
+        // 立即重置所有状态
         setLoading(true);
         setCurrentPage(0);
         setDoubanData([]);
@@ -713,10 +722,39 @@ function DoubanPageClient() {
         setHasMore(true);
         setIsLoadingMore(false);
         setSelectedSourceCategory(null);
+        setIsLoadingSourceData(false);
+
+        // 如果切回聚合模式，需要重置豆瓣相关的选择器状态
+        if (sourceKey === 'auto') {
+          // 重置为默认的豆瓣分类选择
+          if (type === 'movie') {
+            setPrimarySelection('热门');
+            setSecondarySelection('全部');
+          } else if (type === 'tv') {
+            setPrimarySelection('最近热门');
+            setSecondarySelection('tv');
+          } else if (type === 'show') {
+            setPrimarySelection('最近热门');
+            setSecondarySelection('show');
+          } else if (type === 'anime') {
+            setPrimarySelection('每日放送');
+            setSecondarySelection('全部');
+          }
+          // 重置多级筛选器
+          setMultiLevelValues({
+            type: 'all',
+            region: 'all',
+            year: 'all',
+            platform: 'all',
+            label: 'all',
+            sort: 'T',
+          });
+        }
+
         setCurrentSource(sourceKey);
       }
     },
-    [currentSource, setCurrentSource],
+    [currentSource, setCurrentSource, type],
   );
 
   // 处理源分类切换

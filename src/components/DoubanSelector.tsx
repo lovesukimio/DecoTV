@@ -465,12 +465,15 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     }
 
     return (
-      <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
-        <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-12 flex items-center gap-1'>
+      <div className='flex flex-row items-center gap-2'>
+        <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 shrink-0 whitespace-nowrap flex items-center gap-1'>
           <Database className='w-3.5 h-3.5' />
           数据源
         </span>
-        <div className='overflow-x-auto'>
+        <div
+          className='flex-1 min-w-0 overflow-x-auto scrollbar-hide'
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
           {isLoadingSources ? (
             <div className='flex items-center gap-2 px-3 py-2 text-sm text-gray-500'>
               <Loader2 className='w-4 h-4 animate-spin' />
