@@ -43,7 +43,7 @@ import { GripVertical } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
+import { AdminConfig } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
 import DataMigration from '@/components/DataMigration';
@@ -5984,17 +5984,19 @@ function AdminPageClient() {
       }
 
       const response = await fetch(`/api/admin/config`);
+      const data = await response.json();
 
       if (!response.ok) {
-        const data = (await response.json()) as any;
-        throw new Error(`获取配置失败: ${data.error}`);
+        throw new Error(`获取配置失败: ${data.error || response.statusText}`);
       }
 
-      const data = (await response.json()) as AdminConfigResult;
       setConfig(data.Config);
       setRole(data.Role);
+      // 成功时清除之前的错误状态
+      setError(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取配置失败';
+      console.error('Admin config fetch error:', err);
       showError(msg, showAlert);
       setError(msg);
     } finally {
@@ -6217,8 +6219,46 @@ function AdminPageClient() {
   }
 
   if (error) {
-    // 错误已通过弹窗展示，此处直接返回空
-    return null;
+    // 显示错误信息，而不是返回空白
+    return (
+      <PageLayout activePath='/admin'>
+        <div className='px-2 sm:px-10 py-4 sm:py-8'>
+          <div className='max-w-[95%] mx-auto'>
+            <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-100 mb-8'>
+              管理员设置
+            </h1>
+            <div className='p-6 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800'>
+              <div className='flex items-start gap-3'>
+                <AlertCircle className='w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5' />
+                <div className='flex-1'>
+                  <h3 className='text-lg font-semibold text-red-800 dark:text-red-300 mb-2'>
+                    加载失败
+                  </h3>
+                  <p className='text-red-700 dark:text-red-400 mb-4'>{error}</p>
+                  <div className='text-sm text-red-600 dark:text-red-500 mb-4'>
+                    <p className='mb-2'>可能的原因：</p>
+                    <ul className='list-disc list-inside space-y-1'>
+                      <li>数据库连接失败（请检查 Redis/Upstash 配置）</li>
+                      <li>权限不足（需要 owner 或 admin 角色）</li>
+                      <li>网络连接问题</li>
+                    </ul>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      fetchConfig(true);
+                    }}
+                    className={buttonStyles.danger}
+                  >
+                    重试
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </PageLayout>
+    );
   }
 
   return (
