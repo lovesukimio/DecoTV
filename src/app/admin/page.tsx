@@ -184,7 +184,7 @@ const AlertModal = ({
 
   return createPortal(
     <div
-      className={`fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 transition-opacity duration-200 ${
+      className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity duration-200 ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={onClose}
@@ -1468,7 +1468,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         selectedUser &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowConfigureApisModal(false);
               setSelectedUser(null);
@@ -1646,7 +1646,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
       {showAddUserGroupForm &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowAddUserGroupForm(false);
               setNewUserGroup({ name: '', enabledApis: [] });
@@ -1826,7 +1826,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         editingUserGroup &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowEditUserGroupForm(false);
               setEditingUserGroup(null);
@@ -1991,7 +1991,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         selectedUserForGroup &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowConfigureUserGroupModal(false);
               setSelectedUserForGroup(null);
@@ -2130,7 +2130,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         deletingUserGroup &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowDeleteUserGroupModal(false);
               setDeletingUserGroup(null);
@@ -2291,7 +2291,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         deletingUser &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowDeleteUserModal(false);
               setDeletingUser(null);
@@ -2384,7 +2384,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
       {showBatchUserGroupModal &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => {
               setShowBatchUserGroupModal(false);
               setSelectedUserGroup('');
@@ -3945,7 +3945,7 @@ const VideoSourceConfig = ({
       {showValidationModal &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50'
             onClick={() => setShowValidationModal(false)}
           >
             <div
@@ -4019,7 +4019,7 @@ const VideoSourceConfig = ({
       {confirmModal.isOpen &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={confirmModal.onCancel}
           >
             <div
@@ -6929,7 +6929,7 @@ function AdminPageClient() {
       {showResetConfigModal &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'
             onClick={() => setShowResetConfigModal(false)}
           >
             <div
