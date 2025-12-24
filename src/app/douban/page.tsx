@@ -710,71 +710,7 @@ function DoubanPageClient() {
     setSelectedWeekday(weekday);
   }, []);
 
-  // 处理数据源切换
-  const handleSourceChange = useCallback(
-    (sourceKey: string) => {
-      if (sourceKey !== currentSource) {
-        // 立即重置所有状态
-        setLoading(true);
-        setCurrentPage(0);
-        setDoubanData([]);
-        setSourceData([]);
-        setHasMore(true);
-        setIsLoadingMore(false);
-        setSelectedSourceCategory(null);
-        setIsLoadingSourceData(false);
-
-        // 如果切回聚合模式，需要重置豆瓣相关的选择器状态
-        if (sourceKey === 'auto') {
-          // 重置为默认的豆瓣分类选择
-          if (type === 'movie') {
-            setPrimarySelection('热门');
-            setSecondarySelection('全部');
-          } else if (type === 'tv') {
-            setPrimarySelection('最近热门');
-            setSecondarySelection('tv');
-          } else if (type === 'show') {
-            setPrimarySelection('最近热门');
-            setSecondarySelection('show');
-          } else if (type === 'anime') {
-            setPrimarySelection('每日放送');
-            setSecondarySelection('全部');
-          }
-          // 重置多级筛选器
-          setMultiLevelValues({
-            type: 'all',
-            region: 'all',
-            year: 'all',
-            platform: 'all',
-            label: 'all',
-            sort: 'T',
-          });
-        }
-
-        setCurrentSource(sourceKey);
-      }
-    },
-    [currentSource, setCurrentSource, type],
-  );
-
-  // 处理源分类切换
-  const handleSourceCategoryChange = useCallback(
-    (category: SourceCategory) => {
-      if (selectedSourceCategory?.type_id !== category.type_id) {
-        setLoading(true);
-        setCurrentPage(0);
-        setSourceData([]);
-        setHasMore(true);
-        setIsLoadingMore(false);
-        setSelectedSourceCategory(category);
-        // 触发源分类数据加载
-        fetchSourceCategoryData(category);
-      }
-    },
-    [selectedSourceCategory],
-  );
-
-  // 从源接口获取分类数据
+  // 从源接口获取分类数据（必须在 handleSourceChange 之前定义）
   const fetchSourceCategoryData = useCallback(
     async (category: SourceCategory) => {
       if (currentSource === 'auto') return;
@@ -787,7 +723,7 @@ function DoubanPageClient() {
 
       setIsLoadingSourceData(true);
       try {
-        // 构建分类列表 API URL
+        // 构建视频列表 API URL
         const apiUrl = source.api.endsWith('/')
           ? `${source.api}?ac=videolist&t=${category.type_id}&pg=1`
           : `${source.api}/?ac=videolist&t=${category.type_id}&pg=1`;
@@ -828,6 +764,114 @@ function DoubanPageClient() {
       }
     },
     [currentSource, sources],
+  );
+
+  // 处理数据源切换 - 实现链式自动选中逻辑
+  const handleSourceChange = useCallback(
+    async (sourceKey: string) => {
+      if (sourceKey === currentSource) return;
+
+      // === Step 1: 立即重置所有状态，防止状态污染 ===
+      setLoading(true);
+      setCurrentPage(0);
+      setDoubanData([]); // 清空豆瓣数据
+      setSourceData([]); // 清空源数据
+      setHasMore(true);
+      setIsLoadingMore(false);
+      setSelectedSourceCategory(null); // 清除旧分类ID，防止污染
+      setIsLoadingSourceData(false);
+
+      // === Step 2: 切换源状态 ===
+      setCurrentSource(sourceKey);
+
+      // === Step 3: 根据源类型执行不同逻辑 ===
+      if (sourceKey === 'auto') {
+        // 【切回聚合模式】重置为默认的豆瓣分类选择
+        if (type === 'movie') {
+          setPrimarySelection('热门');
+          setSecondarySelection('全部');
+        } else if (type === 'tv') {
+          setPrimarySelection('最近热门');
+          setSecondarySelection('tv');
+        } else if (type === 'show') {
+          setPrimarySelection('最近热门');
+          setSecondarySelection('show');
+        } else if (type === 'anime') {
+          setPrimarySelection('每日放送');
+          setSecondarySelection('全部');
+        }
+        // 重置多级筛选器
+        setMultiLevelValues({
+          type: 'all',
+          region: 'all',
+          year: 'all',
+          platform: 'all',
+          label: 'all',
+          sort: 'T',
+        });
+        // 聚合模式下 useEffect 会自动触发 loadInitialData
+      } else {
+        // === 【特定源模式】获取分类并自动选中第一个 ===
+        // Step 4: 等待分类列表加载完成
+        const source = sources.find((s) => s.key === sourceKey);
+        if (!source) {
+          setLoading(false);
+          return;
+        }
+
+        try {
+          // 构建分类 API URL
+          const apiUrl = source.api.endsWith('/')
+            ? `${source.api}?ac=class`
+            : `${source.api}/?ac=class`;
+
+          const response = await fetch(apiUrl, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              Accept: 'application/json',
+            },
+          });
+
+          if (!response.ok) throw new Error('获取分类列表失败');
+
+          const data = await response.json();
+          const categories: SourceCategory[] = data.class || [];
+
+          // Step 5: 【关键修复】自动选中第一个分类
+          if (categories.length > 0) {
+            const firstCategory = categories[0];
+            setSelectedSourceCategory(firstCategory);
+            // Step 6: 触发数据加载 - 调用 fetchSourceCategoryData
+            fetchSourceCategoryData(firstCategory);
+          } else {
+            // 没有分类时停止 loading
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error('获取源分类失败:', err);
+          setLoading(false);
+        }
+      }
+    },
+    [currentSource, setCurrentSource, type, sources, fetchSourceCategoryData],
+  );
+
+  // 处理源分类切换
+  const handleSourceCategoryChange = useCallback(
+    (category: SourceCategory) => {
+      if (selectedSourceCategory?.type_id !== category.type_id) {
+        setLoading(true);
+        setCurrentPage(0);
+        setSourceData([]);
+        setHasMore(true);
+        setIsLoadingMore(false);
+        setSelectedSourceCategory(category);
+        // 触发源分类数据加载
+        fetchSourceCategoryData(category);
+      }
+    },
+    [selectedSourceCategory, fetchSourceCategoryData],
   );
 
   const getPageTitle = () => {
