@@ -836,13 +836,60 @@ function DoubanPageClient() {
           if (!response.ok) throw new Error('获取分类列表失败');
 
           const data = await response.json();
-          const categories: SourceCategory[] = data.class || [];
+          const allCategories: SourceCategory[] = data.class || [];
 
-          // Step 5: 【关键修复】自动选中第一个分类
-          if (categories.length > 0) {
-            const firstCategory = categories[0];
+          // === Step 5: 智能分类过滤与兜底逻辑 ===
+          // 内容类型关键词映射
+          const CONTENT_TYPE_KEYWORDS: Record<string, string[]> = {
+            movie: ['电影', '影片', '大片', '院线', '4K', '蓝光', '片'],
+            tv: [
+              '电视剧',
+              '剧集',
+              '连续剧',
+              '国产剧',
+              '美剧',
+              '韩剧',
+              '日剧',
+              '港剧',
+              '剧',
+            ],
+            anime: ['动漫', '动画', '番剧', '动画片', '卡通', '漫画'],
+            show: ['综艺', '真人秀', '脱口秀', '晚会', '纪录片'],
+          };
+
+          const keywords = CONTENT_TYPE_KEYWORDS[type] || [];
+
+          // 尝试根据当前频道类型过滤分类
+          let filteredCategories = allCategories.filter((cat) => {
+            const name = cat.type_name.toLowerCase();
+            return keywords.some((keyword) =>
+              name.includes(keyword.toLowerCase()),
+            );
+          });
+
+          // 【关键兜底】如果过滤结果为空，使用降级策略
+          if (filteredCategories.length === 0) {
+            // 降级策略 1: 尝试匹配包含"片"或"剧"的分类
+            filteredCategories = allCategories.filter((cat) => {
+              const name = cat.type_name;
+              return (
+                name.includes('片') ||
+                name.includes('剧') ||
+                name.includes('漫')
+              );
+            });
+          }
+
+          // 降级策略 2: 如果仍为空，显示前 15 个分类
+          if (filteredCategories.length === 0) {
+            filteredCategories = allCategories.slice(0, 15);
+          }
+
+          // Step 6: 【强制自动选中】选中过滤后列表的第一个分类
+          if (filteredCategories.length > 0) {
+            const firstCategory = filteredCategories[0];
             setSelectedSourceCategory(firstCategory);
-            // Step 6: 触发数据加载 - 调用 fetchSourceCategoryData
+            // Step 7: 触发数据加载
             fetchSourceCategoryData(firstCategory);
           } else {
             // 没有分类时停止 loading

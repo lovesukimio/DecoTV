@@ -38,10 +38,20 @@ export interface UseSourceFilterReturn {
   ) => SourceCategory[];
 }
 
-// 内容类型到分类关键词的映射
+// 内容类型到分类关键词的映射（扩展关键词以提高匹配率）
 const CONTENT_TYPE_KEYWORDS: Record<string, string[]> = {
-  movie: ['电影', '影片', '大片', '院线', '4K', '蓝光'],
-  tv: ['电视剧', '剧集', '连续剧', '国产剧', '美剧', '韩剧', '日剧', '港剧'],
+  movie: ['电影', '影片', '大片', '院线', '4K', '蓝光', '片'],
+  tv: [
+    '电视剧',
+    '剧集',
+    '连续剧',
+    '国产剧',
+    '美剧',
+    '韩剧',
+    '日剧',
+    '港剧',
+    '剧',
+  ],
   anime: ['动漫', '动画', '番剧', '动画片', '卡通', '漫画'],
   show: ['综艺', '真人秀', '脱口秀', '晚会', '纪录片'],
 };
@@ -143,7 +153,7 @@ export function useSourceFilter(): UseSourceFilterReturn {
     [fetchSourceCategories],
   );
 
-  // 根据内容类型过滤分类
+  // 根据内容类型过滤分类（带智能兜底）
   const getFilteredCategories = useCallback(
     (contentType: 'movie' | 'tv' | 'anime' | 'show'): SourceCategory[] => {
       if (sourceCategories.length === 0) {
@@ -153,13 +163,27 @@ export function useSourceFilter(): UseSourceFilterReturn {
       const keywords = CONTENT_TYPE_KEYWORDS[contentType] || [];
 
       // 尝试智能匹配相关分类
-      const filtered = sourceCategories.filter((cat) => {
+      let filtered = sourceCategories.filter((cat) => {
         const name = cat.type_name.toLowerCase();
         return keywords.some((keyword) => name.includes(keyword.toLowerCase()));
       });
 
-      // 如果没有匹配到，返回所有分类让用户选择
-      return filtered.length > 0 ? filtered : sourceCategories;
+      // 【兜底策略 1】如果没有匹配到，尝试匹配包含"片"或"剧"的分类
+      if (filtered.length === 0) {
+        filtered = sourceCategories.filter((cat) => {
+          const name = cat.type_name;
+          return (
+            name.includes('片') || name.includes('剧') || name.includes('漫')
+          );
+        });
+      }
+
+      // 【兜底策略 2】如果仍为空，返回前 15 个分类供用户选择
+      if (filtered.length === 0) {
+        return sourceCategories.slice(0, 15);
+      }
+
+      return filtered;
     },
     [sourceCategories],
   );

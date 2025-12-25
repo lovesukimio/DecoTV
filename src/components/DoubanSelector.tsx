@@ -2,8 +2,8 @@
 
 'use client';
 
-import { Database, Loader2 } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Database, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiSite } from '@/lib/config';
 
@@ -458,7 +458,51 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     }
   }, [selectedSourceCategory, sourceCategories]);
 
-  // 渲染数据源选择器（横向滚动样式）
+  // 滚动控制状态
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // 检查滚动状态，决定是否显示箭头
+  const checkScrollArrows = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    setShowLeftArrow(scrollLeft > 5);
+    setShowRightArrow(scrollLeft < scrollWidth - clientWidth - 5);
+  }, []);
+
+  // 滚动控制函数
+  const scrollSources = useCallback((direction: 'left' | 'right') => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const scrollAmount = direction === 'left' ? -200 : 200;
+    container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+  }, []);
+
+  // 监听滚动容器变化
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // 初始检查
+    checkScrollArrows();
+
+    // 监听滚动事件
+    container.addEventListener('scroll', checkScrollArrows);
+
+    // 监听窗口大小变化
+    window.addEventListener('resize', checkScrollArrows);
+
+    return () => {
+      container.removeEventListener('scroll', checkScrollArrows);
+      window.removeEventListener('resize', checkScrollArrows);
+    };
+  }, [sources, isLoadingSources, checkScrollArrows]);
+
+  // 渲染数据源选择器（横向滚动样式 + 左右箭头控制）
   const renderSourceSelector = () => {
     if (sources.length === 0 && !isLoadingSources) {
       return null;
@@ -470,50 +514,77 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
           <Database className='w-3.5 h-3.5' />
           数据源
         </span>
-        <div
-          className='flex-1 min-w-0 overflow-x-auto scrollbar-hide'
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {isLoadingSources ? (
-            <div className='flex items-center gap-2 px-3 py-2 text-sm text-gray-500'>
-              <Loader2 className='w-4 h-4 animate-spin' />
-              <span>加载中...</span>
-            </div>
-          ) : (
-            <div
-              ref={sourceContainerRef}
-              className='relative inline-flex bg-gray-200/60 rounded-full p-0.5 sm:p-1 dark:bg-gray-700/60 backdrop-blur-sm'
+        {/* 滚动容器包装器 - 相对定位用于箭头按钮 */}
+        <div className='relative flex-1 min-w-0'>
+          {/* 左侧滚动箭头 */}
+          {showLeftArrow && (
+            <button
+              onClick={() => scrollSources('left')}
+              className='absolute left-0 top-1/2 -translate-y-1/2 z-20 w-7 h-7 flex items-center justify-center rounded-full bg-white/80 dark:bg-gray-700/80 shadow-md backdrop-blur-sm border border-gray-200/50 dark:border-gray-600/50 hover:bg-white dark:hover:bg-gray-600 transition-all duration-200'
+              aria-label='向左滚动'
             >
-              {/* 滑动指示器 */}
-              {sourceIndicatorStyle.width > 0 && (
-                <div
-                  className='absolute top-0.5 bottom-0.5 sm:top-1 sm:bottom-1 bg-white dark:bg-gray-500 rounded-full shadow-sm transition-all duration-300 ease-out'
-                  style={{
-                    left: `${sourceIndicatorStyle.left}px`,
-                    width: `${sourceIndicatorStyle.width}px`,
-                  }}
-                />
-              )}
-              {sourceOptions.map((option, index) => {
-                const isActive = currentSource === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    ref={(el) => {
-                      sourceButtonRefs.current[index] = el;
+              <ChevronLeft className='w-4 h-4 text-gray-600 dark:text-gray-300' />
+            </button>
+          )}
+
+          {/* 滚动内容区域 */}
+          <div
+            ref={scrollContainerRef}
+            className='overflow-x-auto scrollbar-hide px-1'
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {isLoadingSources ? (
+              <div className='flex items-center gap-2 px-3 py-2 text-sm text-gray-500'>
+                <Loader2 className='w-4 h-4 animate-spin' />
+                <span>加载中...</span>
+              </div>
+            ) : (
+              <div
+                ref={sourceContainerRef}
+                className='relative inline-flex bg-gray-200/60 rounded-full p-0.5 sm:p-1 dark:bg-gray-700/60 backdrop-blur-sm'
+              >
+                {/* 滑动指示器 */}
+                {sourceIndicatorStyle.width > 0 && (
+                  <div
+                    className='absolute top-0.5 bottom-0.5 sm:top-1 sm:bottom-1 bg-white dark:bg-gray-500 rounded-full shadow-sm transition-all duration-300 ease-out'
+                    style={{
+                      left: `${sourceIndicatorStyle.left}px`,
+                      width: `${sourceIndicatorStyle.width}px`,
                     }}
-                    onClick={() => onSourceChange?.(option.value)}
-                    className={`relative z-10 px-2 py-1 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap flex-shrink-0 ${
-                      isActive
-                        ? 'text-gray-900 dark:text-gray-100 cursor-default'
-                        : 'text-gray-700 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 cursor-pointer'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
+                  />
+                )}
+                {sourceOptions.map((option, index) => {
+                  const isActive = currentSource === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      ref={(el) => {
+                        sourceButtonRefs.current[index] = el;
+                      }}
+                      onClick={() => onSourceChange?.(option.value)}
+                      className={`relative z-10 px-2 py-1 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap flex-shrink-0 ${
+                        isActive
+                          ? 'text-gray-900 dark:text-gray-100 cursor-default'
+                          : 'text-gray-700 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 cursor-pointer'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 右侧滚动箭头 */}
+          {showRightArrow && (
+            <button
+              onClick={() => scrollSources('right')}
+              className='absolute right-0 top-1/2 -translate-y-1/2 z-20 w-7 h-7 flex items-center justify-center rounded-full bg-white/80 dark:bg-gray-700/80 shadow-md backdrop-blur-sm border border-gray-200/50 dark:border-gray-600/50 hover:bg-white dark:hover:bg-gray-600 transition-all duration-200'
+              aria-label='向右滚动'
+            >
+              <ChevronRight className='w-4 h-4 text-gray-600 dark:text-gray-300' />
+            </button>
           )}
         </div>
       </div>
