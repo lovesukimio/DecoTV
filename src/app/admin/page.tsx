@@ -5950,6 +5950,7 @@ function AdminPageClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<'owner' | 'admin' | null>(null);
+  const [storageMode, setStorageMode] = useState<'cloud' | 'local'>('cloud'); // 存储模式
   const [showResetConfigModal, setShowResetConfigModal] = useState(false);
   const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
     userConfig: false,
@@ -5975,36 +5976,88 @@ function AdminPageClient() {
   const [isRefreshingJar, setIsRefreshingJar] = useState(false);
   const [isCheckingJar, setIsCheckingJar] = useState(false);
 
-  // 获取管理员配置
-  // showLoading 用于控制是否在请求期间显示整体加载骨架。
-  const fetchConfig = useCallback(async (showLoading = false) => {
+  // localStorage 键名常量
+  const LOCAL_CONFIG_KEY = 'decotv_admin_config';
+
+  // 从 localStorage 读取配置
+  const loadLocalConfig = useCallback((): AdminConfig | null => {
     try {
-      if (showLoading) {
-        setLoading(true);
+      const stored = localStorage.getItem(LOCAL_CONFIG_KEY);
+      if (stored) {
+        return JSON.parse(stored) as AdminConfig;
       }
+    } catch (e) {
+      console.error('读取本地配置失败:', e);
+    }
+    return null;
+  }, []);
 
-      const response = await fetch(`/api/admin/config`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(`获取配置失败: ${data.error || response.statusText}`);
-      }
-
-      setConfig(data.Config);
-      setRole(data.Role);
-      // 成功时清除之前的错误状态
-      setError(null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '获取配置失败';
-      console.error('Admin config fetch error:', err);
-      showError(msg, showAlert);
-      setError(msg);
-    } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
+  // 保存配置到 localStorage
+  const saveLocalConfig = useCallback((configToSave: AdminConfig) => {
+    try {
+      localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(configToSave));
+      return true;
+    } catch (e) {
+      console.error('保存本地配置失败:', e);
+      return false;
     }
   }, []);
+
+  // 获取管理员配置
+  // showLoading 用于控制是否在请求期间显示整体加载骨架。
+  const fetchConfig = useCallback(
+    async (showLoading = false) => {
+      try {
+        if (showLoading) {
+          setLoading(true);
+        }
+
+        const response = await fetch(`/api/admin/config`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(`获取配置失败: ${data.error || response.statusText}`);
+        }
+
+        // 检查存储模式
+        const mode = data.storageMode || 'cloud';
+        setStorageMode(mode);
+
+        let finalConfig = data.Config;
+
+        // 如果是本地模式，尝试从 localStorage 读取并合并配置
+        if (mode === 'local') {
+          const localConfig = loadLocalConfig();
+          if (localConfig) {
+            // 用 localStorage 中的配置覆盖 API 返回的默认配置
+            finalConfig = localConfig;
+          }
+        }
+
+        setConfig(finalConfig);
+        setRole(data.Role);
+        // 成功时清除之前的错误状态
+        setError(null);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '获取配置失败';
+        console.error('Admin config fetch error:', err);
+        showError(msg, showAlert);
+        setError(msg);
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
+      }
+    },
+    [loadLocalConfig],
+  );
+
+  // 当配置变化且是本地模式时，自动同步到 localStorage
+  useEffect(() => {
+    if (storageMode === 'local' && config) {
+      saveLocalConfig(config);
+    }
+  }, [config, storageMode, saveLocalConfig]);
 
   useEffect(() => {
     // 首次加载时显示骨架
@@ -6265,6 +6318,27 @@ function AdminPageClient() {
     <PageLayout activePath='/admin'>
       <div className='px-2 sm:px-10 py-4 sm:py-8'>
         <div className='max-w-[95%] mx-auto'>
+          {/* 本地模式警告提示 */}
+          {storageMode === 'local' && (
+            <div className='mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800'>
+              <div className='flex items-start gap-3'>
+                <AlertTriangle className='w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5' />
+                <div className='flex-1'>
+                  <h4 className='text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-1'>
+                    本地存储模式
+                  </h4>
+                  <p className='text-sm text-yellow-700 dark:text-yellow-400'>
+                    未检测到云端数据库（Redis/Upstash），当前配置将仅保存在您的浏览器缓存中。
+                    <span className='font-medium'>
+                      清除浏览器数据后配置将丢失。
+                    </span>
+                    如需持久化存储，请配置 Redis 或 Upstash 数据库。
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 标题 + 重置配置按钮 */}
           <div className='flex items-center gap-2 mb-8'>
             <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
