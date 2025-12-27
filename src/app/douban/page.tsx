@@ -821,15 +821,20 @@ function DoubanPageClient() {
         // Step 4: 等待分类列表加载完成
         const source = sources.find((s) => s.key === sourceKey);
         if (!source) {
+          console.error('🔥 [Debug] Source not found:', sourceKey);
           setLoading(false);
           return;
         }
+
+        console.log('🔥 [Debug] Selected Source:', source.name, source.api);
 
         try {
           // 构建分类 API URL
           const apiUrl = source.api.endsWith('/')
             ? `${source.api}?ac=class`
             : `${source.api}/?ac=class`;
+
+          console.log('🔥 [Debug] Fetching categories from:', apiUrl);
 
           const response = await fetch(apiUrl, {
             headers: {
@@ -839,73 +844,60 @@ function DoubanPageClient() {
             },
           });
 
-          if (!response.ok) throw new Error('获取分类列表失败');
+          console.log(
+            '🔥 [Debug] Response status:',
+            response.status,
+            response.ok,
+          );
+
+          if (!response.ok)
+            throw new Error(`获取分类列表失败: ${response.status}`);
 
           const data = await response.json();
+          console.log('🔥 [Debug] Raw API Response:', data);
+
           const allCategories: SourceCategory[] = data.class || [];
+          console.log(
+            '🔥 [Debug] Parsed categories count:',
+            allCategories.length,
+          );
+          console.log(
+            '🔥 [Debug] First 5 categories:',
+            allCategories.slice(0, 5),
+          );
 
-          // === Step 5: 智能分类过滤与兜底逻辑 ===
-          // 内容类型关键词映射
-          const CONTENT_TYPE_KEYWORDS: Record<string, string[]> = {
-            movie: ['电影', '影片', '大片', '院线', '4K', '蓝光', '片'],
-            tv: [
-              '电视剧',
-              '剧集',
-              '连续剧',
-              '国产剧',
-              '美剧',
-              '韩剧',
-              '日剧',
-              '港剧',
-              '剧',
-            ],
-            anime: ['动漫', '动画', '番剧', '动画片', '卡通', '漫画'],
-            show: ['综艺', '真人秀', '脱口秀', '晚会', '纪录片'],
-          };
+          // ========================================
+          // 🚀 绝对直通模式 - 移除所有过滤逻辑
+          // 直接使用 API 返回的原始分类，不做任何过滤
+          // ========================================
 
-          const keywords = CONTENT_TYPE_KEYWORDS[type] || [];
-
-          // 尝试根据当前频道类型过滤分类
-          let filteredCategories = allCategories.filter((cat) => {
-            const name = cat.type_name.toLowerCase();
-            return keywords.some((keyword) =>
-              name.includes(keyword.toLowerCase()),
-            );
-          });
-
-          // 【关键兜底】如果过滤结果为空，使用降级策略
-          if (filteredCategories.length === 0) {
-            // 降级策略 1: 尝试匹配包含"片"或"剧"的分类
-            filteredCategories = allCategories.filter((cat) => {
-              const name = cat.type_name;
-              return (
-                name.includes('片') ||
-                name.includes('剧') ||
-                name.includes('漫')
-              );
-            });
-          }
-
-          // 降级策略 2: 如果仍为空，显示前 20 个分类（参考 LunaTV 逻辑）
-          if (filteredCategories.length === 0) {
-            filteredCategories = allCategories.slice(0, 20);
-          }
-
-          // 【核心修复】更新 filteredSourceCategories state 供渲染使用
-          setFilteredSourceCategories(filteredCategories);
-
-          // Step 6: 【强制自动选中】选中过滤后列表的第一个分类
-          if (filteredCategories.length > 0) {
-            const firstCategory = filteredCategories[0];
-            setSelectedSourceCategory(firstCategory);
-            // Step 7: 立即触发数据加载（不等待用户点击）
-            fetchSourceCategoryData(firstCategory);
-          } else {
-            // 没有分类时停止 loading
+          if (allCategories.length === 0) {
+            console.warn('🔥 [Debug] API returned empty categories!');
+            // 提示用户：源没有返回分类数据
+            setFilteredSourceCategories([]);
             setLoading(false);
+            return;
           }
+
+          // 【绝对直通】直接使用原始分类，不过滤
+          console.log(
+            '🔥 [Debug] Setting categories (NO FILTER):',
+            allCategories.length,
+          );
+          setFilteredSourceCategories(allCategories);
+
+          // 【强制自动选中】立即选中第一个分类
+          const firstCategory = allCategories[0];
+          console.log(
+            '🔥 [Debug] Auto-selecting first category:',
+            firstCategory,
+          );
+          setSelectedSourceCategory(firstCategory);
+
+          // 立即触发数据加载（不等待用户点击）
+          fetchSourceCategoryData(firstCategory);
         } catch (err) {
-          console.error('获取源分类失败:', err);
+          console.error('🔥 [Debug] Fetch error:', err);
           setFilteredSourceCategories([]); // 出错时清空
           setLoading(false);
         }

@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-console,react-hooks/exhaustive-deps */
 
 'use client';
 
@@ -593,9 +593,43 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
 
   // 渲染源分类选择器（当选择了特定数据源时显示）
   const renderSourceCategorySelector = () => {
-    if (currentSource === 'auto' || sourceCategories.length === 0) {
+    // 🔥 调试日志
+    console.log('🔥 [DoubanSelector] renderSourceCategorySelector called');
+    console.log('🔥 [DoubanSelector] currentSource:', currentSource);
+    console.log('🔥 [DoubanSelector] sourceCategories:', sourceCategories);
+    console.log(
+      '🔥 [DoubanSelector] sourceCategories.length:',
+      sourceCategories.length,
+    );
+
+    if (currentSource === 'auto') {
+      console.log('🔥 [DoubanSelector] Skipping: currentSource is auto');
       return null;
     }
+
+    if (sourceCategories.length === 0) {
+      console.log('🔥 [DoubanSelector] Skipping: sourceCategories is empty');
+      // 显示空状态提示而不是直接返回 null
+      return (
+        <div className='flex flex-col gap-2'>
+          <div className='flex items-center justify-between'>
+            <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400'>
+              {sources.find((s) => s.key === currentSource)?.name || '源'} 分类
+            </span>
+          </div>
+          <div className='text-sm text-gray-500 dark:text-gray-400 py-2'>
+            {isLoadingCategories
+              ? '加载中...'
+              : '该源暂无分类数据（可能受跨域限制）'}
+          </div>
+        </div>
+      );
+    }
+
+    console.log(
+      '🔥 [DoubanSelector] Rendering categories:',
+      sourceCategories.length,
+    );
 
     return (
       <div className='flex flex-col gap-2'>
