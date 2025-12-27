@@ -88,6 +88,11 @@ function DoubanPageClient() {
     getFilteredCategories,
   } = useSourceFilter();
 
+  // 【核心修复】存储当前源的过滤后分类列表（用于渲染）
+  const [filteredSourceCategories, setFilteredSourceCategories] = useState<
+    SourceCategory[]
+  >([]);
+
   // 选中的源分类
   const [selectedSourceCategory, setSelectedSourceCategory] =
     useState<SourceCategory | null>(null);
@@ -779,6 +784,7 @@ function DoubanPageClient() {
       setHasMore(true);
       setIsLoadingMore(false);
       setSelectedSourceCategory(null); // 清除旧分类ID，防止污染
+      setFilteredSourceCategories([]); // 清空过滤后分类列表
       setIsLoadingSourceData(false);
 
       // === Step 2: 切换源状态 ===
@@ -880,16 +886,19 @@ function DoubanPageClient() {
             });
           }
 
-          // 降级策略 2: 如果仍为空，显示前 15 个分类
+          // 降级策略 2: 如果仍为空，显示前 20 个分类（参考 LunaTV 逻辑）
           if (filteredCategories.length === 0) {
-            filteredCategories = allCategories.slice(0, 15);
+            filteredCategories = allCategories.slice(0, 20);
           }
+
+          // 【核心修复】更新 filteredSourceCategories state 供渲染使用
+          setFilteredSourceCategories(filteredCategories);
 
           // Step 6: 【强制自动选中】选中过滤后列表的第一个分类
           if (filteredCategories.length > 0) {
             const firstCategory = filteredCategories[0];
             setSelectedSourceCategory(firstCategory);
-            // Step 7: 触发数据加载
+            // Step 7: 立即触发数据加载（不等待用户点击）
             fetchSourceCategoryData(firstCategory);
           } else {
             // 没有分类时停止 loading
@@ -897,6 +906,7 @@ function DoubanPageClient() {
           }
         } catch (err) {
           console.error('获取源分类失败:', err);
+          setFilteredSourceCategories([]); // 出错时清空
           setLoading(false);
         }
       }
@@ -979,9 +989,15 @@ function DoubanPageClient() {
                 // 数据源相关 props
                 sources={sources}
                 currentSource={currentSource}
-                sourceCategories={getFilteredCategories(
-                  type as 'movie' | 'tv' | 'anime' | 'show',
-                )}
+                // 【核心修复】使用 filteredSourceCategories state 而非 getFilteredCategories
+                // 这样确保渲染的分类与 handleSourceChange 处理的分类一致
+                sourceCategories={
+                  currentSource !== 'auto'
+                    ? filteredSourceCategories
+                    : getFilteredCategories(
+                        type as 'movie' | 'tv' | 'anime' | 'show',
+                      )
+                }
                 isLoadingSources={isLoadingSources}
                 isLoadingCategories={isLoadingCategories}
                 onSourceChange={handleSourceChange}

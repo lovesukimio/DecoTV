@@ -598,11 +598,17 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     }
 
     return (
-      <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
-        <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-12'>
-          分类
-        </span>
-        <div className='overflow-x-auto'>
+      <div className='flex flex-col gap-2'>
+        <div className='flex items-center justify-between'>
+          <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400'>
+            {sources.find((s) => s.key === currentSource)?.name || '源'} 分类
+          </span>
+          <span className='text-xs text-gray-400 dark:text-gray-500'>
+            {sourceCategories.length} 个分类
+          </span>
+        </div>
+        {/* 横向滚动容器 - 支持大量分类显示 */}
+        <div className='overflow-x-auto scrollbar-hide -mx-2 px-2'>
           {isLoadingCategories ? (
             <div className='flex items-center gap-2 px-3 py-2 text-sm text-gray-500'>
               <Loader2 className='w-4 h-4 animate-spin' />
@@ -611,7 +617,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
           ) : (
             <div
               ref={sourceCategoryContainerRef}
-              className='relative inline-flex bg-gray-200/60 rounded-full p-0.5 sm:p-1 dark:bg-gray-700/60 backdrop-blur-sm'
+              className='relative inline-flex bg-gray-200/60 rounded-full p-0.5 sm:p-1 dark:bg-gray-700/60 backdrop-blur-sm flex-nowrap'
             >
               {/* 滑动指示器 */}
               {sourceCategoryIndicatorStyle.width > 0 && (
