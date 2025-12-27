@@ -729,14 +729,19 @@ function DoubanPageClient() {
       setIsLoadingSourceData(true);
       try {
         // 构建视频列表 API URL
-        const apiUrl = source.api.endsWith('/')
+        const originalApiUrl = source.api.endsWith('/')
           ? `${source.api}?ac=videolist&t=${category.type_id}&pg=1`
           : `${source.api}/?ac=videolist&t=${category.type_id}&pg=1`;
 
-        const response = await fetch(apiUrl, {
+        // 🛡️ 使用服务端代理解决 Mixed Content 问题
+        const isHttpUrl = originalApiUrl.startsWith('http://');
+        const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
+        const fetchUrl = isHttpUrl ? proxyUrl : originalApiUrl;
+
+        console.log('🔥 [fetchSourceCategoryData] Fetching:', fetchUrl);
+
+        const response = await fetch(fetchUrl, {
           headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             Accept: 'application/json',
           },
         });
@@ -747,6 +752,7 @@ function DoubanPageClient() {
 
         const data = await response.json();
         const items = data.list || [];
+        console.log('✅ [fetchSourceCategoryData] Got', items.length, 'items');
 
         // 转换为 DoubanItem 格式
         const convertedItems: DoubanItem[] = items.map((item: any) => ({
@@ -830,16 +836,25 @@ function DoubanPageClient() {
 
         try {
           // 构建分类 API URL
-          const apiUrl = source.api.endsWith('/')
+          const originalApiUrl = source.api.endsWith('/')
             ? `${source.api}?ac=class`
             : `${source.api}/?ac=class`;
 
-          console.log('🔥 [Debug] Fetching categories from:', apiUrl);
+          console.log('🔥 [Debug] Original API URL:', originalApiUrl);
 
-          const response = await fetch(apiUrl, {
+          // ========================================
+          // 🛡️ 使用服务端代理解决 Mixed Content 问题
+          // HTTPS 页面无法直接请求 HTTP API，必须通过服务端代理
+          // ========================================
+          const isHttpUrl = originalApiUrl.startsWith('http://');
+          const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
+          const fetchUrl = isHttpUrl ? proxyUrl : originalApiUrl;
+
+          console.log('🔥 [Debug] Using proxy:', isHttpUrl);
+          console.log('🔥 [Debug] Fetch URL:', fetchUrl);
+
+          const response = await fetch(fetchUrl, {
             headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
               Accept: 'application/json',
             },
           });
@@ -850,11 +865,15 @@ function DoubanPageClient() {
             response.ok,
           );
 
-          if (!response.ok)
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            console.error('🔥 [Debug] Response error:', errorText);
             throw new Error(`获取分类列表失败: ${response.status}`);
+          }
 
           const data = await response.json();
           console.log('🔥 [Debug] Raw API Response:', data);
+          console.log('✅ [Proxy Fetch Success] Data keys:', Object.keys(data));
 
           const allCategories: SourceCategory[] = data.class || [];
           console.log(
