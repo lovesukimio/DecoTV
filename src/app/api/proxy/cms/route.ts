@@ -12,9 +12,14 @@
  * 技术选择：
  * - 使用 Node.js Runtime（非 Edge）以获得更好的网络兼容性
  * - Node.js 对各类老旧 CMS 接口的非标响应处理更宽容
+ *
+ * 🛡️ 纵深防御策略 (Layer 2):
+ * - 拦截对成人源的代理请求，防止 OrionTV 等客户端绕过配置过滤
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+
+import { getConfig } from '@/lib/config';
 
 // 使用 Node.js Runtime（更好的兼容性）
 export const runtime = 'nodejs';
@@ -80,6 +85,65 @@ export async function GET(request: NextRequest) {
       { error: '不允许代理此 URL', code: 'BLOCKED', target: decodedUrl },
       { status: 403 },
     );
+  }
+
+  // ========================================
+  // 🛡️ 纵深防御 Layer 2: 成人源拦截
+  // 即使客户端试图直接请求成人源，也会被拦截
+  // ========================================
+  const filterParam = searchParams.get('filter');
+  const isAdultModeEnabled = filterParam === 'off'; // 只有显式 filter=off 才允许成人内容
+
+  if (!isAdultModeEnabled) {
+    try {
+      // 获取配置中的所有源
+      const cfg = await getConfig();
+      const allSources = cfg.SourceConfig || [];
+
+      // 检查请求的 URL 是否属于成人源
+      const targetOrigin = new URL(decodedUrl).origin.toLowerCase();
+
+      const matchedAdultSource = allSources.find((source) => {
+        if (source.is_adult !== true) return false;
+        try {
+          const sourceOrigin = new URL(source.api).origin.toLowerCase();
+          return (
+            targetOrigin === sourceOrigin ||
+            decodedUrl.toLowerCase().includes(sourceOrigin)
+          );
+        } catch {
+          // 如果源 API 不是有效 URL，尝试字符串包含匹配
+          return decodedUrl.toLowerCase().includes(source.api.toLowerCase());
+        }
+      });
+
+      if (matchedAdultSource) {
+        console.log(
+          `[CMS Proxy] 🚫 拦截未授权的成人源请求: ${matchedAdultSource.key} (${matchedAdultSource.name})`,
+        );
+        console.log(`[CMS Proxy] 🚫 被拦截的 URL: ${decodedUrl}`);
+
+        // 返回空数据，而不是 403，避免客户端报错
+        return NextResponse.json(
+          {
+            code: 1,
+            msg: 'access denied',
+            list: [],
+            class: [],
+            total: 0,
+            page: 1,
+            pagecount: 0,
+          },
+          {
+            status: 200,
+            headers: corsHeaders(),
+          },
+        );
+      }
+    } catch (err) {
+      // 配置获取失败不应阻止正常请求，记录警告并继续
+      console.warn('[CMS Proxy] ⚠️ 无法检查成人源配置:', err);
+    }
   }
 
   console.log('[CMS Proxy] 🚀 Fetching:', decodedUrl);

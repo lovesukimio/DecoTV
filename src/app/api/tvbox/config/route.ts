@@ -146,18 +146,26 @@ export async function GET(req: NextRequest) {
 
     const cfg = await getConfig();
 
+    // 🛡️ 纵深防御 Layer 1: 配置接口严格过滤
     // 确定是否应该过滤成人内容
-    // URL 参数优先级: ?filter=off (禁用过滤) > ?adult=1 (启用成人) > 全局配置
-    let shouldFilterAdult = !cfg.SiteConfig.DisableYellowFilter; // 默认使用全局配置
+    // 核心逻辑：只有显式传入 filter=off 才允许成人内容
+    // 默认情况（无参数）= 严格安全模式
+    let shouldFilterAdult = true; // 默认严格过滤
 
+    // 只有显式传入 filter=off 才关闭过滤
     if (filterParam === 'off' || filterParam === 'disable') {
       shouldFilterAdult = false; // 禁用过滤 = 显示成人内容
-    } else if (filterParam === 'on' || filterParam === 'enable') {
-      shouldFilterAdult = true; // 启用过滤 = 隐藏成人内容
+      console.log(
+        '[TVBox] ⚠️ Adult filter DISABLED by explicit filter=off parameter',
+      );
     } else if (adultParam === '1' || adultParam === 'true') {
       shouldFilterAdult = false; // 显式启用成人内容
-    } else if (adultParam === '0' || adultParam === 'false') {
-      shouldFilterAdult = true; // 显式禁用成人内容
+      console.log(
+        '[TVBox] ⚠️ Adult filter DISABLED by explicit adult=1 parameter',
+      );
+    } else {
+      // 其他所有情况（包括无参数）都启用过滤
+      console.log('[TVBox] 🔒 Adult filter ENABLED (strict safe mode)');
     }
 
     const forceSpiderRefresh = searchParams.get('forceSpiderRefresh') === '1';
