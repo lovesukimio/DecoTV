@@ -141,7 +141,7 @@ export async function GET(req: NextRequest) {
       'filter:',
       filterParam,
       'proxy:',
-      useSmartProxy
+      useSmartProxy,
     );
 
     const cfg = await getConfig();
@@ -169,7 +169,7 @@ export async function GET(req: NextRequest) {
       jarInfo = await Promise.race([
         getSpiderJar(forceSpiderRefresh),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Spider JAR timeout')), 3000)
+          setTimeout(() => reject(new Error('Spider JAR timeout')), 3000),
         ),
       ]);
     } catch (err) {
@@ -240,17 +240,93 @@ export async function GET(req: NextRequest) {
     // 🔒 根据过滤设置筛选视频源
     let sourcesToUse = (cfg.SourceConfig || []).filter((s) => !s.disabled);
 
+    // 🚨 成人内容关键词列表（用于名称检测）
+    const adultKeywords = [
+      'av',
+      'AV',
+      '成人',
+      '福利',
+      '美女',
+      '女优',
+      '女神',
+      '私房',
+      '网红',
+      '资源',
+      'adult',
+      'xxx',
+      'porn',
+      'sex',
+      '色情',
+      '激情',
+      '吸引',
+      '无码',
+      '高清',
+      '日韩',
+      '欧美',
+      '网红',
+      '漂亮',
+      '娜娜',
+      '芒果',
+      '女仔',
+      '甸男',
+      '同志',
+      '日本',
+      '韩国',
+      'JAV',
+      'jav',
+      'hentai',
+      '不可描述',
+      '18+',
+      'R18',
+      'r18',
+      'nsfw',
+      'NSFW',
+      '偶像',
+      '生肉',
+      '里番',
+      '凌辱',
+    ];
+
+    // 检测名称是否包含成人内容关键词
+    const isAdultByName = (name: string): boolean => {
+      if (!name) return false;
+      const lowerName = name.toLowerCase();
+      return adultKeywords.some((keyword) =>
+        lowerName.includes(keyword.toLowerCase()),
+      );
+    };
+
     if (shouldFilterAdult) {
-      // 过滤掉成人资源源
-      sourcesToUse = sourcesToUse.filter((s) => !s.is_adult);
+      const beforeCount = sourcesToUse.length;
+
+      // 🚨 严格过滤：同时检查 is_adult 标记和名称关键词
+      sourcesToUse = sourcesToUse.filter((s) => {
+        // 检查 1: is_adult 标记
+        if (s.is_adult === true) {
+          console.log(
+            `[TVBox] 🚨 Filtered by is_adult flag: ${s.key} (${s.name})`,
+          );
+          return false;
+        }
+
+        // 检查 2: 名称关键词检测（深度检测）
+        if (isAdultByName(s.name) || isAdultByName(s.key)) {
+          console.log(
+            `[TVBox] 🚨 Filtered by keyword detection: ${s.key} (${s.name})`,
+          );
+          return false;
+        }
+
+        return true;
+      });
+
+      const filteredCount = beforeCount - sourcesToUse.length;
       console.log(
-        `[TVBox] Adult filter enabled, filtered ${
-          cfg.SourceConfig.length - sourcesToUse.length
-        } adult sources`
+        `[TVBox] ✅ Adult filter enabled: ${filteredCount} sources removed, ${sourcesToUse.length} sources remaining`,
       );
     } else {
       console.log(
-        `[TVBox] Adult filter disabled, returning all ${sourcesToUse.length} sources`
+        `[TVBox] ⚠️ Adult filter disabled, returning all ${sourcesToUse.length} sources`,
       );
     }
 
@@ -280,7 +356,7 @@ export async function GET(req: NextRequest) {
         // 替换为智能搜索代理端点
         // TVBox会在URL后拼接搜索关键词，格式：api + wd={keyword}
         site.api = `${baseUrl}/api/tvbox/search?source=${encodeURIComponent(
-          s.key
+          s.key,
         )}&filter=${shouldFilterAdult ? 'on' : 'off'}&wd=`;
 
         console.log(`[TVBox] Enabled smart proxy for source: ${s.key}`);
@@ -388,20 +464,43 @@ export async function GET(req: NextRequest) {
       return site;
     });
 
-    // 构建直播配置
-    const lives = (cfg.LiveConfig || [])
-      .filter((l) => !l.disabled)
-      .map((l) => ({
-        name: l.name,
-        type: 0, // 0-m3u格式
-        url: l.url,
-        ua:
-          l.ua ||
-          'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Mobile Safari/537.36',
-        epg: l.epg || '',
-        logo: '',
-        group: '直播',
-      }));
+    // 构建直播配置（同样应用成人内容过滤）
+    let livesToUse = (cfg.LiveConfig || []).filter((l) => !l.disabled);
+
+    if (shouldFilterAdult) {
+      const beforeLiveCount = livesToUse.length;
+      livesToUse = livesToUse.filter((l) => {
+        // 检查 is_adult 标记（如果存在）
+        if ((l as any).is_adult === true) {
+          console.log(`[TVBox] 🚨 Filtered live by is_adult: ${l.name}`);
+          return false;
+        }
+        // 检查名称关键词
+        if (isAdultByName(l.name)) {
+          console.log(`[TVBox] 🚨 Filtered live by keyword: ${l.name}`);
+          return false;
+        }
+        return true;
+      });
+      const filteredLiveCount = beforeLiveCount - livesToUse.length;
+      if (filteredLiveCount > 0) {
+        console.log(
+          `[TVBox] ✅ Filtered ${filteredLiveCount} adult live sources`,
+        );
+      }
+    }
+
+    const lives = livesToUse.map((l) => ({
+      name: l.name,
+      type: 0, // 0-m3u格式
+      url: l.url,
+      ua:
+        l.ua ||
+        'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Mobile Safari/537.36',
+      epg: l.epg || '',
+      logo: '',
+      group: '直播',
+    }));
 
     // 构建配置对象（支持多种模式优化）
     let tvboxConfig: any;
@@ -742,7 +841,7 @@ export async function GET(req: NextRequest) {
       'https://gitcode.net/qq_26898231/TVBox/-/raw/main/JAR/XC.jar';
     // 保留候选列表以便前端展示（可选）
     (tvboxConfig as any).spider_candidates = REMOTE_SPIDER_CANDIDATES.map(
-      (c) => c.url
+      (c) => c.url,
     );
 
     // 配置验证和清理
@@ -776,7 +875,7 @@ export async function GET(req: NextRequest) {
           }
           return value;
         },
-        0
+        0,
       ); // 紧凑格式，不使用缩进
 
       // TVBox体检要求content-type为text/plain
@@ -799,7 +898,7 @@ export async function GET(req: NextRequest) {
         error: 'TVBox 配置生成失败',
         details: e instanceof Error ? e.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
