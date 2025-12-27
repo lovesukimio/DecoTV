@@ -240,89 +240,25 @@ export async function GET(req: NextRequest) {
     // 🔒 根据过滤设置筛选视频源
     let sourcesToUse = (cfg.SourceConfig || []).filter((s) => !s.disabled);
 
-    // 🚨 成人内容关键词列表（用于名称检测）
-    const adultKeywords = [
-      'av',
-      'AV',
-      '成人',
-      '福利',
-      '美女',
-      '女优',
-      '女神',
-      '私房',
-      '网红',
-      '资源',
-      'adult',
-      'xxx',
-      'porn',
-      'sex',
-      '色情',
-      '激情',
-      '吸引',
-      '无码',
-      '高清',
-      '日韩',
-      '欧美',
-      '网红',
-      '漂亮',
-      '娜娜',
-      '芒果',
-      '女仔',
-      '甸男',
-      '同志',
-      '日本',
-      '韩国',
-      'JAV',
-      'jav',
-      'hentai',
-      '不可描述',
-      '18+',
-      'R18',
-      'r18',
-      'nsfw',
-      'NSFW',
-      '偶像',
-      '生肉',
-      '里番',
-      '凌辱',
-    ];
-
-    // 检测名称是否包含成人内容关键词
-    const isAdultByName = (name: string): boolean => {
-      if (!name) return false;
-      const lowerName = name.toLowerCase();
-      return adultKeywords.some((keyword) =>
-        lowerName.includes(keyword.toLowerCase()),
-      );
-    };
-
+    // 🚨 成人内容过滤：仅依据显式标记 is_adult === true
+    // 注意：不再使用关键词推断，避免误伤正常源
     if (shouldFilterAdult) {
       const beforeCount = sourcesToUse.length;
 
-      // 🚨 严格过滤：同时检查 is_adult 标记和名称关键词
+      // 仅检查显式标记 is_adult === true，不做任何模糊推测
       sourcesToUse = sourcesToUse.filter((s) => {
-        // 检查 1: is_adult 标记
         if (s.is_adult === true) {
           console.log(
             `[TVBox] 🚨 Filtered by is_adult flag: ${s.key} (${s.name})`,
           );
           return false;
         }
-
-        // 检查 2: 名称关键词检测（深度检测）
-        if (isAdultByName(s.name) || isAdultByName(s.key)) {
-          console.log(
-            `[TVBox] 🚨 Filtered by keyword detection: ${s.key} (${s.name})`,
-          );
-          return false;
-        }
-
         return true;
       });
 
       const filteredCount = beforeCount - sourcesToUse.length;
       console.log(
-        `[TVBox] ✅ Adult filter enabled: ${filteredCount} sources removed, ${sourcesToUse.length} sources remaining`,
+        `[TVBox] ✅ Adult filter (explicit only): ${filteredCount} sources removed, ${sourcesToUse.length} remaining`,
       );
     } else {
       console.log(
@@ -464,20 +400,15 @@ export async function GET(req: NextRequest) {
       return site;
     });
 
-    // 构建直播配置（同样应用成人内容过滤）
+    // 构建直播配置（同样应用成人内容过滤，仅依据显式标记）
     let livesToUse = (cfg.LiveConfig || []).filter((l) => !l.disabled);
 
     if (shouldFilterAdult) {
       const beforeLiveCount = livesToUse.length;
       livesToUse = livesToUse.filter((l) => {
-        // 检查 is_adult 标记（如果存在）
+        // 仅检查显式标记 is_adult === true
         if ((l as any).is_adult === true) {
           console.log(`[TVBox] 🚨 Filtered live by is_adult: ${l.name}`);
-          return false;
-        }
-        // 检查名称关键词
-        if (isAdultByName(l.name)) {
-          console.log(`[TVBox] 🚨 Filtered live by keyword: ${l.name}`);
           return false;
         }
         return true;
@@ -885,7 +816,11 @@ export async function GET(req: NextRequest) {
     return new NextResponse(responseContent, {
       headers: {
         'content-type': contentType,
-        'cache-control': 'no-store, no-cache, must-revalidate',
+        // 🚨 严格禁止缓存，确保 OrionTV 等客户端每次获取最新配置
+        'cache-control':
+          'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        pragma: 'no-cache',
+        expires: '0',
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET, OPTIONS',
         'access-control-allow-headers': 'Content-Type',
