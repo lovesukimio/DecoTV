@@ -733,10 +733,12 @@ function DoubanPageClient() {
           ? `${source.api}?ac=videolist&t=${category.type_id}&pg=1`
           : `${source.api}/?ac=videolist&t=${category.type_id}&pg=1`;
 
-        // 🛡️ 使用服务端代理解决 Mixed Content 问题
-        const isHttpUrl = originalApiUrl.startsWith('http://');
+        // 🛡️ 全量代理：所有外部 URL 都走服务端代理（解决 Mixed Content + CORS）
+        const isExternalUrl =
+          originalApiUrl.startsWith('http://') ||
+          originalApiUrl.startsWith('https://');
         const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
-        const fetchUrl = isHttpUrl ? proxyUrl : originalApiUrl;
+        const fetchUrl = isExternalUrl ? proxyUrl : originalApiUrl;
 
         console.log('🔥 [fetchSourceCategoryData] Fetching:', fetchUrl);
 
@@ -843,14 +845,16 @@ function DoubanPageClient() {
           console.log('🔥 [Debug] Original API URL:', originalApiUrl);
 
           // ========================================
-          // 🛡️ 使用服务端代理解决 Mixed Content 问题
-          // HTTPS 页面无法直接请求 HTTP API，必须通过服务端代理
+          // 🛡️ 全量代理：所有外部 URL 都走服务端代理
+          // 不仅解决 Mixed Content (HTTP)，也解决 CORS (HTTPS)
           // ========================================
-          const isHttpUrl = originalApiUrl.startsWith('http://');
+          const isExternalUrl =
+            originalApiUrl.startsWith('http://') ||
+            originalApiUrl.startsWith('https://');
           const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
-          const fetchUrl = isHttpUrl ? proxyUrl : originalApiUrl;
+          const fetchUrl = isExternalUrl ? proxyUrl : originalApiUrl;
 
-          console.log('🔥 [Debug] Using proxy:', isHttpUrl);
+          console.log('🔥 [Debug] Using proxy:', isExternalUrl);
           console.log('🔥 [Debug] Fetch URL:', fetchUrl);
 
           const response = await fetch(fetchUrl, {

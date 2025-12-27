@@ -1,4 +1,4 @@
-/* eslint-disable no-console,react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/exhaustive-deps */
 
 'use client';
 
@@ -593,22 +593,11 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
 
   // 渲染源分类选择器（当选择了特定数据源时显示）
   const renderSourceCategorySelector = () => {
-    // 🔥 调试日志
-    console.log('🔥 [DoubanSelector] renderSourceCategorySelector called');
-    console.log('🔥 [DoubanSelector] currentSource:', currentSource);
-    console.log('🔥 [DoubanSelector] sourceCategories:', sourceCategories);
-    console.log(
-      '🔥 [DoubanSelector] sourceCategories.length:',
-      sourceCategories.length,
-    );
-
     if (currentSource === 'auto') {
-      console.log('🔥 [DoubanSelector] Skipping: currentSource is auto');
       return null;
     }
 
     if (sourceCategories.length === 0) {
-      console.log('🔥 [DoubanSelector] Skipping: sourceCategories is empty');
       // 显示空状态提示而不是直接返回 null
       return (
         <div className='flex flex-col gap-2'>
@@ -625,11 +614,6 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
         </div>
       );
     }
-
-    console.log(
-      '🔥 [DoubanSelector] Rendering categories:',
-      sourceCategories.length,
-    );
 
     return (
       <div className='flex flex-col gap-2'>
