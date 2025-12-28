@@ -1,85 +1,214 @@
 /* eslint-disable no-console */
 import * as cheerio from 'cheerio';
+import { unstable_cache } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-// API Keys
-const API_KEY_A = '0ab215a8b1977939201640fa14c66bab'; // 用于详情、搜索
-const API_KEY_B = '0df993c66c0c636e29ecbb5344252a4a'; // 用于评论、剧照
+// API Keys (备用，主要使用爬虫)
+const API_KEY_A = '0ab215a8b1977939201640fa14c66bab';
+const API_KEY_B = '0df993c66c0c636e29ecbb5344252a4a';
 
-// 豆瓣 API 基础 URL
+// URL 常量
 const DOUBAN_API_BASE = 'https://api.douban.com/v2';
 const DOUBAN_WEB_BASE = 'https://movie.douban.com';
 
-// 通用请求头
+// Chrome/Mac 真实 User-Agent
 const BROWSER_HEADERS = {
   'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   Accept:
     'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
   'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
   Referer: 'https://movie.douban.com/',
+  'Sec-Ch-Ua':
+    '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"macOS"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'same-origin',
   'Cache-Control': 'no-cache',
 };
 
 // ============================================================================
-// 爬虫解析函数
+// 数据类型定义
+// ============================================================================
+
+interface ScrapedComment {
+  id: string;
+  created_at: string;
+  content: string;
+  useful_count: number;
+  rating: { max: number; value: number; min: number } | null;
+  author: {
+    id: string;
+    uid: string;
+    name: string;
+    avatar: string;
+    alt: string;
+  };
+}
+
+interface ScrapedRecommendation {
+  id: string;
+  title: string;
+  images: { small: string; medium: string; large: string };
+  alt: string;
+}
+
+interface ScrapedCelebrity {
+  id: string;
+  name: string;
+  alt: string;
+  category: string;
+  role: string;
+  avatars: { small: string; medium: string; large: string };
+}
+
+interface ScrapedFullData {
+  // 基础信息
+  title: string;
+  original_title: string;
+  year: string;
+  rating: { average: number; stars: string; count: number } | null;
+  genres: string[];
+  countries: string[];
+  durations: string[];
+  summary: string;
+  poster: string;
+  // 富媒体数据
+  recommendations: ScrapedRecommendation[];
+  hotComments: ScrapedComment[];
+  directors: ScrapedCelebrity[];
+  actors: ScrapedCelebrity[];
+  // 元数据
+  scrapedAt: number;
+}
+
+// ============================================================================
+// 核心爬虫函数
 // ============================================================================
 
 /**
- * 从豆瓣网页提取短评
+ * 从豆瓣网页一次性抓取所有数据
+ * 包括：基础信息、推荐影片、热门短评、导演/演员
  */
-async function scrapeComments(
-  subjectId: string,
-): Promise<{ comments: unknown[]; total: number }> {
-  const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/comments?status=P&sort=new_score`;
+async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
+  console.log(`[Douban Scraper] 开始爬取: ${subjectId}`);
+  const startTime = Date.now();
+
+  const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/`;
 
   const response = await fetch(url, {
     headers: BROWSER_HEADERS,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(20000),
   });
 
   if (!response.ok) {
-    throw new Error(`爬取短评失败: ${response.status}`);
+    throw new Error(`爬取失败: ${response.status}`);
   }
 
   const html = await response.text();
   const $ = cheerio.load(html);
-  const comments: unknown[] = [];
 
-  // 解析评论列表
-  $('.comment-item').each((_, element) => {
+  // ========== 基础信息 ==========
+  const title =
+    $('span[property="v:itemreviewed"]').text().trim() ||
+    $('title').text().split(' ')[0];
+  const originalTitle =
+    $('span.pl:contains("又名")').next().text().trim() || '';
+  const year = $('span.year').text().replace(/[()]/g, '').trim() || '';
+
+  // 评分
+  const ratingAvg = parseFloat($('strong.rating_num').text().trim()) || 0;
+  const ratingStars = $('span.rating_per').first().text().trim() || '';
+  const ratingCount =
+    parseInt($('span[property="v:votes"]').text().trim()) || 0;
+
+  // 类型、地区、时长
+  const genres: string[] = [];
+  $('span[property="v:genre"]').each((_, el) => {
+    genres.push($(el).text().trim());
+  });
+
+  const countries: string[] = [];
+  const countryText = $('span.pl:contains("制片国家")').parent().text();
+  const countryMatch = countryText.match(/制片国家\/地区:\s*(.+)/);
+  if (countryMatch) {
+    countries.push(...countryMatch[1].split('/').map((s) => s.trim()));
+  }
+
+  const durations: string[] = [];
+  $('span[property="v:runtime"]').each((_, el) => {
+    durations.push($(el).text().trim());
+  });
+
+  // 简介 (完整版)
+  let summary = '';
+  const $hiddenSummary = $('span.all.hidden');
+  if ($hiddenSummary.length) {
+    summary = $hiddenSummary.text().trim();
+  } else {
+    summary = $('span[property="v:summary"]').text().trim();
+  }
+  summary = summary.replace(/\s+/g, ' ').trim();
+
+  // 海报
+  const poster = $('#mainpic img').attr('src') || '';
+
+  // ========== 推荐影片 ==========
+  const recommendations: ScrapedRecommendation[] = [];
+  $('#recommendations .recommendations-bd dl').each((_, element) => {
+    const $item = $(element);
+    const $link = $item.find('dd a');
+    const $img = $item.find('dt img');
+
+    const href = $link.attr('href') || '';
+    const idMatch = href.match(/subject\/(\d+)/);
+    const recId = idMatch ? idMatch[1] : '';
+    const recTitle = $link.text().trim();
+    const recPoster = $img.attr('src') || '';
+
+    if (recId && recTitle) {
+      recommendations.push({
+        id: recId,
+        title: recTitle,
+        images: {
+          small: recPoster,
+          medium: recPoster.replace('s_ratio', 'm_ratio'),
+          large: recPoster.replace('s_ratio', 'l_ratio'),
+        },
+        alt: href,
+      });
+    }
+  });
+
+  // ========== 热门短评 ==========
+  const hotComments: ScrapedComment[] = [];
+  $('#hot-comments .comment-item').each((_, element) => {
     const $item = $(element);
 
-    // 提取用户信息
     const $avatar = $item.find('.avatar a img');
     const $userLink = $item.find('.comment-info a');
     const avatarUrl = $avatar.attr('src') || '';
     const userName = $userLink.text().trim();
     const userLink = $userLink.attr('href') || '';
 
-    // 提取评分 (星级)
     const ratingClass = $item.find('.comment-info .rating').attr('class') || '';
     const ratingMatch = ratingClass.match(/allstar(\d+)/);
     const ratingValue = ratingMatch ? parseInt(ratingMatch[1]) / 10 : 0;
 
-    // 提取评论内容和时间
     const content = $item.find('.short').text().trim();
     const time =
       $item.find('.comment-time').attr('title') ||
       $item.find('.comment-time').text().trim();
-
-    // 提取点赞数
-    const voteText = $item.find('.vote-count').text().trim();
-    const usefulCount = parseInt(voteText) || 0;
-
-    // 提取评论 ID
+    const usefulCount = parseInt($item.find('.vote-count').text().trim()) || 0;
     const commentId =
-      $item.attr('data-cid') || `scrape_${Date.now()}_${Math.random()}`;
+      $item.attr('data-cid') || `hot_${Date.now()}_${Math.random()}`;
 
     if (content) {
-      comments.push({
+      hotComments.push({
         id: commentId,
         created_at: time,
         content,
@@ -98,119 +227,86 @@ async function scrapeComments(
     }
   });
 
-  // 提取总评论数
-  const totalText = $('.mod-hd h2 span').text();
-  const totalMatch = totalText.match(/全部\s*(\d+)\s*条/);
-  const total = totalMatch ? parseInt(totalMatch[1]) : comments.length;
+  // ========== 导演/演员 (从主页解析) ==========
+  const directors: ScrapedCelebrity[] = [];
+  const actors: ScrapedCelebrity[] = [];
 
-  return { comments, total };
-}
+  // 导演
+  $('a[rel="v:directedBy"]').each((_, el) => {
+    const $el = $(el);
+    const href = $el.attr('href') || '';
+    const idMatch = href.match(/celebrity\/(\d+)/);
+    const name = $el.text().trim();
 
-/**
- * 从豆瓣网页提取推荐影片
- */
-async function scrapeRecommendations(
-  subjectId: string,
-): Promise<{ recommendations: unknown[] }> {
-  const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/`;
-
-  const response = await fetch(url, {
-    headers: BROWSER_HEADERS,
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`爬取推荐失败: ${response.status}`);
-  }
-
-  const html = await response.text();
-  const $ = cheerio.load(html);
-  const recommendations: unknown[] = [];
-
-  // 解析推荐区域
-  $('#recommendations .recommendations-bd dl').each((_, element) => {
-    const $item = $(element);
-    const $link = $item.find('dd a');
-    const $img = $item.find('dt img');
-
-    const href = $link.attr('href') || '';
-    const idMatch = href.match(/subject\/(\d+)/);
-    const recId = idMatch ? idMatch[1] : '';
-
-    const title = $link.text().trim();
-    const poster = $img.attr('src') || '';
-
-    if (recId && title) {
-      recommendations.push({
-        id: recId,
-        title,
-        images: {
-          small: poster,
-          medium: poster.replace('s_ratio', 'm_ratio'),
-          large: poster.replace('s_ratio', 'l_ratio'),
-        },
+    if (name) {
+      directors.push({
+        id: idMatch ? idMatch[1] : '',
+        name,
         alt: href,
+        category: '导演',
+        role: '导演',
+        avatars: { small: '', medium: '', large: '' },
       });
     }
   });
 
-  return { recommendations };
-}
+  // 演员
+  $('a[rel="v:starring"]').each((_, el) => {
+    const $el = $(el);
+    const href = $el.attr('href') || '';
+    const idMatch = href.match(/celebrity\/(\d+)/);
+    const name = $el.text().trim();
 
-/**
- * 从豆瓣网页提取演员信息 (高清头像)
- */
-async function scrapeCelebrities(
-  subjectId: string,
-): Promise<{ celebrities: unknown[] }> {
-  const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/celebrities`;
-
-  const response = await fetch(url, {
-    headers: BROWSER_HEADERS,
-    signal: AbortSignal.timeout(15000),
+    if (name) {
+      actors.push({
+        id: idMatch ? idMatch[1] : '',
+        name,
+        alt: href,
+        category: '演员',
+        role: '',
+        avatars: { small: '', medium: '', large: '' },
+      });
+    }
   });
 
-  if (!response.ok) {
-    throw new Error(`爬取演员失败: ${response.status}`);
-  }
+  // 尝试从 celebrities 区块获取头像
+  $('#celebrities .celebrity').each((_, element) => {
+    const $item = $(element);
+    const $link = $item.find('a.name');
+    const $avatar = $item.find('.avatar');
 
-  const html = await response.text();
-  const $ = cheerio.load(html);
-  const celebrities: unknown[] = [];
+    const href = $link.attr('href') || '';
+    const idMatch = href.match(/celebrity\/(\d+)/);
+    const celId = idMatch ? idMatch[1] : '';
+    const name = $link.text().trim();
+    const role = $item.find('.role').text().trim();
 
-  // 解析演员列表
-  $('#celebrities .list-wrapper').each((_, wrapper) => {
-    const $wrapper = $(wrapper);
-    const category = $wrapper.find('h2').text().trim(); // 导演、演员等
+    const avatarStyle = $avatar.attr('style') || '';
+    const bgMatch = avatarStyle.match(/url\(([^)]+)\)/);
+    let avatarUrl = bgMatch ? bgMatch[1].replace(/['"]/g, '') : '';
+    avatarUrl = avatarUrl
+      .replace('/s_ratio/', '/m_ratio/')
+      .replace('/small/', '/medium/');
 
-    $wrapper.find('.celebrity').each((_, element) => {
-      const $item = $(element);
-      const $link = $item.find('a.name');
-      const $avatar = $item.find('.avatar');
+    if (celId && name) {
+      const isDirector = role.includes('导演');
+      const target = isDirector ? directors : actors;
 
-      const href = $link.attr('href') || '';
-      const idMatch = href.match(/celebrity\/(\d+)/);
-      const celId = idMatch ? idMatch[1] : '';
-
-      const name = $link.text().trim();
-      const role = $item.find('.role').text().trim();
-
-      // 从 style 中提取背景图
-      const avatarStyle = $avatar.attr('style') || '';
-      const bgMatch = avatarStyle.match(/url\(([^)]+)\)/);
-      let avatarUrl = bgMatch ? bgMatch[1].replace(/['"]/g, '') : '';
-
-      // 转换为高清版本
-      avatarUrl = avatarUrl
-        .replace('/s_ratio/', '/m_ratio/')
-        .replace('/small/', '/medium/');
-
-      if (celId && name) {
-        celebrities.push({
+      // 更新或添加
+      const existing = target.find((c) => c.id === celId || c.name === name);
+      if (existing) {
+        existing.avatars = {
+          small: avatarUrl.replace('/m_ratio/', '/s_ratio/'),
+          medium: avatarUrl,
+          large: avatarUrl.replace('/m_ratio/', '/l_ratio/'),
+        };
+        if (role) existing.role = role;
+      } else {
+        target.push({
           id: celId,
           name,
           alt: href,
-          category: category.replace(/\s+/g, ''),
+          category: isDirector ? '导演' : '演员',
           role,
           avatars: {
             small: avatarUrl.replace('/m_ratio/', '/s_ratio/'),
@@ -219,22 +315,154 @@ async function scrapeCelebrities(
           },
         });
       }
-    });
+    }
   });
 
-  return { celebrities };
+  const elapsed = Date.now() - startTime;
+  console.log(`[Douban Scraper] 完成: ${subjectId} (${elapsed}ms)`);
+
+  return {
+    title,
+    original_title: originalTitle,
+    year,
+    rating:
+      ratingAvg > 0
+        ? { average: ratingAvg, stars: ratingStars, count: ratingCount }
+        : null,
+    genres,
+    countries,
+    durations,
+    summary,
+    poster,
+    recommendations,
+    hotComments,
+    directors,
+    actors,
+    scrapedAt: Date.now(),
+  };
 }
+
+// ============================================================================
+// 服务端缓存封装 (24小时)
+// ============================================================================
+
+/**
+ * 使用 Next.js unstable_cache 包裹爬虫函数
+ * - 第一次访问会触发爬虫
+ * - 后续请求直接读取缓存
+ * - 24小时后自动重新验证
+ */
+const scrapeDoubanData = unstable_cache(_scrapeDoubanData, ['douban-scraper'], {
+  revalidate: 86400, // 24小时缓存
+  tags: ['douban'],
+});
+
+// ============================================================================
+// 独立数据抓取 (带缓存)
+// ============================================================================
+
+const scrapeComments = unstable_cache(
+  async (
+    subjectId: string,
+  ): Promise<{ comments: ScrapedComment[]; total: number }> => {
+    const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/comments?status=P&sort=new_score`;
+
+    const response = await fetch(url, {
+      headers: BROWSER_HEADERS,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`爬取短评失败: ${response.status}`);
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    const comments: ScrapedComment[] = [];
+
+    $('.comment-item').each((_, element) => {
+      const $item = $(element);
+
+      const $avatar = $item.find('.avatar a img');
+      const $userLink = $item.find('.comment-info a');
+      const avatarUrl = $avatar.attr('src') || '';
+      const userName = $userLink.text().trim();
+      const userLink = $userLink.attr('href') || '';
+
+      const ratingClass =
+        $item.find('.comment-info .rating').attr('class') || '';
+      const ratingMatch = ratingClass.match(/allstar(\d+)/);
+      const ratingValue = ratingMatch ? parseInt(ratingMatch[1]) / 10 : 0;
+
+      const content = $item.find('.short').text().trim();
+      const time =
+        $item.find('.comment-time').attr('title') ||
+        $item.find('.comment-time').text().trim();
+      const usefulCount =
+        parseInt($item.find('.vote-count').text().trim()) || 0;
+      const commentId =
+        $item.attr('data-cid') || `scrape_${Date.now()}_${Math.random()}`;
+
+      if (content) {
+        comments.push({
+          id: commentId,
+          created_at: time,
+          content,
+          useful_count: usefulCount,
+          rating:
+            ratingValue > 0 ? { max: 5, value: ratingValue, min: 0 } : null,
+          author: {
+            id: userLink.split('/').filter(Boolean).pop() || '',
+            uid: userName,
+            name: userName,
+            avatar: avatarUrl
+              .replace('/u/pido/', '/u/')
+              .replace('s_ratio', 'm_ratio'),
+            alt: userLink,
+          },
+        });
+      }
+    });
+
+    const totalText = $('.mod-hd h2 span').text();
+    const totalMatch = totalText.match(/全部\s*(\d+)\s*条/);
+    const total = totalMatch ? parseInt(totalMatch[1]) : comments.length;
+
+    return { comments, total };
+  },
+  ['douban-comments'],
+  { revalidate: 3600, tags: ['douban'] },
+);
+
+const scrapeRecommendations = unstable_cache(
+  async (
+    subjectId: string,
+  ): Promise<{ recommendations: ScrapedRecommendation[] }> => {
+    const data = await scrapeDoubanData(subjectId);
+    return { recommendations: data.recommendations };
+  },
+  ['douban-recommendations'],
+  { revalidate: 86400, tags: ['douban'] },
+);
+
+const scrapeCelebrities = unstable_cache(
+  async (
+    subjectId: string,
+  ): Promise<{ directors: ScrapedCelebrity[]; actors: ScrapedCelebrity[] }> => {
+    const data = await scrapeDoubanData(subjectId);
+    return { directors: data.directors, actors: data.actors };
+  },
+  ['douban-celebrities'],
+  { revalidate: 86400, tags: ['douban'] },
+);
 
 // ============================================================================
 // 路由处理
 // ============================================================================
 
-/**
- * 检测是否需要使用爬虫模式
- */
 function needsScraping(
   path: string,
-): 'comments' | 'recommendations' | 'celebrities' | null {
+): 'full' | 'comments' | 'recommendations' | 'celebrities' | null {
   const lowerPath = path.toLowerCase();
   if (lowerPath.includes('/comments') || lowerPath.includes('/reviews')) {
     return 'comments';
@@ -245,20 +473,18 @@ function needsScraping(
   if (lowerPath.includes('/celebrities')) {
     return 'celebrities';
   }
+  // 如果只是 subject/{id}，返回完整数据
+  if (/movie\/subject\/\d+\/?$/.test(path)) {
+    return 'full';
+  }
   return null;
 }
 
-/**
- * 从路径中提取 subject ID
- */
 function extractSubjectId(path: string): string | null {
   const match = path.match(/subject\/(\d+)/);
   return match ? match[1] : null;
 }
 
-/**
- * 根据请求路径选择合适的 API Key
- */
 function selectApiKey(path: string): string {
   const lowerPath = path.toLowerCase();
   if (
@@ -273,7 +499,7 @@ function selectApiKey(path: string): string {
 
 /**
  * GET /api/douban/proxy
- * 豆瓣 API 代理接口 (支持自动降级爬虫)
+ * 豆瓣数据代理 (智能爬虫 + 24小时缓存)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -288,18 +514,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 检查是否需要使用爬虫模式
     const scrapeType = needsScraping(path);
     const subjectId = extractSubjectId(path);
 
+    // ========== 爬虫模式 ==========
     if (scrapeType && subjectId) {
-      console.log(
-        `[Douban Proxy] 使用爬虫模式: ${scrapeType} for ${subjectId}`,
-      );
+      console.log(`[Douban Proxy] 爬虫模式: ${scrapeType} for ${subjectId}`);
 
       let data: unknown;
 
       switch (scrapeType) {
+        case 'full':
+          data = await scrapeDoubanData(subjectId);
+          break;
         case 'comments':
           data = await scrapeComments(subjectId);
           break;
@@ -313,24 +540,20 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json(data, {
         headers: {
-          'Cache-Control': 'public, max-age=1800, s-maxage=1800',
-          'X-Data-Source': 'scraper',
+          'Cache-Control':
+            'public, max-age=3600, s-maxage=86400, stale-while-revalidate=43200',
+          'X-Data-Source': 'scraper-cached',
         },
       });
     }
 
-    // ========================================================================
-    // 标准 API 请求逻辑
-    // ========================================================================
-
-    let apiKey: string;
-    if (forceKeyType === 'primary') {
-      apiKey = API_KEY_A;
-    } else if (forceKeyType === 'secondary') {
-      apiKey = API_KEY_B;
-    } else {
-      apiKey = selectApiKey(path);
-    }
+    // ========== API 模式 (搜索等) ==========
+    const apiKey =
+      forceKeyType === 'primary'
+        ? API_KEY_A
+        : forceKeyType === 'secondary'
+          ? API_KEY_B
+          : selectApiKey(path);
 
     const queryParams = new URLSearchParams();
     searchParams.forEach((value, key) => {
@@ -356,7 +579,6 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[Douban Proxy] API Error:', response.status, errorText);
-
       return NextResponse.json(
         {
           error: '豆瓣 API 请求失败',
@@ -372,7 +594,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data, {
       headers: {
         'Cache-Control': 'public, max-age=3600, s-maxage=3600',
-        'CDN-Cache-Control': 'public, s-maxage=3600',
         'X-Data-Source': 'api',
       },
     });

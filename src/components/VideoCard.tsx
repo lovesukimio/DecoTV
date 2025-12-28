@@ -787,9 +787,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             {/* 评分徽章 */}
             {config.showRating && rate && <SimpleRatingBadge rating={rate} />}
 
+            {/* 集数角标 - Netflix/LunaTV 风格 */}
             {actualEpisodes && actualEpisodes > 1 && (
               <div
-                className='absolute top-2 right-2 flex items-center gap-1 bg-black/60 backdrop-blur-md border border-white/10 text-xs font-medium px-2.5 py-1 rounded-full shadow-lg transition-all duration-300 ease-out group-hover:scale-105 group-hover:bg-black/70'
+                className='absolute top-2 right-2 flex items-stretch overflow-hidden rounded-md shadow-lg transition-all duration-300 ease-out group-hover:scale-105'
                 style={
                   {
                     WebkitUserSelect: 'none',
@@ -804,14 +805,20 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               >
                 {currentEpisode ? (
                   <>
-                    <span className='text-yellow-400 font-semibold'>
-                      {currentEpisode}
+                    {/* 左侧：当前集 - 品牌色背景 */}
+                    <span className='flex items-center bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white'>
+                      EP {String(currentEpisode).padStart(2, '0')}
                     </span>
-                    <span className='text-white/40'>|</span>
-                    <span className='text-white/60'>{actualEpisodes}</span>
+                    {/* 右侧：总集数 - 半透明黑背景 */}
+                    <span className='flex items-center bg-black/70 backdrop-blur-sm px-1.5 py-0.5 text-[10px] font-medium text-white/60'>
+                      / {actualEpisodes}
+                    </span>
                   </>
                 ) : (
-                  <span className='text-white/80'>{actualEpisodes} 集</span>
+                  /* 仅显示总集数 */
+                  <span className='flex items-center bg-black/70 backdrop-blur-sm px-2 py-0.5 text-[10px] font-medium text-white/80'>
+                    {actualEpisodes} 集
+                  </span>
                 )}
               </div>
             )}
