@@ -3,7 +3,7 @@
 'use client';
 
 import { Database, Loader2 } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiSite } from '@/lib/config';
 
@@ -143,41 +143,44 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
   };
 
   // 更新指示器位置的通用函数
-  const updateIndicatorPosition = (
-    activeIndex: number,
-    containerRef: React.RefObject<HTMLDivElement | null>,
-    buttonRefs: React.MutableRefObject<(HTMLButtonElement | null)[]>,
-    setIndicatorStyle: React.Dispatch<
-      React.SetStateAction<{ left: number; width: number }>
-    >,
-  ) => {
-    if (
-      activeIndex >= 0 &&
-      buttonRefs.current[activeIndex] &&
-      containerRef.current
-    ) {
-      const timeoutId = setTimeout(() => {
-        const button = buttonRefs.current[activeIndex];
-        const container = containerRef.current;
-        if (button && container) {
-          const buttonRect = button.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
+  const updateIndicatorPosition = useCallback(
+    (
+      activeIndex: number,
+      containerRef: React.RefObject<HTMLDivElement | null>,
+      buttonRefs: React.MutableRefObject<(HTMLButtonElement | null)[]>,
+      setIndicatorStyle: React.Dispatch<
+        React.SetStateAction<{ left: number; width: number }>
+      >,
+    ) => {
+      if (
+        activeIndex >= 0 &&
+        buttonRefs.current[activeIndex] &&
+        containerRef.current
+      ) {
+        const timeoutId = setTimeout(() => {
+          const button = buttonRefs.current[activeIndex];
+          const container = containerRef.current;
+          if (button && container) {
+            const buttonRect = button.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
 
-          if (buttonRect.width > 0) {
-            setIndicatorStyle({
-              left: buttonRect.left - containerRect.left,
-              width: buttonRect.width,
-            });
+            if (buttonRect.width > 0) {
+              setIndicatorStyle({
+                left: buttonRect.left - containerRect.left,
+                width: buttonRect.width,
+              });
+            }
           }
-        }
-      }, 0);
-      return () => clearTimeout(timeoutId);
-    }
-  };
+        }, 0);
+        return () => clearTimeout(timeoutId);
+      }
+    },
+    [],
+  );
 
-  // 组件挂载时立即计算初始位置
-  useEffect(() => {
-    // 主选择器初始位置
+  // 重新计算所有指示器位置的函数
+  const recalculateAllIndicators = useCallback(() => {
+    // 主选择器
     if (type === 'movie') {
       const activeIndex = moviePrimaryOptions.findIndex(
         (opt) =>
@@ -223,7 +226,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
       );
     }
 
-    // 副选择器初始位置
+    // 副选择器
     let secondaryActiveIndex = -1;
     if (type === 'movie') {
       secondaryActiveIndex = movieSecondaryOptions.findIndex(
@@ -250,7 +253,44 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
         setSecondaryIndicatorStyle,
       );
     }
-  }, [type]); // 只在type变化时重新计算
+  }, [
+    type,
+    primarySelection,
+    secondarySelection,
+    updateIndicatorPosition,
+    moviePrimaryOptions,
+    tvPrimaryOptions,
+    animePrimaryOptions,
+    showPrimaryOptions,
+    movieSecondaryOptions,
+    tvSecondaryOptions,
+    showSecondaryOptions,
+  ]);
+
+  // 监听窗口 resize 事件，防抖更新指示器位置
+  useEffect(() => {
+    let resizeTimeout: NodeJS.Timeout;
+
+    const handleResize = () => {
+      // 防抖：窗口大小变化后 100ms 再更新
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        recalculateAllIndicators();
+      }, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimeout);
+    };
+  }, [recalculateAllIndicators]);
+
+  // 组件挂载时立即计算初始位置
+  useEffect(() => {
+    recalculateAllIndicators();
+  }, [type, recalculateAllIndicators]);
 
   // 监听主选择器变化
   useEffect(() => {
@@ -299,7 +339,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
       );
       return cleanup;
     }
-  }, [primarySelection]);
+  }, [primarySelection, updateIndicatorPosition]);
 
   // 监听副选择器变化
   useEffect(() => {
@@ -332,7 +372,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
       );
       return cleanup;
     }
-  }, [secondarySelection]);
+  }, [secondarySelection, updateIndicatorPosition]);
 
   // 渲染胶囊式选择器
   const renderCapsuleSelector = (
