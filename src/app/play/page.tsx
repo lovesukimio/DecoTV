@@ -25,7 +25,6 @@ import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 import { useDoubanInfo } from '@/hooks/useDoubanInfo';
 
-import { CinematicLoader } from '@/components/CinematicLoader';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import { MovieMetaInfo } from '@/components/MovieMetaInfo';
 import { MovieReviews } from '@/components/MovieReviews';
@@ -2080,17 +2079,17 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 换源加载蒙层 - CinematicLoader */}
+                {/* 换源加载提示 - 使用播放器自带的加载动画 */}
                 {isVideoLoading && (
-                  <div className='absolute inset-0 z-50'>
-                    <CinematicLoader
-                      visible={isVideoLoading}
-                      message={
-                        videoLoadingStage === 'sourceChanging'
+                  <div className='absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl'>
+                    <div className='flex flex-col items-center gap-3'>
+                      <div className='w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin' />
+                      <span className='text-white/80 text-sm'>
+                        {videoLoadingStage === 'sourceChanging'
                           ? '切换播放源...'
-                          : '视频加载中...'
-                      }
-                    />
+                          : '视频加载中...'}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
