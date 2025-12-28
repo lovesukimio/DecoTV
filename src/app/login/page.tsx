@@ -227,7 +227,7 @@ function LoginPageClient() {
   return (
     <div className='relative min-h-screen flex items-center justify-center px-4 overflow-hidden login-bg'>
       {/* Animated background gradient */}
-      <div className='absolute inset-0 bg-gradient-to-br from-purple-900/20 via-blue-900/20 to-pink-900/20 dark:from-purple-900/40 dark:via-blue-900/40 dark:to-pink-900/40 animate-gradient-shift'></div>
+      <div className='absolute inset-0 bg-linear-to-br from-purple-900/20 via-blue-900/20 to-pink-900/20 dark:from-purple-900/40 dark:via-blue-900/40 dark:to-pink-900/40 animate-gradient-shift'></div>
 
       {/* Floating orbs */}
       <div className='absolute top-1/4 left-1/4 w-32 h-32 bg-purple-500/30 rounded-full blur-xl animate-float-slow'></div>
@@ -238,7 +238,7 @@ function LoginPageClient() {
         <ThemeToggle />
       </div>
 
-      <div className='relative z-10 w-full max-w-md rounded-3xl bg-gradient-to-b from-white/90 via-white/70 to-white/40 dark:from-zinc-900/90 dark:via-zinc-900/70 dark:to-zinc-900/40 backdrop-blur-xl shadow-2xl p-10 dark:border dark:border-zinc-800 login-card'>
+      <div className='relative z-10 w-full max-w-md rounded-3xl bg-linear-to-b from-white/90 via-white/70 to-white/40 dark:from-zinc-900/90 dark:via-zinc-900/70 dark:to-zinc-900/40 backdrop-blur-xl shadow-2xl p-10 dark:border dark:border-zinc-800 login-card'>
         <h1 className='tracking-tight text-center text-4xl font-extrabold mb-8 bg-clip-text neon-text neon-flicker'>
           {siteName}
         </h1>
@@ -283,7 +283,7 @@ function LoginPageClient() {
           <button
             type='submit'
             disabled={!password || loading || (shouldAskUsername && !username)}
-            className='inline-flex w-full justify-center rounded-lg bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:brightness-110 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 neon-pulse login-button'
+            className='inline-flex w-full justify-center rounded-lg bg-linear-to-r from-purple-600 via-fuchsia-600 to-pink-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:brightness-110 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 neon-pulse login-button'
           >
             {loading ? '登录中...' : '登录'}
           </button>
