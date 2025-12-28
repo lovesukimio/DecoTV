@@ -269,7 +269,7 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
     }
   });
 
-  // 尝试从 celebrities 区块获取头像
+  // 尝试从 celebrities 区块获取头像 (增强版：双重匹配 + 高清替换)
   $('#celebrities .celebrity').each((_, element) => {
     const $item = $(element);
     const $link = $item.find('a.name');
@@ -281,37 +281,77 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
     const name = $link.text().trim();
     const role = $item.find('.role').text().trim();
 
-    const avatarStyle = $avatar.attr('style') || '';
-    const bgMatch = avatarStyle.match(/url\(([^)]+)\)/);
-    let avatarUrl = bgMatch ? bgMatch[1].replace(/['"]/g, '') : '';
-    avatarUrl = avatarUrl
-      .replace('/s_ratio/', '/m_ratio/')
-      .replace('/small/', '/medium/');
+    // 双重匹配头像 URL
+    let avatarUrl = '';
 
-    if (celId && name) {
+    // 方法 1: CSS 背景图
+    const avatarStyle = $avatar.attr('style') || '';
+    const bgMatch = avatarStyle.match(/background-image:\s*url\(([^)]+)\)/);
+    if (bgMatch) {
+      avatarUrl = bgMatch[1].replace(/['"]|&quot;/g, '');
+    }
+
+    // 方法 2: IMG 标签 (fallback)
+    if (!avatarUrl) {
+      const $img = $avatar.find('img');
+      avatarUrl = $img.attr('src') || $img.attr('data-src') || '';
+    }
+
+    // 方法 3: 直接从 a 标签下的 img
+    if (!avatarUrl) {
+      const $directImg = $item.find('a img.avatar, a img[class*="avatar"]');
+      avatarUrl = $directImg.attr('src') || '';
+    }
+
+    // 高清图替换: /s/ -> /l/, /m/ -> /l/
+    avatarUrl = avatarUrl
+      .replace(/\/s\//, '/l/')
+      .replace(/\/m\//, '/l/')
+      .replace('/s_ratio/', '/l_ratio/')
+      .replace('/m_ratio/', '/l_ratio/')
+      .replace('/small/', '/large/')
+      .replace('/medium/', '/large/');
+
+    // 不再过滤默认头像 - 即使是 personage-default 也保留
+    if (name) {
       const isDirector = role.includes('导演');
       const target = isDirector ? directors : actors;
 
       // 更新或添加
       const existing = target.find((c) => c.id === celId || c.name === name);
       if (existing) {
-        existing.avatars = {
-          small: avatarUrl.replace('/m_ratio/', '/s_ratio/'),
-          medium: avatarUrl,
-          large: avatarUrl.replace('/m_ratio/', '/l_ratio/'),
-        };
+        // 只有当新头像有效时才更新
+        if (avatarUrl) {
+          existing.avatars = {
+            small: avatarUrl
+              .replace('/l/', '/s/')
+              .replace('/l_ratio/', '/s_ratio/'),
+            medium: avatarUrl
+              .replace('/l/', '/m/')
+              .replace('/l_ratio/', '/m_ratio/'),
+            large: avatarUrl,
+          };
+        }
         if (role) existing.role = role;
       } else {
         target.push({
-          id: celId,
+          id: celId || `cel_${Date.now()}_${Math.random()}`,
           name,
           alt: href,
           category: isDirector ? '导演' : '演员',
           role,
           avatars: {
-            small: avatarUrl.replace('/m_ratio/', '/s_ratio/'),
-            medium: avatarUrl,
-            large: avatarUrl.replace('/m_ratio/', '/l_ratio/'),
+            small: avatarUrl
+              ? avatarUrl
+                  .replace('/l/', '/s/')
+                  .replace('/l_ratio/', '/s_ratio/')
+              : '',
+            medium: avatarUrl
+              ? avatarUrl
+                  .replace('/l/', '/m/')
+                  .replace('/l_ratio/', '/m_ratio/')
+              : '',
+            large: avatarUrl || '',
           },
         });
       }
