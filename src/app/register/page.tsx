@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 'use client';
 
 import { AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
@@ -27,7 +25,7 @@ function VersionDisplay() {
       try {
         const status = await checkForUpdates();
         setUpdateStatus(status);
-      } catch (_) {
+      } catch {
         // do nothing
       } finally {
         setIsChecking(false);
@@ -45,7 +43,7 @@ function VersionDisplay() {
             (process.env.NEXT_PUBLIC_UPDATE_REPO
               ? `https://github.com/${process.env.NEXT_PUBLIC_UPDATE_REPO}`
               : '#'),
-          '_blank'
+          '_blank',
         )
       }
       className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-colors cursor-pointer'
@@ -57,8 +55,8 @@ function VersionDisplay() {
             updateStatus?.status === UpdateStatus.HAS_UPDATE
               ? 'text-yellow-600 dark:text-yellow-400'
               : updateStatus?.status === UpdateStatus.NO_UPDATE
-              ? 'text-purple-500 dark:text-purple-400'
-              : ''
+                ? 'text-purple-500 dark:text-purple-400'
+                : ''
           }`}
         >
           {updateStatus?.status === UpdateStatus.HAS_UPDATE && (
@@ -109,7 +107,7 @@ function RegisterPageClient() {
       } else {
         setError('加载验证码失败');
       }
-    } catch (err) {
+    } catch {
       setError('网络错误，请稍后重试');
     } finally {
       setCaptchaLoading(false);
@@ -136,7 +134,6 @@ function RegisterPageClient() {
         setRegistrationEnabled(false);
         setStorageType('localstorage');
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 用户名验证提示
@@ -225,7 +222,7 @@ function RegisterPageClient() {
           loadCaptcha();
         }
       }
-    } catch (err) {
+    } catch {
       setError('网络错误，请稍后重试');
     } finally {
       setLoading(false);

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 'use client';
 
 import Link from 'next/link';
@@ -74,7 +72,7 @@ function StatusIndicator({ status }: { status: UpdateStatus }) {
 // 版本显示组件
 function VersionDisplay() {
   const [checkResult, setCheckResult] = useState<VersionCheckResult | null>(
-    null
+    null,
   );
   const [status, setStatus] = useState<UpdateStatus>(UpdateStatus.CHECKING);
 
@@ -129,7 +127,7 @@ function VersionDisplay() {
             (process.env.NEXT_PUBLIC_UPDATE_REPO
               ? `https://github.com/${process.env.NEXT_PUBLIC_UPDATE_REPO}`
               : 'https://github.com/Decohererk/DecoTV'),
-          '_blank'
+          '_blank',
         )
       }
       className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-all duration-300 cursor-pointer hover:scale-105 group'
@@ -183,7 +181,7 @@ function LoginPageClient() {
         const storageType = data.StorageType;
         setShouldAskUsername(!!storageType && storageType !== 'localstorage');
         setRegistrationEnabled(
-          data.EnableRegistration && storageType !== 'localstorage'
+          data.EnableRegistration && storageType !== 'localstorage',
         );
       })
       .catch(() => {
@@ -219,7 +217,7 @@ function LoginPageClient() {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');
       }
-    } catch (error) {
+    } catch {
       setError('网络错误，请稍后重试');
     } finally {
       setLoading(false);

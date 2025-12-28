@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 'use client';
 
 import { Cat, Clover, Film, Home, Radio, Search, Tv } from 'lucide-react';
