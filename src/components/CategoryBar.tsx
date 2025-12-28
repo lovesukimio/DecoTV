@@ -94,30 +94,19 @@ export default function CategoryBar({
    * 将选中的分组滚动到视口中央
    */
   const scrollToActiveGroup = useCallback(() => {
-    if (!selectedGroup || !scrollContainerRef.current) return;
+    if (!selectedGroup) return;
 
     const groupIndex = groups.indexOf(selectedGroup);
     if (groupIndex === -1) return;
 
     const button = buttonRefs.current[groupIndex];
-    const container = scrollContainerRef.current;
-    if (!button || !container) return;
+    if (!button) return;
 
-    const containerRect = container.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
-
-    // 计算按钮相对于容器的位置
-    const buttonLeft =
-      buttonRect.left - containerRect.left + container.scrollLeft;
-    const buttonWidth = buttonRect.width;
-    const containerWidth = containerRect.width;
-
-    // 计算目标滚动位置，使按钮居中
-    const targetScrollLeft = buttonLeft - (containerWidth - buttonWidth) / 2;
-
-    container.scrollTo({
-      left: Math.max(0, targetScrollLeft),
+    // 使用 scrollIntoView 让选中的胶囊自动滚动到可视区域中央
+    button.scrollIntoView({
       behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
     });
   }, [selectedGroup, groups]);
 
