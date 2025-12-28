@@ -789,7 +789,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
             {actualEpisodes && actualEpisodes > 1 && (
               <div
-                className='absolute top-2 right-2 bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110'
+                className='absolute top-2 right-2 flex items-center gap-1 bg-black/60 backdrop-blur-md border border-white/10 text-xs font-medium px-2.5 py-1 rounded-full shadow-lg transition-all duration-300 ease-out group-hover:scale-105 group-hover:bg-black/70'
                 style={
                   {
                     WebkitUserSelect: 'none',
@@ -802,9 +802,17 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                   return false;
                 }}
               >
-                {currentEpisode
-                  ? `${currentEpisode}/${actualEpisodes}`
-                  : actualEpisodes}
+                {currentEpisode ? (
+                  <>
+                    <span className='text-yellow-400 font-semibold'>
+                      {currentEpisode}
+                    </span>
+                    <span className='text-white/40'>|</span>
+                    <span className='text-white/60'>{actualEpisodes}</span>
+                  </>
+                ) : (
+                  <span className='text-white/80'>{actualEpisodes} 集</span>
+                )}
               </div>
             )}
 
