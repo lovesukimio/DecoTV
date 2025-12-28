@@ -9,6 +9,11 @@ import {
   useState,
 } from 'react';
 
+// 简单的 className 合并函数
+function cn(...classes: (string | boolean | undefined | null)[]): string {
+  return classes.filter(Boolean).join(' ');
+}
+
 interface CategoryBarProps {
   /** 分组数据: { 分组名: 频道数组 } */
   groupedChannels: { [key: string]: unknown[] };
@@ -182,18 +187,19 @@ export default function CategoryBar({
           {/* 左侧箭头 - 仅 PC 端显示 */}
           <button
             onClick={() => handleScroll('left')}
-            className={`
-              hidden lg:flex
-              absolute left-0 top-1/2 -translate-y-1/2 z-10
-              w-8 h-8 items-center justify-center
-              rounded-full bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm
-              border border-gray-200 dark:border-gray-700
-              shadow-lg hover:shadow-xl
-              text-gray-600 dark:text-gray-300
-              hover:bg-white dark:hover:bg-gray-700
-              transition-all duration-200
-              ${showLeftArrow ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
-            `}
+            className={cn(
+              'hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 z-10',
+              'w-8 h-8 items-center justify-center',
+              'rounded-full bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm',
+              'border border-gray-200 dark:border-gray-700',
+              'shadow-lg hover:shadow-xl',
+              'text-gray-600 dark:text-gray-300',
+              'hover:bg-white dark:hover:bg-gray-700',
+              'transition-all duration-200',
+              showLeftArrow
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none',
+            )}
             aria-label='向左滚动'
           >
             <ChevronLeft className='w-5 h-5' />
@@ -202,18 +208,19 @@ export default function CategoryBar({
           {/* 右侧箭头 - 仅 PC 端显示 */}
           <button
             onClick={() => handleScroll('right')}
-            className={`
-              hidden lg:flex
-              absolute right-0 top-1/2 -translate-y-1/2 z-10
-              w-8 h-8 items-center justify-center
-              rounded-full bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm
-              border border-gray-200 dark:border-gray-700
-              shadow-lg hover:shadow-xl
-              text-gray-600 dark:text-gray-300
-              hover:bg-white dark:hover:bg-gray-700
-              transition-all duration-200
-              ${showRightArrow ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
-            `}
+            className={cn(
+              'hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-10',
+              'w-8 h-8 items-center justify-center',
+              'rounded-full bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm',
+              'border border-gray-200 dark:border-gray-700',
+              'shadow-lg hover:shadow-xl',
+              'text-gray-600 dark:text-gray-300',
+              'hover:bg-white dark:hover:bg-gray-700',
+              'transition-all duration-200',
+              showRightArrow
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none',
+            )}
             aria-label='向右滚动'
           >
             <ChevronRight className='w-5 h-5' />
@@ -221,36 +228,28 @@ export default function CategoryBar({
 
           {/* 左侧渐变遮罩 - 仅 PC 端显示 */}
           <div
-            className={`
-              hidden lg:block
-              absolute left-0 top-0 bottom-0 w-10 z-5
-              bg-linear-to-r from-gray-50 dark:from-gray-900 to-transparent
-              pointer-events-none
-              transition-opacity duration-200
-              ${showLeftArrow ? 'opacity-100' : 'opacity-0'}
-            `}
+            className={cn(
+              'hidden lg:block absolute left-0 top-0 bottom-0 w-10 z-5',
+              'bg-linear-to-r from-gray-50 dark:from-gray-900 to-transparent',
+              'pointer-events-none transition-opacity duration-200',
+              showLeftArrow ? 'opacity-100' : 'opacity-0',
+            )}
           />
 
           {/* 右侧渐变遮罩 - 仅 PC 端显示 */}
           <div
-            className={`
-              hidden lg:block
-              absolute right-0 top-0 bottom-0 w-10 z-5
-              bg-linear-to-l from-gray-50 dark:from-gray-900 to-transparent
-              pointer-events-none
-              transition-opacity duration-200
-              ${showRightArrow ? 'opacity-100' : 'opacity-0'}
-            `}
+            className={cn(
+              'hidden lg:block absolute right-0 top-0 bottom-0 w-10 z-5',
+              'bg-linear-to-l from-gray-50 dark:from-gray-900 to-transparent',
+              'pointer-events-none transition-opacity duration-200',
+              showRightArrow ? 'opacity-100' : 'opacity-0',
+            )}
           />
 
           {/* 横向滚动的分类标签列表 */}
           <div
             ref={scrollContainerRef}
-            className='
-              flex gap-2 overflow-x-auto
-              lg:px-6
-              scrollbar-hide
-            '
+            className='flex gap-2 overflow-x-auto lg:px-6 scrollbar-hide'
             style={{
               scrollbarWidth: 'none',
               msOverflowStyle: 'none',
@@ -277,26 +276,27 @@ export default function CategoryBar({
                   }}
                   onClick={() => onGroupChange(group)}
                   disabled={disabled}
-                  className={`
-                    shrink-0 px-4 py-2 rounded-full text-sm font-medium
-                    transition-all duration-200 whitespace-nowrap
-                    focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1
-                    ${
-                      disabled
-                        ? 'opacity-50 cursor-not-allowed'
-                        : isActive
-                          ? 'bg-green-500 text-white shadow-lg shadow-green-500/30 scale-105'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 hover:scale-102 active:scale-98'
-                    }
-                  `}
+                  className={cn(
+                    'shrink-0 px-4 py-2 rounded-full text-sm font-medium',
+                    'transition-all duration-200 whitespace-nowrap',
+                    'focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1',
+                    disabled && 'opacity-50 cursor-not-allowed',
+                    !disabled &&
+                      isActive &&
+                      'bg-green-500 text-white shadow-lg shadow-green-500/30 scale-105',
+                    !disabled &&
+                      !isActive &&
+                      'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 hover:scale-102 active:scale-98',
+                  )}
                 >
                   {group}
                   <span
-                    className={`ml-1.5 text-xs ${
+                    className={cn(
+                      'ml-1.5 text-xs',
                       isActive
                         ? 'text-white/80'
-                        : 'text-gray-500 dark:text-gray-400'
-                    }`}
+                        : 'text-gray-500 dark:text-gray-400',
+                    )}
                   >
                     ({channelCount})
                   </span>
