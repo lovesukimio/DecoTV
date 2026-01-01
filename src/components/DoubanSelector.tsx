@@ -454,6 +454,10 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
   const [showRightArrow, setShowRightArrow] = useState(false);
   const sourceScrollRef = useRef<HTMLDivElement>(null);
   const rafIdRef = useRef<number>(0);
+  const scrollToActiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const prevSourceRef = useRef<string>(currentSource);
 
   // 边界检测阈值 (5px 容错，避免高分屏小数问题)
   const BOUNDARY_THRESHOLD = 5;
@@ -516,14 +520,22 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     }
   }, [currentSource, sourceOptions]);
 
-  // 初始化和监听滚动
+  // 初始化和监听滚动 + ResizeObserver
   useEffect(() => {
     const container = sourceScrollRef.current;
     if (!container) return;
 
+    // 初始检测
     checkSourceScroll();
+    // 延迟再次检测，确保布局完成
     const initTimer = setTimeout(checkSourceScroll, 100);
     const delayTimer = setTimeout(checkSourceScroll, 300);
+
+    // ResizeObserver: 容器尺寸变化时重新计算
+    const resizeObserver = new ResizeObserver(() => {
+      checkSourceScroll();
+    });
+    resizeObserver.observe(container);
 
     // 使用 RAF 优化的回调，避免滚动期间频繁更新导致卡顿
     container.addEventListener('scroll', handleSourceScroll, { passive: true });
@@ -535,14 +547,32 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
       }
+      resizeObserver.disconnect();
       container.removeEventListener('scroll', handleSourceScroll);
       window.removeEventListener('resize', checkSourceScroll);
     };
   }, [checkSourceScroll, handleSourceScroll, sources]);
 
-  // 当选中的数据源变化时，滚动到对应位置
+  // 当选中的数据源变化时，滚动到对应位置 (带防抖，避免与用户手势冲突)
   useEffect(() => {
-    scrollToActiveSource();
+    // 只有真正切换数据源时才自动滚动
+    if (prevSourceRef.current === currentSource) return;
+    prevSourceRef.current = currentSource;
+
+    // 清除之前的定时器
+    if (scrollToActiveTimerRef.current) {
+      clearTimeout(scrollToActiveTimerRef.current);
+    }
+    // 防抖 150ms
+    scrollToActiveTimerRef.current = setTimeout(() => {
+      scrollToActiveSource();
+    }, 150);
+
+    return () => {
+      if (scrollToActiveTimerRef.current) {
+        clearTimeout(scrollToActiveTimerRef.current);
+      }
+    };
   }, [currentSource, scrollToActiveSource]);
 
   // 关闭模态框时阻止背景滚动
@@ -678,8 +708,9 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
                 className={cn(
                   'flex gap-1.5 sm:gap-2 overflow-x-auto py-1',
                   'lg:px-8', // PC 端留出箭头按钮空间
-                  'scroll-smooth',
                   'touch-pan-x', // 移动端触摸滚动优化
+                  // 注意：不使用 scroll-smooth，让原生惯性滚动更丝滑
+                  // 不使用 snap-x snap-mandatory，避免回弹问题
                 )}
                 style={{
                   scrollbarWidth: 'none',
