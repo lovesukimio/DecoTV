@@ -188,12 +188,12 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
         'left-1/2 -translate-x-1/2',
         // 尺寸限制
         'w-auto max-w-[92vw]',
-        // 外观样式 - 磨砂玻璃胶囊
+        // 外观样式 - 磨砂玻璃胶囊 (亮色/暗色自适应)
         'rounded-full',
-        'bg-black/75 dark:bg-black/85',
+        'bg-white/80 dark:bg-black/75',
         'backdrop-blur-xl',
-        'border border-white/10',
-        'shadow-2xl shadow-black/40',
+        'border border-black/5 dark:border-white/10',
+        'shadow-xl shadow-black/5 dark:shadow-2xl dark:shadow-black/40',
       )}
       style={{
         // 距离底部安全区
@@ -246,10 +246,10 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 active && item.activeTextColor,
                 active && 'shadow-lg',
                 active && 'scale-105',
-                // 非激活状态
-                !active && 'text-gray-400',
+                // 非激活状态 (亮色/暗色自适应)
+                !active && 'text-gray-600 dark:text-gray-400',
                 !active && item.hoverBg,
-                !active && 'hover:text-white',
+                !active && 'hover:text-gray-900 dark:hover:text-white',
               )}
             >
               <Icon

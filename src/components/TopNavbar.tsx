@@ -45,6 +45,7 @@ export default function TopNavbar() {
             <div className='flex items-center justify-center gap-2 flex-wrap'>
               <Link
                 href='/'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-home ${
                   isActive('/') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
@@ -54,6 +55,7 @@ export default function TopNavbar() {
               </Link>
               <Link
                 href='/search'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-search ${
                   isActive('/search') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
@@ -65,6 +67,7 @@ export default function TopNavbar() {
               {/* Categories */}
               <Link
                 href='/douban?type=movie'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-movie ${
                   isDoubanActive('movie') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
@@ -74,6 +77,7 @@ export default function TopNavbar() {
               </Link>
               <Link
                 href='/douban?type=tv'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-tv ${
                   isDoubanActive('tv') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
@@ -83,6 +87,7 @@ export default function TopNavbar() {
               </Link>
               <Link
                 href='/douban?type=anime'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-anime ${
                   isDoubanActive('anime') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
@@ -92,6 +97,7 @@ export default function TopNavbar() {
               </Link>
               <Link
                 href='/douban?type=show'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-show ${
                   isDoubanActive('show') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
@@ -101,6 +107,7 @@ export default function TopNavbar() {
               </Link>
               <Link
                 href='/live'
+                prefetch={false}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme chip-live ${
                   isActive('/live') ? 'ring-2 ring-purple-400/60' : ''
                 }`}
