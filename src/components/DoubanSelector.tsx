@@ -453,10 +453,10 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
   const sourceScrollRef = useRef<HTMLDivElement>(null);
+  const rafIdRef = useRef<number>(0);
 
-  // 边界检测阈值
-  const BOUNDARY_THRESHOLD = 2;
-  const SCROLL_DISTANCE = 200;
+  // 边界检测阈值 (5px 容错，避免高分屏小数问题)
+  const BOUNDARY_THRESHOLD = 5;
 
   // 检测滚动位置，更新箭头显示状态
   const checkSourceScroll = useCallback(() => {
@@ -470,17 +470,31 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     );
   }, []);
 
-  // 滚动控制
+  // 使用 requestAnimationFrame 包裹的滚动检测 (性能优化)
+  const handleSourceScroll = useCallback(() => {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+    rafIdRef.current = requestAnimationFrame(checkSourceScroll);
+  }, [checkSourceScroll]);
+
+  // 滚动控制 - 滚动距离为容器宽度的一半
   const scrollSourceLeft = useCallback(() => {
-    sourceScrollRef.current?.scrollBy({
-      left: -SCROLL_DISTANCE,
+    const container = sourceScrollRef.current;
+    if (!container) return;
+    const scrollAmount = Math.max(container.clientWidth / 2, 200);
+    container.scrollBy({
+      left: -scrollAmount,
       behavior: 'smooth',
     });
   }, []);
 
   const scrollSourceRight = useCallback(() => {
-    sourceScrollRef.current?.scrollBy({
-      left: SCROLL_DISTANCE,
+    const container = sourceScrollRef.current;
+    if (!container) return;
+    const scrollAmount = Math.max(container.clientWidth / 2, 200);
+    container.scrollBy({
+      left: scrollAmount,
       behavior: 'smooth',
     });
   }, []);
@@ -511,16 +525,20 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     const initTimer = setTimeout(checkSourceScroll, 100);
     const delayTimer = setTimeout(checkSourceScroll, 300);
 
-    container.addEventListener('scroll', checkSourceScroll, { passive: true });
+    // 使用 RAF 优化的回调，避免滚动期间频繁更新导致卡顿
+    container.addEventListener('scroll', handleSourceScroll, { passive: true });
     window.addEventListener('resize', checkSourceScroll);
 
     return () => {
       clearTimeout(initTimer);
       clearTimeout(delayTimer);
-      container.removeEventListener('scroll', checkSourceScroll);
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+      container.removeEventListener('scroll', handleSourceScroll);
       window.removeEventListener('resize', checkSourceScroll);
     };
-  }, [checkSourceScroll, sources]);
+  }, [checkSourceScroll, handleSourceScroll, sources]);
 
   // 当选中的数据源变化时，滚动到对应位置
   useEffect(() => {
@@ -590,48 +608,48 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
 
             {/* 右侧滚动区域 */}
             <div className='relative flex-1 min-w-0'>
-              {/* 左侧箭头按钮 - 仅 PC 端显示 */}
+              {/* 左侧箭头按钮 - 仅 PC 端显示，z-30 确保在遮罩之上 */}
               <button
                 onClick={scrollSourceLeft}
                 disabled={!showLeftArrow}
                 className={cn(
-                  'hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 z-20',
-                  'w-7 h-7 items-center justify-center',
+                  'hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 z-30',
+                  'w-8 h-8 items-center justify-center',
                   'rounded-full backdrop-blur-md',
-                  'bg-black/40 dark:bg-black/60',
+                  'bg-black/50 dark:bg-black/70',
                   'text-white shadow-lg',
                   'transition-all duration-200 ease-out',
                   'hover:bg-blue-500 hover:scale-110',
                   'active:scale-95',
                   showLeftArrow
-                    ? 'opacity-100 pointer-events-auto'
+                    ? 'opacity-100'
                     : 'opacity-0 pointer-events-none -translate-x-2',
                 )}
                 aria-label='向左滚动'
               >
-                <ChevronLeft className='w-4 h-4' />
+                <ChevronLeft className='w-5 h-5' />
               </button>
 
-              {/* 右侧箭头按钮 - 仅 PC 端显示 */}
+              {/* 右侧箭头按钮 - 仅 PC 端显示，z-30 确保在遮罩之上 */}
               <button
                 onClick={scrollSourceRight}
                 disabled={!showRightArrow}
                 className={cn(
-                  'hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-20',
-                  'w-7 h-7 items-center justify-center',
+                  'hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-30',
+                  'w-8 h-8 items-center justify-center',
                   'rounded-full backdrop-blur-md',
-                  'bg-black/40 dark:bg-black/60',
+                  'bg-black/50 dark:bg-black/70',
                   'text-white shadow-lg',
                   'transition-all duration-200 ease-out',
                   'hover:bg-blue-500 hover:scale-110',
                   'active:scale-95',
                   showRightArrow
-                    ? 'opacity-100 pointer-events-auto'
+                    ? 'opacity-100'
                     : 'opacity-0 pointer-events-none translate-x-2',
                 )}
                 aria-label='向右滚动'
               >
-                <ChevronRight className='w-4 h-4' />
+                <ChevronRight className='w-5 h-5' />
               </button>
 
               {/* 左侧渐变遮罩 */}
@@ -659,8 +677,9 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
                 ref={sourceScrollRef}
                 className={cn(
                   'flex gap-1.5 sm:gap-2 overflow-x-auto py-1',
-                  'lg:px-6',
+                  'lg:px-8', // PC 端留出箭头按钮空间
                   'scroll-smooth',
+                  'touch-pan-x', // 移动端触摸滚动优化
                 )}
                 style={{
                   scrollbarWidth: 'none',
