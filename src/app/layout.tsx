@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import NextTopLoader from 'nextjs-toploader';
 import React from 'react';
 
 import './globals.css';
@@ -112,6 +113,18 @@ export default async function RootLayout({
       <body
         className={`${inter.className} min-h-screen bg-white text-gray-900 dark:bg-black dark:text-gray-200 bg-animated-gradient`}
       >
+        {/* 顶部进度条：点击链接瞬间显示，消除"死机感" */}
+        <NextTopLoader
+          color='#ec4899'
+          initialPosition={0.08}
+          crawlSpeed={200}
+          height={3}
+          crawl={true}
+          showSpinner={false}
+          easing='ease'
+          speed={200}
+          shadow='0 0 10px #ec4899,0 0 5px #ec4899'
+        />
         <ThemeProvider
           attribute='class'
           defaultTheme='system'

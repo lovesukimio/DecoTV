@@ -1,14 +1,37 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+/**
+ * 智能粒子背景组件
+ * - 移动端 (<768px)：使用纯 CSS 渐变，彻底释放 CPU
+ * - PC 端 (>=768px)：保留 Canvas 粒子特效
+ * - 页面不可见时暂停动画循环，节省电量
+ */
 export default function ParticleBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const pathname = usePathname();
   const lastFrameTime = useRef<number>(0);
   const FPS_LIMIT = 30; // 限制帧率到 30fps，降低 CPU 占用
+
+  // 检测是否为移动端 (< 768px)
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 初始化时检测屏幕尺寸
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    // 初始检测
+    checkMobile();
+
+    // 监听 resize 事件
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 使用 useMemo 缓存主题配置，避免每帧重新计算
   const themeConfig = useMemo(() => {
@@ -25,6 +48,9 @@ export default function ParticleBackground() {
   }, [pathname]);
 
   useEffect(() => {
+    // 移动端不渲染 Canvas，直接退出
+    if (isMobile) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -70,6 +96,12 @@ export default function ParticleBackground() {
     }
 
     const draw = (currentTime: number) => {
+      // 页面不可见时暂停动画，节省电量
+      if (document.hidden) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
       // 限制帧率到 30fps，降低 50% CPU 占用
       const elapsed = currentTime - lastFrameTime.current;
       if (elapsed < 1000 / FPS_LIMIT) {
@@ -198,8 +230,27 @@ export default function ParticleBackground() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener('resize', onResize);
     };
-  }, [pathname, themeConfig, FPS_LIMIT, lastFrameTime]);
+  }, [pathname, themeConfig, FPS_LIMIT, lastFrameTime, isMobile]);
 
+  // 移动端：使用纯 CSS 渐变背景，彻底释放 CPU
+  if (isMobile) {
+    return (
+      <div
+        aria-hidden='true'
+        className='fixed inset-0 -z-10 h-full w-full opacity-40 dark:opacity-70'
+        style={{
+          background: `linear-gradient(
+            135deg,
+            hsl(${themeConfig.hue}, ${themeConfig.saturation}%, 8%) 0%,
+            hsl(${(themeConfig.hue + 30) % 360}, ${themeConfig.saturation - 10}%, 12%) 50%,
+            hsl(${(themeConfig.hue + 60) % 360}, ${themeConfig.saturation - 20}%, 6%) 100%
+          )`,
+        }}
+      />
+    );
+  }
+
+  // PC 端：保留 Canvas 粒子特效
   return (
     <canvas
       ref={canvasRef}
