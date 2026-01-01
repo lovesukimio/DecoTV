@@ -59,7 +59,6 @@ export default [
         CustomEvent: 'readonly',
         EventTarget: 'readonly',
         HTMLElement: 'readonly',
-        HTMLAnchorElement: 'readonly',
         HTMLVideoElement: 'readonly',
         HTMLInputElement: 'readonly',
         MouseEvent: 'readonly',
