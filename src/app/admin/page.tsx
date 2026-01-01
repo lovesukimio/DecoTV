@@ -2634,6 +2634,21 @@ const VideoSourceConfig = ({
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
+
+        // 401 鉴权失败：保留表单，提示并引导重新登录
+        if (resp.status === 401) {
+          showError(
+            data.error ||
+              '登录已过期或未配置 AUTH_SECRET，请检查 Docker 环境变量后重新登录。',
+            showAlert,
+          );
+          // 轻量跳转到登录页，避免多次点击无响应
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 300);
+          throw new Error('Unauthorized');
+        }
+
         throw new Error(data.error || `操作失败: ${resp.status}`);
       }
 
