@@ -241,15 +241,15 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 'focus:outline-none focus:ring-2 focus:ring-white/30',
                 // 点击反馈
                 'active:scale-95',
-                // 激活状态
-                active && [
-                  item.activeGradient,
-                  item.activeTextColor,
-                  'shadow-lg',
-                  'scale-105',
-                ],
+                // 激活状态 (扁平化传入，不使用数组)
+                active && item.activeGradient,
+                active && item.activeTextColor,
+                active && 'shadow-lg',
+                active && 'scale-105',
                 // 非激活状态
-                !active && ['text-gray-400', item.hoverBg, 'hover:text-white'],
+                !active && 'text-gray-400',
+                !active && item.hoverBg,
+                !active && 'hover:text-white',
               )}
             >
               <Icon
