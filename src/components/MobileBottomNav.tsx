@@ -229,6 +229,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               ref={(el) => {
                 itemRefs.current[index] = el;
               }}

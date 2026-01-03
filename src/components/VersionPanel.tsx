@@ -550,7 +550,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
                       })
                       .map((entry, index) => (
                         <div
-                          key={index}
+                          key={`remote-new-${entry.version}-${index}`}
                           className={`p-4 rounded-lg border ${
                             entry.version === latestVersion
                               ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
