@@ -32,7 +32,7 @@ export default function ParticleBackground() {
 
       {/* 青蓝光斑 - 右下角，响应式尺寸 */}
       <div
-        className='absolute bottom-20 -right-16 md:bottom-0 md:-right-20 w-56 h-56 md:w-[35vw] md:h-[35vw] md:max-w-112 md:max-h-112 rounded-full mix-blend-screen filter blur-[45px] md:blur-[70px] animate-blob-slow transform-gpu will-change-transform'
+        className='absolute bottom-20 -right-16 md:bottom-0 md:-right-20 w-56 h-56 md:w-[35vw] md:h-[35vw] md:max-w-md md:max-h-md rounded-full mix-blend-screen filter blur-[45px] md:blur-[70px] animate-blob-slow transform-gpu will-change-transform'
         style={{
           background:
             'radial-gradient(circle, rgba(34,211,238,0.18) 0%, transparent 70%)',
