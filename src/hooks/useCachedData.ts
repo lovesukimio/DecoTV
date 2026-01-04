@@ -105,7 +105,7 @@ export interface UseCachedDataResult<T> {
   refresh: () => Promise<void>;
 
   /** 手动清除当前缓存 */
-  clearCache: () => Promise<void>;
+  clearCache: () => void;
 }
 
 // ============ Hook 实现 ============
@@ -157,7 +157,7 @@ export function useCachedData<T, D extends unknown[]>(
       try {
         // 第一步：尝试从缓存读取（如果未忽略缓存）
         if (enableCache && !ignoreCache) {
-          const cached = await globalCache.get<T>(cacheKey);
+          const cached = globalCache.get<T>(cacheKey);
           if (cached !== null) {
             // 缓存命中！
             // 验证：当前参数是否仍然匹配
@@ -209,11 +209,13 @@ export function useCachedData<T, D extends unknown[]>(
         setLoading(false);
         setError(null);
 
-        // 写入缓存（异步，不阻塞 UI）
+        // 写入缓存（同步操作）
         if (enableCache) {
-          globalCache.set(cacheKey, result, ttl).catch((e) => {
+          try {
+            globalCache.set(cacheKey, result, ttl);
+          } catch (e) {
             console.warn(`[useCachedData] 缓存写入失败:`, e);
-          });
+          }
         }
       } catch (e) {
         // 验证请求是否仍然有效
@@ -278,8 +280,8 @@ export function useCachedData<T, D extends unknown[]>(
   }, [fetchData]);
 
   // ========== 清除缓存 ==========
-  const clearCache = useCallback(async () => {
-    await globalCache.delete(cacheKey);
+  const clearCache = useCallback(() => {
+    globalCache.delete(cacheKey);
     console.log(`[useCachedData] 缓存已清除: ${cacheKey}`);
   }, [cacheKey]);
 

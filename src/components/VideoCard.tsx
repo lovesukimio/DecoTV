@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import NProgress from 'nprogress';
 import React, {
   forwardRef,
   memo,
@@ -239,21 +238,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     );
 
     /**
-     * 点击处理器 - 零延迟设计
+     * 点击处理器 - 纯净版
      *
-     * 执行顺序：
-     * 1. [0ms] NProgress.start() - 进度条立即启动
-     * 2. [1-2ms] router.push() - 非阻塞导航
-     *
-     * 为什么能实现"毫秒级响应"？
-     * - NProgress 是同步 DOM 操作，16ms 内可见
-     * - 用户看到进度条 = 点击成功，心理延迟为 0
+     * 注意：不再手动触发 NProgress，缓存系统足够快
      */
     const handleClick = useCallback(() => {
-      // 【关键】立即启动进度条 - 这是函数第一行
-      // 同步操作，在当前帧内执行，用户立即看到反馈
-      NProgress.start();
-
       if (origin === 'live' && actualSource && actualId) {
         // 直播内容跳转到直播页面
         const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
