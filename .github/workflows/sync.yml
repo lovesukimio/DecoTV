@@ -1,0 +1,101 @@
+name: 每日上游同步与自身保护 (优化版)
+
+on:
+  # 每天世界标准时间 00:00 (北京时间 08:00) 自动触发
+  schedule:
+    - cron: '0 0 * * *'
+  # 允许手动从 Actions 页面触发 (您手动测试时使用)
+  workflow_dispatch:
+
+jobs:
+  sync_and_protect:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔐 检出仓库 - 获取完整历史记录
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # 确保获取上游和本地的完整历史记录，用于 SHA 比较
+          fetch-depth: 0 
+
+      - name: ⚙️ 设置 Git 用户信息
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: 🔗 添加并获取上游仓库最新内容
+        run: |
+          # 检查并设置上游源
+          if ! git remote -v | grep -q "upstream"; then
+            git remote add upstream https://github.com/Decohererk/DecoTV.git
+          fi
+          # 抓取上游最新内容，但不合并
+          git fetch upstream
+          
+      - name: 🚀 智能同步、文件保护与推送
+        id: sync_logic
+        run: |
+          UPSTREAM_BRANCH="main"
+          CURRENT_BRANCH="${GITHUB_REF#refs/heads/}"
+          PROTECTED_FILE=".github/workflows/sync.yml"
+          TEMP_FILE_PATH="/tmp/sync_workflow_backup.yml"
+          
+          echo "同步中，当前分支: $CURRENT_BRANCH"
+          
+          # 0. 记录同步前本地仓库的 commit SHA (远程 origin/main 的内容)
+          LOCAL_SHA_BEFORE_SYNC=$(git rev-parse $CURRENT_BRANCH)
+          echo "同步前本地 SHA: $LOCAL_SHA_BEFORE_SYNC"
+          
+          # 1. 备份需要保护的本地工作流文件
+          if [ -f "$PROTECTED_FILE" ]; then
+            mkdir -p $(dirname "$TEMP_FILE_PATH")
+            cp "$PROTECTED_FILE" "$TEMP_FILE_PATH"
+            echo "备份本地 $PROTECTED_FILE 到 $TEMP_FILE_PATH"
+          else
+            echo "错误：需要保护的 $PROTECTED_FILE 文件不存在！"
+            exit 1 
+          fi
+
+          # 2. 强制重置到上游最新提交 (实现完全覆盖)
+          git reset --hard upstream/$UPSTREAM_BRANCH
+          
+          # 3. 恢复备份的文件到工作目录，并添加到暂存区 (实现文件保护)
+          cp "$TEMP_FILE_PATH" "$PROTECTED_FILE"
+          git add "$PROTECTED_FILE"
+          echo "恢复并暂存本地 $PROTECTED_FILE"
+
+          # 4. 检查是否有需要提交的更改
+          if git diff --cached --exit-code; then
+              echo "本地的 sync.yml 与同步后的内容一致，无需额外提交。"
+              # 此时的最终 SHA 就是上游的 SHA
+              FINAL_SHA=$(git rev-parse HEAD)
+          else
+              # 如果有差异，则提交本地的 sync.yml
+              git commit -m "Merge upstream's forced update and preserve local sync.yml"
+              FINAL_SHA=$(git rev-parse HEAD)
+          fi
+          
+          # 5. 检查是否需要推送
+          # 如果最终 SHA 等于同步前的 SHA，则说明本次同步操作没有改变任何内容，跳过推送。
+          if [ "$FINAL_SHA" = "$LOCAL_SHA_BEFORE_SYNC" ]; then
+              echo "✅ 经检查，仓库内容与远程 origin/$CURRENT_BRANCH 保持一致，跳过强制推送。"
+              echo "PUSH_NEEDED=false" >> $GITHUB_OUTPUT
+          else
+              echo "✅ 检测到内容有变化，准备执行强制推送。"
+              echo "PUSH_NEEDED=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # 将最终 SHA 输出，用于后续步骤的检查（可选）
+          echo "FINAL_SHA=$FINAL_SHA" >> $GITHUB_OUTPUT
+
+      - name: 📤 强制推送到远程仓库
+        # 仅当上一步的逻辑判断为需要推送时才执行
+        if: steps.sync_logic.outputs.PUSH_NEEDED == 'true'
+        run: |
+          CURRENT_BRANCH="${GITHUB_REF#refs/heads/}"
+          git push -f origin $CURRENT_BRANCH
+          echo "✅ 同步完成并强制推送成功。"
+
+      - name: 🧹 清理临时文件 (可选但推荐)
+        run: rm -f /tmp/sync_workflow_backup.yml
