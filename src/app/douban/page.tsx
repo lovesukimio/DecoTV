@@ -35,6 +35,10 @@ function DoubanPageClient() {
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // === 智能防抖追踪 ===
+  const isFirstMount = useRef(true);
+  const prevTypeRef = useRef(type);
+
   // 用于存储最新参数值的 refs
   const currentParamsRef = useRef({
     type: '',
@@ -311,14 +315,17 @@ function DoubanPageClient() {
     const cachedData = getDoubanData(cacheKey);
     if (cachedData && cachedData.length > 0) {
       console.log(`[DoubanPage] 全局缓存命中: ${cacheKey}`);
+      // 缓存命中：直接设置数据，不设置 loading，实现 0 延迟渲染
       setDoubanData(cachedData);
       setLoading(false);
       setHasMore(cachedData.length >= 25);
+      setCurrentPage(0);
       return;
     }
 
-    // 标记为正在加载
+    // 【无缓存】标记为正在加载，显示骨架屏
     setDoubanLoading(cacheKey, true);
+    setLoading(true);
 
     try {
       setLoading(true);
@@ -462,7 +469,7 @@ function DoubanPageClient() {
     setDoubanLoading,
   ]);
 
-  // 只在选择器准备好后才加载数据
+  // 只在选择器准备好后才加载数据 - 智能防抖
   useEffect(() => {
     // 只有在选择器准备好时才开始加载
     if (!selectorsReady) {
@@ -481,10 +488,25 @@ function DoubanPageClient() {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    // 使用防抖机制加载数据，避免连续状态更新触发多次请求
-    debounceTimeoutRef.current = setTimeout(() => {
+    // 【智能防抖】判断是否需要立即执行
+    const typeChanged = prevTypeRef.current !== type;
+    const shouldExecuteImmediately = isFirstMount.current || typeChanged;
+
+    // 更新追踪状态
+    prevTypeRef.current = type;
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+    }
+
+    if (shouldExecuteImmediately) {
+      // 首次挂载或 Tab 切换：立即执行，利用缓存实现 0 延迟
       loadInitialData();
-    }, 100); // 100ms 防抖延迟
+    } else {
+      // 筛选条件变化：使用防抖，防止用户快速点击
+      debounceTimeoutRef.current = setTimeout(() => {
+        loadInitialData();
+      }, 100);
+    }
 
     // 清理函数
     return () => {
