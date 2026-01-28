@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 
 'use client';
 
@@ -7,18 +7,11 @@ import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
 import {
-  BangumiCalendarData,
-  GetBangumiCalendarData,
-} from '@/lib/bangumi.client';
-// 客户端收藏 API
-import {
   clearAllFavorites,
   getAllFavorites,
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { getDoubanCategories } from '@/lib/douban.client';
-import { DoubanItem } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -28,18 +21,30 @@ import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
 
+import { useGlobalCache } from '@/contexts/GlobalCacheContext';
+
 function HomeClient() {
   const [activeTab, setActiveTab] = useState<'home' | 'favorites'>('home');
-  const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
-  const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
-  const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
-  const [bangumiCalendarData, setBangumiCalendarData] = useState<
-    BangumiCalendarData[]
-  >([]);
-  const [loading, setLoading] = useState(true);
   const { siteName, announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+
+  // === 接入全局缓存 ===
+  const { homeData, homeLoading, fetchHomeData } = useGlobalCache();
+
+  // 解构首页数据（带默认值防止 null）
+  const hotMovies = homeData?.hotMovies ?? [];
+  const hotTvShows = homeData?.hotTvShows ?? [];
+  const hotVarietyShows = homeData?.hotVarietyShows ?? [];
+  const bangumiCalendarData = homeData?.bangumiCalendar ?? [];
+
+  // 只在无缓存时显示骨架屏，有缓存时后台静默更新
+  const loading = homeLoading && !homeData;
+
+  // === 首次挂载时触发数据加载（利用 SWR 策略） ===
+  useEffect(() => {
+    fetchHomeData();
+  }, []);
 
   // 检查公告弹窗状态
   useEffect(() => {
@@ -67,47 +72,6 @@ function HomeClient() {
   };
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
-
-  useEffect(() => {
-    const fetchRecommendData = async () => {
-      try {
-        setLoading(true);
-
-        // 并行获取热门电影、热门剧集和热门综艺
-        const [moviesData, tvShowsData, varietyShowsData, bangumiCalendarData] =
-          await Promise.all([
-            getDoubanCategories({
-              kind: 'movie',
-              category: '热门',
-              type: '全部',
-            }),
-            getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
-            getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
-            GetBangumiCalendarData(),
-          ]);
-
-        if (moviesData.code === 200) {
-          setHotMovies(moviesData.list);
-        }
-
-        if (tvShowsData.code === 200) {
-          setHotTvShows(tvShowsData.list);
-        }
-
-        if (varietyShowsData.code === 200) {
-          setHotVarietyShows(varietyShowsData.list);
-        }
-
-        setBangumiCalendarData(bangumiCalendarData);
-      } catch (error) {
-        console.error('获取推荐数据失败:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecommendData();
-  }, []);
 
   // 处理收藏数据更新的函数
   const updateFavoriteItems = async (allFavorites: Record<string, any>) => {
@@ -157,7 +121,7 @@ function HomeClient() {
       'favoritesUpdated',
       (newFavorites: Record<string, any>) => {
         updateFavoriteItems(newFavorites);
-      }
+      },
     );
 
     return unsubscribe;
@@ -399,12 +363,12 @@ function HomeClient() {
                         // 找到当前星期对应的番剧数据
                         const todayAnimes =
                           bangumiCalendarData.find(
-                            (item) => item.weekday.en === currentWeekday
+                            (item) => item.weekday.en === currentWeekday,
                           )?.items || [];
 
                         // 过滤掉无效数据
                         const validAnimes = todayAnimes.filter(
-                          (anime) => anime && anime.id
+                          (anime) => anime && anime.id,
                         );
 
                         return validAnimes.map((anime, index) => (

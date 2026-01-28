@@ -7,6 +7,8 @@ import './globals.css';
 
 import { getConfig } from '@/lib/config';
 
+import { GlobalCacheProvider } from '@/contexts/GlobalCacheContext';
+
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import NavbarGate from '../components/NavbarGate';
 import ParticleBackground from '../components/ParticleBackground';
@@ -125,21 +127,23 @@ export default async function RootLayout({
           speed={200}
           shadow='0 0 10px #ec4899,0 0 5px #ec4899'
         />
-        <ThemeProvider
-          attribute='class'
-          defaultTheme='system'
-          enableSystem
-          disableTransitionOnChange
-        >
-          <SiteProvider siteName={siteName} announcement={announcement}>
-            <ParticleBackground />
-            <NavbarGate>
-              <TopNavbar />
-            </NavbarGate>
-            {children}
-            <GlobalErrorIndicator />
-          </SiteProvider>
-        </ThemeProvider>
+        <GlobalCacheProvider>
+          <ThemeProvider
+            attribute='class'
+            defaultTheme='system'
+            enableSystem
+            disableTransitionOnChange
+          >
+            <SiteProvider siteName={siteName} announcement={announcement}>
+              <ParticleBackground />
+              <NavbarGate>
+                <TopNavbar />
+              </NavbarGate>
+              {children}
+              <GlobalErrorIndicator />
+            </SiteProvider>
+          </ThemeProvider>
+        </GlobalCacheProvider>
       </body>
     </html>
   );
