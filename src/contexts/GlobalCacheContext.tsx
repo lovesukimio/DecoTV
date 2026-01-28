@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 
 import {
   BangumiCalendarData,
@@ -137,12 +138,14 @@ export function GlobalCacheProvider({ children }: { children: ReactNode }) {
 
       try {
         const freshData = await fetchHomeDataFromAPI();
-        setHomeData(freshData);
-        setHomeLastFetch(Date.now());
+        // 使用 flushSync 强制同步更新，避免批处理延迟
+        flushSync(() => {
+          setHomeData(freshData);
+          setHomeLastFetch(Date.now());
+        });
         globalCache.set(cacheKey, freshData, CACHE_TIME / 1000);
       } catch (error) {
         setHomeError(error instanceof Error ? error.message : '加载失败');
-        console.error('[GlobalCache] 首页数据加载失败:', error);
       } finally {
         setHomeLoading(false);
         fetchingRef.current.delete(cacheKey);

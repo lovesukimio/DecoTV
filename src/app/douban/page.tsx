@@ -4,6 +4,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import { GetBangumiCalendarData } from '@/lib/bangumi.client';
 import {
@@ -307,19 +308,19 @@ function DoubanPageClient() {
 
     // 【防止并发】检查是否正在加载
     if (isDoubanLoading(cacheKey)) {
-      console.log(`[DoubanPage] 正在加载中，跳过: ${cacheKey}`);
       return;
     }
 
     // 【缓存优先】尝试从全局内存缓存读取
     const cachedData = getDoubanData(cacheKey);
     if (cachedData && cachedData.length > 0) {
-      console.log(`[DoubanPage] 全局缓存命中: ${cacheKey}`);
-      // 缓存命中：直接设置数据，不设置 loading，实现 0 延迟渲染
-      setDoubanData(cachedData);
-      setLoading(false);
-      setHasMore(cachedData.length >= 25);
-      setCurrentPage(0);
+      // 缓存命中：使用 flushSync 强制同步更新 DOM，实现毫秒级渲染
+      flushSync(() => {
+        setDoubanData(cachedData);
+        setLoading(false);
+        setHasMore(cachedData.length >= 25);
+        setCurrentPage(0);
+      });
       return;
     }
 
@@ -432,17 +433,17 @@ function DoubanPageClient() {
         const currentSnapshot = { ...currentParamsRef.current };
 
         if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
-          setDoubanData(data.list);
-          setHasMore(data.list.length !== 0);
-          setLoading(false);
+          // 使用 flushSync 确保状态同步更新，避免批处理延迟
+          flushSync(() => {
+            setDoubanData(data.list);
+            setHasMore(data.list.length !== 0);
+            setLoading(false);
+          });
 
           // 【全局缓存写入】保存到全局 Context 缓存，下次瞬间加载
           if (data.list.length > 0) {
             setGlobalDoubanData(cacheKey, data.list);
-            console.log(`[DoubanPage] 全局缓存写入: ${cacheKey}`);
           }
-        } else {
-          console.log('参数不一致，不执行任何操作，避免设置过期数据');
         }
         // 如果参数不一致，不执行任何操作，避免设置过期数据
       } else {
