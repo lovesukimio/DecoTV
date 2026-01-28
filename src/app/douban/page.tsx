@@ -35,7 +35,9 @@ function DoubanPageClient() {
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // === 智能防抖追踪 ===
+  const type = searchParams.get('type') || 'movie';
+
+  // === 智能防抖追踪（必须在 type 定义之后）===
   const isFirstMount = useRef(true);
   const prevTypeRef = useRef(type);
 
@@ -48,8 +50,6 @@ function DoubanPageClient() {
     selectedWeekday: '',
     currentPage: 0,
   });
-
-  const type = searchParams.get('type') || 'movie';
 
   // === 接入全局缓存 ===
   const {
