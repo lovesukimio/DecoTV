@@ -12,7 +12,7 @@ import {
   getDoubanRecommends,
 } from '@/lib/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
-import { generateCacheKey, globalCache } from '@/lib/unified-cache';
+import { generateCacheKey } from '@/lib/unified-cache';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
@@ -20,6 +20,8 @@ import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector, { SourceCategory } from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
+
+import { useGlobalCache } from '@/contexts/GlobalCacheContext';
 
 function DoubanPageClient() {
   const searchParams = useSearchParams();
@@ -44,6 +46,14 @@ function DoubanPageClient() {
   });
 
   const type = searchParams.get('type') || 'movie';
+
+  // === 接入全局缓存 ===
+  const {
+    getDoubanData,
+    setDoubanData: setGlobalDoubanData,
+    isDoubanLoading,
+    setDoubanLoading,
+  } = useGlobalCache();
 
   // 获取 runtimeConfig 中的自定义分类数据
   const [customCategories, setCustomCategories] = useState<
@@ -291,15 +301,24 @@ function DoubanPageClient() {
       ...multiLevelValues,
     });
 
-    // 尝试从缓存读取
-    const cachedData = globalCache.get<DoubanItem[]>(cacheKey);
+    // 【防止并发】检查是否正在加载
+    if (isDoubanLoading(cacheKey)) {
+      console.log(`[DoubanPage] 正在加载中，跳过: ${cacheKey}`);
+      return;
+    }
+
+    // 【缓存优先】尝试从全局内存缓存读取
+    const cachedData = getDoubanData(cacheKey);
     if (cachedData && cachedData.length > 0) {
-      console.log(`[DoubanPage] 缓存命中: ${cacheKey}`);
+      console.log(`[DoubanPage] 全局缓存命中: ${cacheKey}`);
       setDoubanData(cachedData);
       setLoading(false);
       setHasMore(cachedData.length >= 25);
       return;
     }
+
+    // 标记为正在加载
+    setDoubanLoading(cacheKey, true);
 
     try {
       setLoading(true);
@@ -410,10 +429,10 @@ function DoubanPageClient() {
           setHasMore(data.list.length !== 0);
           setLoading(false);
 
-          // 【缓存写入】保存到缓存，下次瞬间加载
+          // 【全局缓存写入】保存到全局 Context 缓存，下次瞬间加载
           if (data.list.length > 0) {
-            globalCache.set(cacheKey, data.list, 3600); // 1小时缓存
-            console.log(`[DoubanPage] 缓存写入: ${cacheKey}`);
+            setGlobalDoubanData(cacheKey, data.list);
+            console.log(`[DoubanPage] 全局缓存写入: ${cacheKey}`);
           }
         } else {
           console.log('参数不一致，不执行任何操作，避免设置过期数据');
@@ -425,6 +444,9 @@ function DoubanPageClient() {
     } catch (err) {
       console.error(err);
       setLoading(false); // 发生错误时总是停止loading状态
+    } finally {
+      // 清除加载状态
+      setDoubanLoading(cacheKey, false);
     }
   }, [
     type,
@@ -434,6 +456,10 @@ function DoubanPageClient() {
     selectedWeekday,
     getRequestParams,
     customCategories,
+    getDoubanData,
+    setGlobalDoubanData,
+    isDoubanLoading,
+    setDoubanLoading,
   ]);
 
   // 只在选择器准备好后才加载数据
