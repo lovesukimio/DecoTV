@@ -49,6 +49,7 @@ const NAV_ITEMS = [
     label: '首页',
     chip: 'chip-home',
     type: 'exact',
+    openInNewTab: false, // 首页不需要新标签页
   },
   {
     key: 'search',
@@ -57,6 +58,7 @@ const NAV_ITEMS = [
     label: '搜索',
     chip: 'chip-search',
     type: 'exact',
+    openInNewTab: false, // 搜索不需要新标签页
   },
   {
     key: 'movie',
@@ -66,6 +68,7 @@ const NAV_ITEMS = [
     chip: 'chip-movie',
     type: 'douban',
     doubanType: 'movie',
+    openInNewTab: true, // PC端新标签页打开，解决卡顿
   },
   {
     key: 'tv',
@@ -75,6 +78,7 @@ const NAV_ITEMS = [
     chip: 'chip-tv',
     type: 'douban',
     doubanType: 'tv',
+    openInNewTab: true,
   },
   {
     key: 'anime',
@@ -84,6 +88,7 @@ const NAV_ITEMS = [
     chip: 'chip-anime',
     type: 'douban',
     doubanType: 'anime',
+    openInNewTab: true,
   },
   {
     key: 'show',
@@ -93,6 +98,7 @@ const NAV_ITEMS = [
     chip: 'chip-show',
     type: 'douban',
     doubanType: 'show',
+    openInNewTab: true,
   },
   {
     key: 'live',
@@ -101,6 +107,7 @@ const NAV_ITEMS = [
     label: '直播',
     chip: 'chip-live',
     type: 'exact',
+    openInNewTab: true,
   },
 ] as const;
 
@@ -232,8 +239,27 @@ function TopNavbar() {
                 // 这是"乐观 UI"的核心：点击即变色，不等 URL
                 const active = activeTabKey === item.key;
 
+                // PC端分类页面（电影、剧集等）在新标签页打开，彻底避免状态同步卡顿
+                if (item.openInNewTab) {
+                  return (
+                    <a
+                      key={item.key}
+                      href={item.href}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme ${item.chip} ${
+                        active ? 'ring-2 ring-purple-400/60' : ''
+                      }`}
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      <Icon className='h-4 w-4' />
+                      <span>{item.label}</span>
+                    </a>
+                  );
+                }
+
                 return (
-                  // 禁用 Next.js prefetch，使用 UnifiedCache 缓存数据
+                  // 首页、搜索等不需要新标签页的，保持原有行为
                   <FastLink
                     key={item.key}
                     href={item.href}
