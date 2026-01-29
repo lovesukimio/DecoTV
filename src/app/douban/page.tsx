@@ -292,6 +292,40 @@ function DoubanPageClient() {
   // 防抖的数据加载函数 - 缓存优先 + 请求生命周期管理
   const loadInitialData = useCallback(async () => {
     // 创建当前参数的快照
+    // 【关键修复】检查选择器状态是否与 type 同步
+    // 防止状态不同步时发起错误的请求（这是导致卡顿的根本原因）
+    const isStateInSync = (() => {
+      if (type === 'movie') {
+        return primarySelection === '热门' || primarySelection === '全部';
+      }
+      if (type === 'tv') {
+        return (
+          (primarySelection === '最近热门' || primarySelection === '全部') &&
+          (secondarySelection === 'tv' || secondarySelection === 'all')
+        );
+      }
+      if (type === 'show') {
+        return (
+          (primarySelection === '最近热门' || primarySelection === '全部') &&
+          (secondarySelection === 'show' || secondarySelection === 'all')
+        );
+      }
+      if (type === 'anime') {
+        return ['每日放送', '番剧', '剧场版', '全部'].includes(
+          primarySelection,
+        );
+      }
+      if (type === 'custom') {
+        return true; // 自定义分类不做检查
+      }
+      return true;
+    })();
+
+    if (!isStateInSync) {
+      // 状态还没同步，跳过这次加载，等待下一次 useEffect 触发
+      return;
+    }
+
     const requestSnapshot = {
       type,
       primarySelection,
