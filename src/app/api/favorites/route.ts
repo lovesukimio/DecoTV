@@ -20,7 +20,7 @@ async function validateAndGetUsername(
 
   const authInfo = getAuthInfoFromCookie(request);
   const username =
-    authInfo?.username || (authResult.isLocalMode ? '__local__' : undefined);
+    authInfo?.username || (authResult.isLocalMode ? '__local__' : '');
 
   if (!username) {
     return { error: 'Unauthorized', status: 401 };

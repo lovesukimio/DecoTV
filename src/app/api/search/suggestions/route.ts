@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     // 获取用户名（本地模式可能没有 username）
     const authInfo = getAuthInfoFromCookie(request);
     const username =
-      authInfo?.username || (authResult.isLocalMode ? '__local__' : undefined);
+      authInfo?.username || (authResult.isLocalMode ? '__local__' : '');
 
     const config = await getConfig();
     const { searchParams } = new URL(request.url);
