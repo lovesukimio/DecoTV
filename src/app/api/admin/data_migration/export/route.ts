@@ -65,7 +65,10 @@ export async function POST(req: NextRequest) {
     // 获取所有用户
     let allUsers = await db.getAllUsers();
     // 添加站长用户
-    allUsers.push(process.env.USERNAME);
+    const ownerUsername = process.env.USERNAME;
+    if (ownerUsername) {
+      allUsers.push(ownerUsername);
+    }
     allUsers = Array.from(new Set(allUsers));
 
     // 为每个用户收集数据
@@ -87,8 +90,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 覆盖站长密码
-    exportData.data.userData[process.env.USERNAME].password =
-      process.env.PASSWORD;
+    if (ownerUsername && exportData.data.userData[ownerUsername]) {
+      exportData.data.userData[ownerUsername].password = process.env.PASSWORD;
+    }
 
     // 将数据转换为JSON字符串
     const jsonData = JSON.stringify(exportData);
