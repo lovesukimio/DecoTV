@@ -4,7 +4,7 @@
 
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
-import { Heart, Radio, Tv } from 'lucide-react';
+import { Heart, Info, Radio, Tv, Zap } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -134,6 +134,10 @@ function LivePageClient() {
   const [channelSearchQuery, setChannelSearchQuery] = useState('');
   const [isGroupSelectorOpen, setIsGroupSelectorOpen] = useState(false);
   const [groupSearchQuery, setGroupSearchQuery] = useState('');
+
+  // 直连模式状态
+  const [isDirectConnect, setIsDirectConnect] = useState(false);
+  const [showDirectConnectTip, setShowDirectConnectTip] = useState(false);
 
   // EPG数据清洗函数 - 去除重叠的节目，保留时间较短的，只显示今日节目
   const cleanEpgData = (
@@ -742,7 +746,21 @@ function LivePageClient() {
   // 初始化
   useEffect(() => {
     fetchLiveSources();
+    // 初始化直连模式状态
+    const savedDirectConnect = localStorage.getItem('liveDirectConnect');
+    if (savedDirectConnect !== null) {
+      setIsDirectConnect(savedDirectConnect === 'true');
+    }
   }, []);
+
+  // 切换直连模式
+  const handleDirectConnectToggle = (value: boolean) => {
+    setIsDirectConnect(value);
+    localStorage.setItem('liveDirectConnect', JSON.stringify(value));
+    // 显示提示
+    setShowDirectConnectTip(true);
+    setTimeout(() => setShowDirectConnectTip(false), 5000);
+  };
 
   // 检查收藏状态
   useEffect(() => {
@@ -1215,9 +1233,9 @@ function LivePageClient() {
   return (
     <PageLayout activePath='/live'>
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-12 2xl:px-20'>
-        {/* 第一行：页面标题 */}
-        <div className='py-1'>
-          <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 max-w-[80%]'>
+        {/* 第一行：页面标题和直连开关 */}
+        <div className='py-1 flex items-center justify-between'>
+          <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 max-w-[60%] lg:max-w-[80%]'>
             <Radio className='w-5 h-5 text-blue-500 shrink-0' />
             <div className='min-w-0 flex-1'>
               <div className='truncate'>
@@ -1235,7 +1253,97 @@ function LivePageClient() {
               </div>
             </div>
           </h1>
+
+          {/* 直连模式开关 */}
+          <div className='flex items-center gap-2'>
+            <button
+              onClick={() => handleDirectConnectToggle(!isDirectConnect)}
+              className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all duration-200 ${
+                isDirectConnect
+                  ? 'bg-green-500/10 border-green-500/50 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                  : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              title={
+                isDirectConnect
+                  ? '直连模式已开启（减少延迟）'
+                  : '代理模式（兼容性更好）'
+              }
+            >
+              <Zap
+                className={`w-4 h-4 ${isDirectConnect ? 'fill-green-500' : ''}`}
+              />
+              <span className='text-xs font-medium hidden sm:inline'>
+                {isDirectConnect ? '直连' : '代理'}
+              </span>
+              {/* 状态指示点 */}
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  isDirectConnect ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                }`}
+              ></div>
+            </button>
+
+            {/* 帮助图标 */}
+            <button
+              onClick={() => setShowDirectConnectTip(!showDirectConnectTip)}
+              className='p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+              title='关于直连模式'
+            >
+              <Info className='w-4 h-4' />
+            </button>
+          </div>
         </div>
+
+        {/* 直连模式提示 */}
+        {showDirectConnectTip && (
+          <div
+            className={`relative p-3 rounded-xl border transition-all duration-300 ${
+              isDirectConnect
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+            }`}
+          >
+            <button
+              onClick={() => setShowDirectConnectTip(false)}
+              className='absolute top-2 right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+            >
+              ✕
+            </button>
+            <div className='flex items-start gap-3'>
+              <div
+                className={`p-2 rounded-lg ${
+                  isDirectConnect
+                    ? 'bg-green-100 dark:bg-green-800/30'
+                    : 'bg-blue-100 dark:bg-blue-800/30'
+                }`}
+              >
+                <Zap
+                  className={`w-5 h-5 ${
+                    isDirectConnect
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-blue-600 dark:text-blue-400'
+                  }`}
+                />
+              </div>
+              <div className='flex-1'>
+                <h4
+                  className={`text-sm font-medium ${
+                    isDirectConnect
+                      ? 'text-green-800 dark:text-green-300'
+                      : 'text-blue-800 dark:text-blue-300'
+                  }`}
+                >
+                  {isDirectConnect ? '🚀 直连模式已开启' : '🛡️ 代理模式'}
+                </h4>
+                <p className='text-xs text-gray-600 dark:text-gray-400 mt-1'>
+                  {isDirectConnect
+                    ? '视频将直接从源服务器加载，减少延迟。如遇跨域问题，请安装 "Allow CORS" 浏览器插件，或切换回代理模式。'
+                    : '视频通过服务器代理加载，兼容性最好。如遇卡顿，可尝试开启直连模式提升流畅度。'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 第二行：播放器和频道列表 */}
         <div className='space-y-2'>
