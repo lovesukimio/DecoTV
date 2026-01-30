@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { resolveAdultFilter } from '@/lib/adult-filter';
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getAuthInfoFromCookie, verifyApiAuth } from '@/lib/auth';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
 
 export const runtime = 'nodejs';
 
 // OrionTV 兼容接口 - 获取可用的视频源列表
 export async function GET(request: NextRequest) {
-  const authInfo = getAuthInfoFromCookie(request);
-  if (!authInfo || !authInfo.username) {
+  // 使用统一的认证函数，支持本地模式和数据库模式
+  const authResult = verifyApiAuth(request);
+  if (!authResult.isValid) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // 获取用户名（本地模式可能没有 username）
+  const authInfo = getAuthInfoFromCookie(request);
+  const username =
+    authInfo?.username || (authResult.isLocalMode ? '__local__' : undefined);
+
   try {
     const { searchParams } = new URL(request.url);
-    const config = await getAvailableApiSites(authInfo.username);
+    const config = await getAvailableApiSites(username);
     const globalConfig = await getConfig();
 
     const shouldFilterAdult = resolveAdultFilter(

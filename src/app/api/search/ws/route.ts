@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getAuthInfoFromCookie, verifyApiAuth } from '@/lib/auth';
 import { toSimplified } from '@/lib/chinese';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
@@ -12,10 +12,16 @@ import { yellowWords } from '@/lib/yellow';
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
-  const authInfo = getAuthInfoFromCookie(request);
-  if (!authInfo || !authInfo.username) {
+  // 使用统一的认证函数，支持本地模式和数据库模式
+  const authResult = verifyApiAuth(request);
+  if (!authResult.isValid) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 获取用户名（本地模式可能没有 username）
+  const authInfo = getAuthInfoFromCookie(request);
+  const username =
+    authInfo?.username || (authResult.isLocalMode ? '__local__' : undefined);
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
@@ -30,7 +36,7 @@ export async function GET(request: NextRequest) {
   }
 
   const config = await getConfig();
-  const apiSites = await getAvailableApiSites(authInfo.username);
+  const apiSites = await getAvailableApiSites(username);
 
   // 将搜索关键词规范化为简体中文
   let normalizedQuery = query;
@@ -103,13 +109,13 @@ export async function GET(request: NextRequest) {
               new Promise((_, reject) =>
                 setTimeout(
                   () => reject(new Error(`${site.name} timeout`)),
-                  20000
-                )
+                  20000,
+                ),
               ),
             ]).catch((err) => {
               console.warn(`搜索失败 ${site.name} (query: ${q}):`, err.message);
               return [];
-            })
+            }),
           );
 
           const resultsArrays = await Promise.all(siteResultsPromises);
@@ -130,7 +136,7 @@ export async function GET(request: NextRequest) {
               }
               // 检查分类名称关键词
               return !yellowWords.some((word: string) =>
-                typeName.includes(word)
+                typeName.includes(word),
               );
             });
           }

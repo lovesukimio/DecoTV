@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { AdminConfig } from '@/lib/admin.types';
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getAuthInfoFromCookie, verifyApiAuth } from '@/lib/auth';
 import { toSimplified } from '@/lib/chinese';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
@@ -14,11 +14,16 @@ export const dynamic = 'force-dynamic'; // 强制动态渲染，避免构建时�
 
 export async function GET(request: NextRequest) {
   try {
-    // 从 cookie 获取用户信息
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    // 使用统一的认证函数，支持本地模式和数据库模式
+    const authResult = verifyApiAuth(request);
+    if (!authResult.isValid) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // 获取用户名（本地模式可能没有 username）
+    const authInfo = getAuthInfoFromCookie(request);
+    const username =
+      authInfo?.username || (authResult.isLocalMode ? '__local__' : undefined);
 
     const config = await getConfig();
     const { searchParams } = new URL(request.url);
@@ -40,7 +45,7 @@ export async function GET(request: NextRequest) {
     const suggestions = await generateSuggestions(
       config,
       normalizedQuery,
-      authInfo.username
+      username,
     );
 
     // 从配置中获取缓存时间，如果没有配置则使用默认值300秒（5分钟）
@@ -55,7 +60,7 @@ export async function GET(request: NextRequest) {
           'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
           'Netlify-Vary': 'query',
         },
-      }
+      },
     );
   } catch (error) {
     console.error('获取搜索建议失败', error);
@@ -66,7 +71,7 @@ export async function GET(request: NextRequest) {
 async function generateSuggestions(
   config: AdminConfig,
   query: string,
-  username: string
+  username: string,
 ): Promise<
   Array<{
     text: string;
@@ -101,9 +106,9 @@ async function generateSuggestions(
           .filter(Boolean)
           .flatMap((title: string) => title.split(/[ -:：·、-]/))
           .filter(
-            (w: string) => w.length > 1 && w.toLowerCase().includes(queryLower)
-          )
-      )
+            (w: string) => w.length > 1 && w.toLowerCase().includes(queryLower),
+          ),
+      ),
     ).slice(0, 8);
   }
 
