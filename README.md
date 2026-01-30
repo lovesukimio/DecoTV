@@ -439,7 +439,7 @@ dockge/komodo 等 docker compose UI 也有自动更新功能
 
 #### 家庭安全模式（推荐家庭使用）
 
-```
+```text
 API 地址: https://your-domain.com/
 ```
 
@@ -447,7 +447,7 @@ API 地址: https://your-domain.com/
 
 #### 完整内容模式（成人用户）
 
-```
+```text
 API 地址: https://your-domain.com/adult/
 ```
 
@@ -465,13 +465,13 @@ API 地址: https://your-domain.com/adult/
 
 #### 家庭安全模式
 
-```
+```text
 API 地址: https://your-domain.com
 ```
 
 #### 完整内容模式
 
-```
+```text
 API 地址: https://your-domain.com?adult=1
 ```
 

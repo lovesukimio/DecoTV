@@ -4602,9 +4602,15 @@ const CategoryConfig = ({
 const ConfigFileComponent = ({
   config,
   refreshConfig,
+  storageMode,
+  updateConfig,
 }: {
   config: AdminConfig | null;
   refreshConfig: () => Promise<void>;
+  storageMode: 'cloud' | 'local';
+  updateConfig: (
+    updater: (prev: AdminConfig | null) => AdminConfig | null,
+  ) => void;
 }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
@@ -4661,6 +4667,100 @@ const ConfigFileComponent = ({
     });
   };
 
+  // 本地模式：解析配置文件并更新源配置
+  const parseAndApplyConfigFile = (configFileContent: string) => {
+    interface ConfigFileStruct {
+      api_site?: {
+        [key: string]: {
+          key?: string;
+          api: string;
+          name: string;
+          detail?: string;
+          is_adult?: boolean;
+        };
+      };
+      custom_category?: {
+        name?: string;
+        type: 'movie' | 'tv';
+        query: string;
+      }[];
+      lives?: {
+        [key: string]: { name: string; url: string; ua?: string; epg?: string };
+      };
+    }
+
+    let parsed: ConfigFileStruct = {};
+    try {
+      if (configFileContent && configFileContent.trim()) {
+        parsed = JSON.parse(configFileContent);
+      }
+    } catch {
+      // 解析失败时使用空对象
+    }
+
+    updateConfig((prev) => {
+      if (!prev) return prev;
+
+      // 保留自定义源（from !== 'config'）
+      const customSources = (prev.SourceConfig || []).filter(
+        (s) => s.from !== 'config',
+      );
+      const customCategories = (prev.CustomCategories || []).filter(
+        (c) => c.from !== 'config',
+      );
+      const customLives = (prev.LiveConfig || []).filter(
+        (l) => l.from !== 'config',
+      );
+
+      // 从配置文件解析新的预设源
+      const configSources = Object.entries(parsed.api_site || {}).map(
+        ([key, site]) => ({
+          key,
+          name: site.name,
+          api: site.api,
+          detail: site.detail,
+          is_adult: site.is_adult || false,
+          from: 'config' as const,
+          disabled: false,
+        }),
+      );
+
+      const configCategories = (parsed.custom_category || []).map((cat) => ({
+        name: cat.name || cat.query,
+        type: cat.type,
+        query: cat.query,
+        from: 'config' as const,
+        disabled: false,
+      }));
+
+      const configLives = Object.entries(parsed.lives || {}).map(
+        ([key, live]) => ({
+          key,
+          name: live.name,
+          url: live.url,
+          ua: live.ua,
+          epg: live.epg,
+          channelNumber: 0,
+          from: 'config' as const,
+          disabled: false,
+        }),
+      );
+
+      return {
+        ...prev,
+        ConfigFile: configFileContent,
+        ConfigSubscribtion: {
+          URL: subscriptionUrl,
+          AutoUpdate: autoUpdate,
+          LastCheck: lastCheckTime || new Date().toISOString(),
+        },
+        SourceConfig: [...configSources, ...customSources],
+        CustomCategories: [...configCategories, ...customCategories],
+        LiveConfig: [...configLives, ...customLives],
+      };
+    });
+  };
+
   // 保存配置文件
   const handleSave = async () => {
     // 检查是否要清空配置
@@ -4688,6 +4788,25 @@ const ConfigFileComponent = ({
     }
 
     await withLoading('saveConfig', async () => {
+      // 本地模式：直接解析并更新配置
+      if (storageMode === 'local') {
+        parseAndApplyConfigFile(configContent);
+        if (
+          isEmpty &&
+          (config?.SourceConfig?.filter((s) => s.from === 'config').length ??
+            0) > 0
+        ) {
+          showSuccess(
+            '配置文件已清空，系统预设视频源已删除，自定义源已保留',
+            showAlert,
+          );
+        } else {
+          showSuccess('配置文件保存成功', showAlert);
+        }
+        return;
+      }
+
+      // 云端模式：调用 API
       try {
         const resp = await fetch('/api/admin/config_file', {
           method: 'POST',
@@ -6254,12 +6373,32 @@ function AdminPageClient() {
     [loadLocalConfig],
   );
 
-  // 当配置变化且是本地模式时，自动同步到 localStorage
+  // 同步配置到后端内存（本地模式专用）
+  const syncConfigToBackend = useCallback(async (configToSync: AdminConfig) => {
+    try {
+      const response = await fetch('/api/admin/config/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: configToSync }),
+      });
+      if (!response.ok) {
+        console.warn('同步配置到后端失败');
+      } else {
+        console.log('[本地模式] 配置已同步到后端内存');
+      }
+    } catch (e) {
+      console.warn('同步配置到后端失败:', e);
+    }
+  }, []);
+
+  // 当配置变化且是本地模式时，自动同步到 localStorage 和后端
   useEffect(() => {
     if (storageMode === 'local' && config) {
       saveLocalConfig(config);
+      // 同时同步到后端内存，确保搜索和播放功能正常工作
+      syncConfigToBackend(config);
     }
-  }, [config, storageMode, saveLocalConfig]);
+  }, [config, storageMode, saveLocalConfig, syncConfigToBackend]);
 
   // 直接更新配置（用于本地模式下的子组件）
   const updateConfig = useCallback(
@@ -6580,6 +6719,8 @@ function AdminPageClient() {
               <ConfigFileComponent
                 config={config}
                 refreshConfig={fetchConfig}
+                storageMode={storageMode}
+                updateConfig={updateConfig}
               />
             </CollapsibleTab>
           )}
