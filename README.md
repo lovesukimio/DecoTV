@@ -235,6 +235,62 @@ services:
       - UPSTASH_TOKEN=上面的 TOKEN
 ```
 
+### 🏠 本地无数据库模式（最简部署）
+
+如果你只是想**快速体验**或**单机使用**，不需要多端同步功能，可以使用本地存储模式。此模式下数据保存在浏览器的 localStorage 中，无需任何外部数据库。
+
+#### Docker Run（最简单）
+
+```bash
+docker run -d \
+  --name decotv \
+  -p 3000:3000 \
+  -e PASSWORD=你的管理密码 \
+  ghcr.io/decohererk/decotv:latest
+```
+
+#### Docker Compose
+
+```yml
+services:
+  decotv:
+    image: ghcr.io/decohererk/decotv:latest
+    container_name: decotv
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - PASSWORD=你的管理密码
+```
+
+#### 重要说明
+
+| 项目        | 说明                                                                 |
+| ----------- | -------------------------------------------------------------------- |
+| ✅ 必需配置 | `PASSWORD` - 管理员登录密码                                          |
+| ❌ 不需要   | `USERNAME`、`NEXT_PUBLIC_STORAGE_TYPE`、任何数据库连接变量           |
+| ❌ 不需要   | `AUTH_SECRET`、`AUTH_URL`（这些是其他认证框架的配置，DecoTV 不使用） |
+| ⚠️ 数据存储 | 所有配置保存在浏览器 localStorage，清除浏览器数据会丢失配置          |
+| ⚠️ 多端同步 | 不支持，每个浏览器独立存储                                           |
+
+#### 常见问题
+
+**Q: 登录成功后操作仍提示 401 Unauthorized？**
+
+这可能是以下原因：
+
+1. **浏览器 Cookie 问题**：尝试清除浏览器 Cookie 后重新登录
+2. **残留数据库配置**：确保没有设置 `REDIS_URL`、`KV_REST_API_URL` 等数据库变量
+3. **使用了 HTTPS 代理**：如果你通过 Nginx 等反向代理使用 HTTPS，确保正确配置了 `X-Forwarded-Proto` 头
+
+**Q: 如何从本地模式迁移到数据库模式？**
+
+由于本地模式数据存储在浏览器中，无法直接迁移。建议：
+
+1. 手动导出配置（复制配置文件内容）
+2. 部署新的数据库模式实例
+3. 在新实例中导入配置
+
 ## ⚙️ 配置文件
 
 完成部署后为空壳应用，无播放源，需要站长在管理后台的配置文件设置中填写配置文件（后续会支持订阅）
@@ -294,7 +350,7 @@ dockge/komodo 等 docker compose UI 也有自动更新功能
 
 | 变量                  | 说明       | 可选值                   | 默认值                                                                                                                     |
 | --------------------- | ---------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| USERNAME              | 管理员账号 | 任意字符串               | 无默认，**必填**                                                                                                           |
+| USERNAME              | 管理员账号 | 任意字符串               | 无默认，数据库模式**必填**，本地模式可省略                                                                                 |
 | PASSWORD              | 管理员密码 | 任意字符串               | 无默认，**必填**                                                                                                           |
 | SITE_BASE             | 站点 URL   | 形如 https://example.com | 空                                                                                                                         |
 | NEXT_PUBLIC_SITE_NAME | 站点名称   | 任意字符串               | DecoTV                                                                                                                     |
@@ -302,13 +358,13 @@ dockge/komodo 等 docker compose UI 也有自动更新功能
 
 ### 存储配置
 
-| 变量                     | 说明                    | 可选值                  | 默认值           | 备注                           |
-| ------------------------ | ----------------------- | ----------------------- | ---------------- | ------------------------------ |
-| NEXT_PUBLIC_STORAGE_TYPE | 存储类型                | redis、kvrocks、upstash | 无默认，**必填** | 三选一，推荐使用 kvrocks       |
-| KVROCKS_URL              | Kvrocks 数据库连接地址  | redis://host:port       | 空               | 当 STORAGE_TYPE=kvrocks 时必填 |
-| REDIS_URL                | Redis 数据库连接地址    | redis://host:port       | 空               | 当 STORAGE_TYPE=redis 时必填   |
-| UPSTASH_URL              | Upstash Redis REST URL  | https://xxx.upstash.io  | 空               | 当 STORAGE_TYPE=upstash 时必填 |
-| UPSTASH_TOKEN            | Upstash Redis REST 令牌 | AUxxxx...               | 空               | 当 STORAGE_TYPE=upstash 时必填 |
+| 变量                     | 说明                    | 可选值                                | 默认值       | 备注                               |
+| ------------------------ | ----------------------- | ------------------------------------- | ------------ | ---------------------------------- |
+| NEXT_PUBLIC_STORAGE_TYPE | 存储类型                | localstorage、redis、kvrocks、upstash | localstorage | 不填则默认本地模式，数据存浏览器中 |
+| KVROCKS_URL              | Kvrocks 数据库连接地址  | redis://host:port                     | 空           | 当 STORAGE_TYPE=kvrocks 时必填     |
+| REDIS_URL                | Redis 数据库连接地址    | redis://host:port                     | 空           | 当 STORAGE_TYPE=redis 时必填       |
+| UPSTASH_URL              | Upstash Redis REST URL  | https://xxx.upstash.io                | 空           | 当 STORAGE_TYPE=upstash 时必填     |
+| UPSTASH_TOKEN            | Upstash Redis REST 令牌 | AUxxxx...                             | 空           | 当 STORAGE_TYPE=upstash 时必填     |
 
 > **注意**：Upstash 使用 REST API 连接，需要填写 `UPSTASH_URL`（HTTPS ENDPOINT）和 `UPSTASH_TOKEN`，不是传统的 Redis 连接字符串。
 
