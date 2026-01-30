@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { verifyApiAuth } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
@@ -16,13 +16,11 @@ interface BaseBody {
 }
 
 export async function POST(request: NextRequest) {
-  const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
-  const hasRedis = !!(process.env.REDIS_URL || process.env.KV_REST_API_URL);
-  const isLocalMode = storageType === 'localstorage' && !hasRedis;
+  // 🔐 使用统一认证函数，正确处理 localstorage 和数据库模式的差异
+  const authResult = verifyApiAuth(request);
 
-  // 🔐 本地模式（无数据库）：跳过认证，返回成功
-  // 安全性说明：仅当没有配置任何数据库时才启用此模式
-  if (isLocalMode) {
+  // 本地模式（无数据库）：跳过认证，返回成功
+  if (authResult.isLocalMode) {
     return NextResponse.json(
       {
         ok: true,
@@ -33,27 +31,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 认证失败
+  if (!authResult.isValid) {
+    console.log('[admin/category] 认证失败:', {
+      hasAuth: !!request.cookies.get('auth'),
+      isLocalMode: authResult.isLocalMode,
+    });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = (await request.json()) as BaseBody & Record<string, any>;
     const { action } = body;
 
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const username = authInfo.username;
+    const username = authResult.username;
 
     // 基础校验
     const ACTIONS: Action[] = ['add', 'disable', 'enable', 'delete', 'sort'];
-    if (!username || !action || !ACTIONS.includes(action)) {
+    if (!action || !ACTIONS.includes(action)) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
 
     // 获取配置与存储
     const adminConfig = await getConfig();
 
-    // 权限与身份校验
-    if (username !== process.env.USERNAME) {
+    // 权限与身份校验（仅数据库模式需要检查用户权限）
+    if (username && username !== process.env.USERNAME) {
       const userEntry = adminConfig.UserConfig.Users.find(
         (u) => u.username === username,
       );

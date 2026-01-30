@@ -100,3 +100,59 @@ export function getAuthInfoFromBrowserCookie(): {
     return null;
   }
 }
+
+/**
+ * 验证 API 请求的认证信息
+ * 统一处理 localstorage 模式和数据库模式的认证差异
+ *
+ * @param request NextRequest 对象
+ * @returns 验证结果，包含是否通过、用户名（可选）、角色、是否为站长
+ */
+export function verifyApiAuth(request: NextRequest): {
+  isValid: boolean;
+  username?: string;
+  role?: 'owner' | 'admin' | 'user';
+  isOwner: boolean;
+  isLocalMode: boolean;
+} {
+  const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
+  const hasRedis = !!(process.env.REDIS_URL || process.env.KV_REST_API_URL);
+  const isLocalMode = storageType === 'localstorage' && !hasRedis;
+
+  const authInfo = getAuthInfoFromCookie(request);
+
+  // 无认证信息
+  if (!authInfo) {
+    return { isValid: false, isOwner: false, isLocalMode };
+  }
+
+  // localstorage 模式：验证密码
+  if (isLocalMode) {
+    const envPassword = process.env.PASSWORD;
+    // 未设置密码时直接通过
+    if (!envPassword) {
+      return { isValid: true, role: 'owner', isOwner: true, isLocalMode };
+    }
+    // 验证密码
+    if (authInfo.password && authInfo.password === envPassword) {
+      return { isValid: true, role: 'owner', isOwner: true, isLocalMode };
+    }
+    return { isValid: false, isOwner: false, isLocalMode };
+  }
+
+  // 数据库模式：需要 username 和 signature
+  if (!authInfo.username || !authInfo.signature) {
+    return { isValid: false, isOwner: false, isLocalMode };
+  }
+
+  // 判断是否为站长
+  const isOwner = authInfo.username === process.env.USERNAME;
+
+  return {
+    isValid: true,
+    username: authInfo.username,
+    role: (authInfo as { role?: 'owner' | 'admin' | 'user' }).role || 'user',
+    isOwner,
+    isLocalMode,
+  };
+}

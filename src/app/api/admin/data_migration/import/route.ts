@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { promisify } from 'util';
 import { gunzip } from 'zlib';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { verifyApiAuth } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
@@ -15,23 +15,24 @@ const gunzipAsync = promisify(gunzip);
 
 export async function POST(req: NextRequest) {
   try {
-    // 检查存储类型
-    const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
-    if (storageType === 'localstorage') {
+    // 🔐 使用统一认证函数
+    const authResult = verifyApiAuth(req);
+
+    // 本地存储模式不支持数据迁移
+    if (authResult.isLocalMode) {
       return NextResponse.json(
         { error: '不支持本地存储进行数据迁移' },
         { status: 400 },
       );
     }
 
-    // 验证身份和权限
-    const authInfo = getAuthInfoFromCookie(req);
-    if (!authInfo || !authInfo.username) {
+    // 认证失败
+    if (!authResult.isValid) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
     // 检查用户权限（只有站长可以导入数据）
-    if (authInfo.username !== process.env.USERNAME) {
+    if (!authResult.isOwner) {
       return NextResponse.json(
         { error: '权限不足，只有站长可以导入数据' },
         { status: 401 },

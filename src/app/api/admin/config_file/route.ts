@@ -2,20 +2,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { verifyApiAuth } from '@/lib/auth';
 import { getConfig, refineConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
-  const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
-  const hasRedis = !!(process.env.REDIS_URL || process.env.KV_REST_API_URL);
-  const isLocalMode = storageType === 'localstorage' && !hasRedis;
+  // 🔐 使用统一认证函数，正确处理 localstorage 和数据库模式的差异
+  const authResult = verifyApiAuth(request);
 
-  // 🔐 本地模式（无数据库）：跳过认证，返回成功
-  // 安全性说明：仅当没有配置任何数据库时才启用此模式
-  if (isLocalMode) {
+  // 本地模式（无数据库）：跳过认证，返回成功
+  if (authResult.isLocalMode) {
     return NextResponse.json(
       {
         ok: true,
@@ -26,18 +24,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const authInfo = getAuthInfoFromCookie(request);
-  if (!authInfo || !authInfo.username) {
+  // 认证失败
+  if (!authResult.isValid) {
+    console.log('[admin/config_file] 认证失败:', {
+      hasAuth: !!request.cookies.get('auth'),
+      isLocalMode: authResult.isLocalMode,
+    });
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const username = authInfo.username;
 
   try {
     // 检查用户权限
     let adminConfig = await getConfig();
 
     // 仅站长可以修改配置文件
-    if (username !== process.env.USERNAME) {
+    if (!authResult.isOwner) {
       return NextResponse.json(
         { error: '权限不足，只有站长可以修改配置文件' },
         { status: 401 },

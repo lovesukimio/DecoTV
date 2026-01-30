@@ -2,22 +2,25 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { verifyApiAuth } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    // 权限检查：仅站长可以拉取配置订阅
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    // 🔐 使用统一认证函数
+    const authResult = verifyApiAuth(request);
+
+    // 认证失败
+    if (!authResult.isValid && !authResult.isLocalMode) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (authInfo.username !== process.env.USERNAME) {
+    // 权限检查：仅站长可以拉取配置订阅（本地模式默认允许）
+    if (!authResult.isLocalMode && !authResult.isOwner) {
       return NextResponse.json(
         { error: '权限不足，只有站长可以拉取配置订阅' },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       return NextResponse.json(
         { error: `请求失败: ${response.status} ${response.statusText}` },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -53,14 +56,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       configContent: decodedContent,
-      message: '配置拉取成功'
+      message: '配置拉取成功',
     });
-
   } catch (error) {
     console.error('拉取配置失败:', error);
-    return NextResponse.json(
-      { error: '拉取配置失败' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '拉取配置失败' }, { status: 500 });
   }
 }
