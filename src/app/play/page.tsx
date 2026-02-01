@@ -2185,6 +2185,17 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
+                {/* 弹幕设置面板 - 定位在播放器内部 */}
+                <DanmuSettingsPanel
+                  isOpen={isDanmuSettingsPanelOpen}
+                  onClose={() => setIsDanmuSettingsPanelOpen(false)}
+                  settings={danmuSettings}
+                  onSettingsChange={updateDanmuSettings}
+                  danmuCount={danmuList.length}
+                  loading={danmuLoading}
+                  onReload={reloadDanmu}
+                />
+
                 {/* 换源加载提示 - 使用播放器自带的加载动画 */}
                 {isVideoLoading && (
                   <div className='absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl'>
@@ -2341,17 +2352,6 @@ function PlayPageClient() {
         onChange={handleSkipConfigChange}
         videoDuration={artPlayerRef.current?.duration || 0}
         currentTime={artPlayerRef.current?.currentTime || 0}
-      />
-
-      {/* 弹幕设置面板 */}
-      <DanmuSettingsPanel
-        isOpen={isDanmuSettingsPanelOpen}
-        onClose={() => setIsDanmuSettingsPanelOpen(false)}
-        settings={danmuSettings}
-        onSettingsChange={updateDanmuSettings}
-        danmuCount={danmuList.length}
-        loading={danmuLoading}
-        onReload={reloadDanmu}
       />
 
       {/* Toast 通知 */}

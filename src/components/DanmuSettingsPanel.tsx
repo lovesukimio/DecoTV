@@ -9,7 +9,7 @@ import {
   Type,
   X,
 } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { DanmuSettings } from '@/hooks/useDanmu';
 
@@ -35,145 +35,6 @@ interface DanmuSettingsPanelProps {
 }
 
 // ============================================================================
-// Sub Components
-// ============================================================================
-
-/**
- * 滑块组件
- */
-const Slider = memo(function Slider({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  unit = '',
-  icon: Icon,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  unit?: string;
-  icon?: React.ElementType;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div className='space-y-2'>
-      <div className='flex items-center justify-between'>
-        <div className='flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300'>
-          {Icon && <Icon className='w-4 h-4' />}
-          <span>{label}</span>
-        </div>
-        <span className='text-sm text-gray-500 dark:text-gray-400'>
-          {value}
-          {unit}
-        </span>
-      </div>
-      <input
-        type='range'
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className='w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500'
-      />
-    </div>
-  );
-});
-
-/**
- * 开关组件
- */
-const Toggle = memo(function Toggle({
-  label,
-  checked,
-  icon: Icon,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  icon?: React.ElementType;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className='flex items-center justify-between'>
-      <div className='flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300'>
-        {Icon && <Icon className='w-4 h-4' />}
-        <span>{label}</span>
-      </div>
-      <button
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-          checked ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            checked ? 'translate-x-6' : 'translate-x-1'
-          }`}
-        />
-      </button>
-    </div>
-  );
-});
-
-/**
- * 弹幕模式选择器
- */
-const ModeSelector = memo(function ModeSelector({
-  modes,
-  onChange,
-}: {
-  modes: number[];
-  onChange: (modes: number[]) => void;
-}) {
-  const modeOptions = [
-    { value: 0, label: '滚动' },
-    { value: 1, label: '顶部' },
-    { value: 2, label: '底部' },
-  ];
-
-  const toggleMode = (mode: number) => {
-    if (modes.includes(mode)) {
-      // 至少保留一种模式
-      if (modes.length > 1) {
-        onChange(modes.filter((m) => m !== mode));
-      }
-    } else {
-      onChange([...modes, mode]);
-    }
-  };
-
-  return (
-    <div className='space-y-2'>
-      <div className='flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300'>
-        <Layers className='w-4 h-4' />
-        <span>弹幕类型</span>
-      </div>
-      <div className='flex gap-2'>
-        {modeOptions.map((option) => (
-          <button
-            key={option.value}
-            onClick={() => toggleMode(option.value)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              modes.includes(option.value)
-                ? 'bg-green-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-});
-
-// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -186,6 +47,21 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   loading = false,
   onReload,
 }: DanmuSettingsPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  // 处理打开动画
+  useEffect(() => {
+    if (isOpen) {
+      // 延迟一帧以触发动画
+      requestAnimationFrame(() => {
+        setIsVisible(true);
+      });
+    } else {
+      setIsVisible(false);
+    }
+  }, [isOpen]);
+
   // 处理设置更新
   const handleUpdate = useCallback(
     <K extends keyof DanmuSettings>(key: K, value: DanmuSettings[K]) => {
@@ -194,135 +70,254 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
     [onSettingsChange],
   );
 
+  // 点击外部关闭
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    // 延迟添加事件监听，避免立即触发
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
+  // ESC 键关闭
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <>
-      {/* 背景遮罩 */}
-      <div className='fixed inset-0 bg-black/40 z-100' onClick={onClose} />
+    <div
+      ref={panelRef}
+      className={`absolute right-3 bottom-16 z-50 w-72 bg-gray-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-white/10 overflow-hidden transition-all duration-200 ease-out ${
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+      }`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* 头部 */}
+      <div className='flex items-center justify-between px-3 py-2.5 border-b border-white/10 bg-white/5'>
+        <div className='flex items-center gap-2'>
+          <MessageSquare className='w-4 h-4 text-green-400' />
+          <span className='font-medium text-white text-sm'>弹幕设置</span>
+          <span className='text-xs text-gray-400'>
+            {loading ? '加载中...' : `${danmuCount}条`}
+          </span>
+        </div>
+        <button
+          onClick={onClose}
+          className='p-1 hover:bg-white/10 rounded transition-colors'
+        >
+          <X className='w-4 h-4 text-gray-400' />
+        </button>
+      </div>
 
-      {/* 紧凑弹出面板 - 居中显示 */}
-      <div className='fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-101 w-[320px] max-w-[90vw] bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden animate-scale-in'>
-        {/* 头部 - 更紧凑 */}
-        <div className='flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-linear-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20'>
-          <div className='flex items-center gap-2'>
-            <MessageSquare className='w-4 h-4 text-green-600 dark:text-green-400' />
-            <span className='font-semibold text-gray-900 dark:text-gray-100'>
-              弹幕设置
-            </span>
-            <span className='text-xs text-gray-500 dark:text-gray-400 ml-1'>
-              {loading ? '加载中...' : `${danmuCount}条`}
-            </span>
-          </div>
+      {/* 内容区域 */}
+      <div className='p-3 space-y-3 max-h-80 overflow-y-auto'>
+        {/* 主开关 */}
+        <div className='flex items-center justify-between'>
+          <span className='text-sm text-gray-200'>启用弹幕</span>
           <button
-            onClick={onClose}
-            className='p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors'
+            onClick={() => handleUpdate('enabled', !settings.enabled)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              settings.enabled ? 'bg-green-500' : 'bg-gray-600'
+            }`}
           >
-            <X className='w-4 h-4 text-gray-500' />
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                settings.enabled ? 'translate-x-4.5' : 'translate-x-1'
+              }`}
+            />
           </button>
         </div>
 
-        {/* 内容区域 - 更紧凑 */}
-        <div className='p-3 space-y-3 max-h-[60vh] overflow-y-auto'>
-          {/* 主开关行 */}
-          <div className='flex items-center gap-2'>
-            <Toggle
-              label='启用弹幕'
-              checked={settings.enabled}
-              onChange={(checked) => handleUpdate('enabled', checked)}
-            />
-          </div>
-
-          {settings.enabled && (
-            <>
-              {/* 快捷开关行 */}
-              <div className='flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg'>
-                <Toggle
-                  label='显示'
-                  checked={settings.visible}
-                  icon={Eye}
-                  onChange={(checked) => handleUpdate('visible', checked)}
-                />
-                <Toggle
-                  label='防重叠'
-                  checked={settings.antiOverlap}
-                  icon={Shield}
-                  onChange={(checked) => handleUpdate('antiOverlap', checked)}
-                />
+        {settings.enabled && (
+          <>
+            {/* 快捷开关行 */}
+            <div className='flex items-center gap-4 py-2 px-2 bg-white/5 rounded-lg'>
+              <div className='flex items-center gap-2 flex-1'>
+                <Eye className='w-3.5 h-3.5 text-gray-400' />
+                <span className='text-xs text-gray-300'>显示</span>
+                <button
+                  onClick={() => handleUpdate('visible', !settings.visible)}
+                  className={`ml-auto relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                    settings.visible ? 'bg-green-500' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
+                      settings.visible ? 'translate-x-3.5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
+              <div className='w-px h-4 bg-white/10' />
+              <div className='flex items-center gap-2 flex-1'>
+                <Shield className='w-3.5 h-3.5 text-gray-400' />
+                <span className='text-xs text-gray-300'>防重叠</span>
+                <button
+                  onClick={() =>
+                    handleUpdate('antiOverlap', !settings.antiOverlap)
+                  }
+                  className={`ml-auto relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                    settings.antiOverlap ? 'bg-green-500' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
+                      settings.antiOverlap ? 'translate-x-3.5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
 
-              {/* 滑块设置 - 紧凑排列 */}
-              <div className='space-y-2'>
-                <Slider
-                  label='字号'
-                  value={settings.fontSize}
+            {/* 滑块设置 */}
+            <div className='space-y-3'>
+              {/* 字号 */}
+              <div className='space-y-1.5'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5 text-xs text-gray-300'>
+                    <Type className='w-3.5 h-3.5 text-gray-400' />
+                    <span>字号</span>
+                  </div>
+                  <span className='text-xs text-gray-400'>
+                    {settings.fontSize}px
+                  </span>
+                </div>
+                <input
+                  type='range'
                   min={12}
                   max={48}
                   step={1}
-                  unit='px'
-                  icon={Type}
-                  onChange={(value) => handleUpdate('fontSize', value)}
-                />
-
-                <Slider
-                  label='速度'
-                  value={settings.speed}
-                  min={1}
-                  max={10}
-                  step={1}
-                  icon={Gauge}
-                  onChange={(value) => handleUpdate('speed', value)}
-                />
-
-                <Slider
-                  label='透明'
-                  value={settings.opacity}
-                  min={0.1}
-                  max={1}
-                  step={0.1}
-                  icon={Eye}
-                  onChange={(value) => handleUpdate('opacity', value)}
+                  value={settings.fontSize}
+                  onChange={(e) =>
+                    handleUpdate('fontSize', parseFloat(e.target.value))
+                  }
+                  className='w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500'
                 />
               </div>
 
-              {/* 弹幕类型 */}
-              <ModeSelector
-                modes={settings.modes}
-                onChange={(modes) => handleUpdate('modes', modes)}
-              />
+              {/* 速度 */}
+              <div className='space-y-1.5'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5 text-xs text-gray-300'>
+                    <Gauge className='w-3.5 h-3.5 text-gray-400' />
+                    <span>速度</span>
+                  </div>
+                  <span className='text-xs text-gray-400'>
+                    {settings.speed}
+                  </span>
+                </div>
+                <input
+                  type='range'
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={settings.speed}
+                  onChange={(e) =>
+                    handleUpdate('speed', parseFloat(e.target.value))
+                  }
+                  className='w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500'
+                />
+              </div>
 
-              {/* 刷新按钮 */}
-              {onReload && (
-                <button
-                  onClick={onReload}
-                  disabled={loading}
-                  className='w-full py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors'
-                >
-                  {loading ? '加载中...' : '刷新弹幕'}
-                </button>
-              )}
-            </>
-          )}
-        </div>
+              {/* 透明度 */}
+              <div className='space-y-1.5'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5 text-xs text-gray-300'>
+                    <Eye className='w-3.5 h-3.5 text-gray-400' />
+                    <span>透明</span>
+                  </div>
+                  <span className='text-xs text-gray-400'>
+                    {settings.opacity.toFixed(1)}
+                  </span>
+                </div>
+                <input
+                  type='range'
+                  min={0.1}
+                  max={1}
+                  step={0.1}
+                  value={settings.opacity}
+                  onChange={(e) =>
+                    handleUpdate('opacity', parseFloat(e.target.value))
+                  }
+                  className='w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500'
+                />
+              </div>
+            </div>
+
+            {/* 弹幕类型 */}
+            <div className='space-y-2'>
+              <div className='flex items-center gap-1.5 text-xs text-gray-300'>
+                <Layers className='w-3.5 h-3.5 text-gray-400' />
+                <span>弹幕类型</span>
+              </div>
+              <div className='flex gap-2'>
+                {[
+                  { value: 0, label: '滚动' },
+                  { value: 1, label: '顶部' },
+                  { value: 2, label: '底部' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => {
+                      const modes = settings.modes.includes(option.value)
+                        ? settings.modes.length > 1
+                          ? settings.modes.filter((m) => m !== option.value)
+                          : settings.modes
+                        : [...settings.modes, option.value];
+                      handleUpdate('modes', modes);
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      settings.modes.includes(option.value)
+                        ? 'bg-green-500 text-white'
+                        : 'bg-white/10 text-gray-400 hover:bg-white/15'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 刷新按钮 */}
+            {onReload && (
+              <button
+                onClick={onReload}
+                disabled={loading}
+                className='w-full py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors'
+              >
+                {loading ? '加载中...' : '刷新弹幕'}
+              </button>
+            )}
+          </>
+        )}
       </div>
 
-      {/* 动画样式 */}
-      <style jsx>{`
-        @keyframes scale-in {
-          from {
-            opacity: 0;
-            transform: translate(-50%, -50%) scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
-          }
-        }
-        .animate-scale-in {
-          animation: scale-in 0.2s ease-out;
-        }
-      `}</style>
-    </>
+      {/* 底部小三角指示器 */}
+      <div className='absolute -bottom-1.5 right-6 w-3 h-3 bg-gray-900/95 border-r border-b border-white/10 transform rotate-45' />
+    </div>
   );
 });
 
