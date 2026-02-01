@@ -1,9 +1,19 @@
 /* eslint-disable no-console */
+import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
 
 export const runtime = 'nodejs';
+
+// ============================================================================
+// 弹弹play API 配置
+// ============================================================================
+
+// 从环境变量读取弹弹play API凭证
+const DANDANPLAY_APP_ID = process.env.DANDANPLAY_APP_ID || '';
+const DANDANPLAY_APP_SECRET = process.env.DANDANPLAY_APP_SECRET || '';
+const DANDANPLAY_API_BASE = 'https://api.dandanplay.net';
 
 // ============================================================================
 // Types
@@ -17,6 +27,9 @@ interface DanmuItem {
 }
 
 interface DandanplaySearchResult {
+  success?: boolean;
+  errorCode?: number;
+  errorMessage?: string;
   animes: Array<{
     animeId: number;
     animeTitle: string;
@@ -38,7 +51,43 @@ interface DandanplayCommentResult {
 }
 
 // ============================================================================
-// Helpers
+// 弹弹play API 签名生成
+// ============================================================================
+
+/**
+ * 生成弹弹play API签名
+ * 算法: base64(sha256(AppId + Timestamp + Path + AppSecret))
+ */
+function generateDandanplaySignature(path: string, timestamp: number): string {
+  const data = DANDANPLAY_APP_ID + timestamp + path + DANDANPLAY_APP_SECRET;
+  const hash = createHash('sha256').update(data).digest('base64');
+  return hash;
+}
+
+/**
+ * 构建带签名的请求头
+ */
+function buildDandanplayHeaders(path: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'User-Agent': 'DecoTV/1.0',
+  };
+
+  // 如果配置了AppId和AppSecret，使用签名验证模式
+  if (DANDANPLAY_APP_ID && DANDANPLAY_APP_SECRET) {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = generateDandanplaySignature(path, timestamp);
+
+    headers['X-AppId'] = DANDANPLAY_APP_ID;
+    headers['X-Timestamp'] = String(timestamp);
+    headers['X-Signature'] = signature;
+  }
+
+  return headers;
+}
+
+// ============================================================================
+// 弹幕解析与处理
 // ============================================================================
 
 /**
@@ -97,31 +146,96 @@ function deduplicateDanmu(danmus: DanmuItem[]): DanmuItem[] {
   });
 }
 
+// ============================================================================
+// 弹弹play API 调用
+// ============================================================================
+
+/**
+ * 从弹弹play搜索动画
+ */
+async function searchDandanplayAnime(
+  title: string,
+): Promise<DandanplaySearchResult | null> {
+  const path = '/api/v2/search/episodes';
+  const url = `${DANDANPLAY_API_BASE}${path}?anime=${encodeURIComponent(title)}&episode=`;
+  const headers = buildDandanplayHeaders(path);
+
+  try {
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      const errorHeader = response.headers.get('X-Error-Message');
+      console.log(
+        '[danmu] Dandanplay search failed:',
+        response.status,
+        errorHeader || '',
+      );
+      return null;
+    }
+
+    return response.json();
+  } catch (err) {
+    console.error('[danmu] Dandanplay search error:', err);
+    return null;
+  }
+}
+
 /**
  * 从弹弹play获取弹幕
+ */
+async function fetchDandanplayComments(
+  episodeId: number,
+): Promise<DandanplayCommentResult | null> {
+  const path = `/api/v2/comment/${episodeId}`;
+  const url = `${DANDANPLAY_API_BASE}${path}?withRelated=true&chConvert=1`;
+  const headers = buildDandanplayHeaders(path);
+
+  try {
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!response.ok) {
+      const errorHeader = response.headers.get('X-Error-Message');
+      console.log(
+        '[danmu] Dandanplay comment fetch failed:',
+        response.status,
+        errorHeader || '',
+      );
+      return null;
+    }
+
+    return response.json();
+  } catch (err) {
+    console.error('[danmu] Dandanplay comment fetch error:', err);
+    return null;
+  }
+}
+
+/**
+ * 从弹弹play获取弹幕（完整流程）
  */
 async function fetchDandanplayDanmu(
   title: string,
   episode: number = 1,
 ): Promise<DanmuItem[]> {
+  // 检查是否配置了API凭证
+  if (!DANDANPLAY_APP_ID || !DANDANPLAY_APP_SECRET) {
+    console.log(
+      '[danmu] Dandanplay API credentials not configured. Set DANDANPLAY_APP_ID and DANDANPLAY_APP_SECRET environment variables.',
+    );
+    return [];
+  }
+
   try {
     // 1. 搜索匹配的动画
-    const searchUrl = `https://api.dandanplay.net/api/v2/search/episodes?anime=${encodeURIComponent(title)}&episode=`;
-    const searchResponse = await fetch(searchUrl, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'DecoTV/1.0',
-      },
-    });
+    const searchData = await searchDandanplayAnime(title);
 
-    if (!searchResponse.ok) {
-      console.log('[danmu] Dandanplay search failed:', searchResponse.status);
-      return [];
-    }
-
-    const searchData: DandanplaySearchResult = await searchResponse.json();
-
-    if (!searchData.animes || searchData.animes.length === 0) {
+    if (!searchData || !searchData.animes || searchData.animes.length === 0) {
       console.log('[danmu] No anime found for:', title);
       return [];
     }
@@ -156,26 +270,17 @@ async function fetchDandanplayDanmu(
       return [];
     }
 
+    console.log('[danmu] Found episodeId:', targetEpisodeId, 'for:', title);
+
     // 2. 获取弹幕
-    const commentUrl = `https://api.dandanplay.net/api/v2/comment/${targetEpisodeId}?withRelated=true&chConvert=1`;
-    const commentResponse = await fetch(commentUrl, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'DecoTV/1.0',
-      },
-    });
+    const commentData = await fetchDandanplayComments(targetEpisodeId);
 
-    if (!commentResponse.ok) {
-      console.log(
-        '[danmu] Dandanplay comment fetch failed:',
-        commentResponse.status,
-      );
-      return [];
-    }
-
-    const commentData: DandanplayCommentResult = await commentResponse.json();
-
-    if (!commentData.comments || commentData.comments.length === 0) {
+    if (
+      !commentData ||
+      !commentData.comments ||
+      commentData.comments.length === 0
+    ) {
+      console.log('[danmu] No comments found for episodeId:', targetEpisodeId);
       return [];
     }
 
@@ -208,27 +313,36 @@ async function fetchDandanplayDanmu(
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
 
-  const doubanId = searchParams.get('douban_id');
   const title = searchParams.get('title');
-  const _year = searchParams.get('year'); // 预留供未来使用
   const episodeStr = searchParams.get('episode');
   const episode = episodeStr ? parseInt(episodeStr, 10) : 1;
 
   // 至少需要 title 才能搜索弹幕
-  if (!title && !doubanId) {
+  if (!title) {
     return NextResponse.json(
-      { code: 400, message: '缺少必要参数: title 或 douban_id', danmus: [] },
+      { code: 400, message: '缺少必要参数: title', danmus: [], count: 0 },
       { status: 400 },
     );
   }
 
-  try {
-    const searchTitle = title || '';
-    let allDanmus: DanmuItem[] = [];
+  // 检查API凭证配置
+  if (!DANDANPLAY_APP_ID || !DANDANPLAY_APP_SECRET) {
+    return NextResponse.json(
+      {
+        code: 503,
+        message:
+          '弹幕服务未配置。请在环境变量中设置 DANDANPLAY_APP_ID 和 DANDANPLAY_APP_SECRET。',
+        danmus: [],
+        count: 0,
+        hint: '请联系管理员配置弹弹play API凭证',
+      },
+      { status: 503 },
+    );
+  }
 
+  try {
     // 从弹弹play获取弹幕
-    const dandanDanmus = await fetchDandanplayDanmu(searchTitle, episode);
-    allDanmus = allDanmus.concat(dandanDanmus);
+    let allDanmus = await fetchDandanplayDanmu(title, episode);
 
     // 去重
     allDanmus = deduplicateDanmu(allDanmus);
@@ -260,6 +374,7 @@ export async function GET(request: Request) {
         code: 500,
         message: '获取弹幕失败',
         danmus: [],
+        count: 0,
         error: (err as Error).message,
       },
       { status: 500 },

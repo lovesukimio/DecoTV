@@ -199,97 +199,91 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   return (
     <>
       {/* 背景遮罩 */}
-      <div
-        className='fixed inset-0 bg-black/50 z-[100] backdrop-blur-sm'
-        onClick={onClose}
-      />
+      <div className='fixed inset-0 bg-black/40 z-[100]' onClick={onClose} />
 
-      {/* 面板 */}
-      <div className='fixed inset-x-0 bottom-0 z-[101] bg-white dark:bg-gray-900 rounded-t-2xl shadow-2xl max-h-[85vh] overflow-hidden animate-slide-up'>
-        {/* 头部 */}
-        <div className='flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700'>
-          <div className='flex items-center gap-3'>
-            <div className='p-2 bg-green-100 dark:bg-green-900/30 rounded-lg'>
-              <MessageSquare className='w-5 h-5 text-green-600 dark:text-green-400' />
-            </div>
-            <div>
-              <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                弹幕设置
-              </h3>
-              <p className='text-xs text-gray-500 dark:text-gray-400'>
-                {loading ? '加载中...' : `已加载 ${danmuCount} 条弹幕`}
-              </p>
-            </div>
+      {/* 紧凑弹出面板 - 居中显示 */}
+      <div className='fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[320px] max-w-[90vw] bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden animate-scale-in'>
+        {/* 头部 - 更紧凑 */}
+        <div className='flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20'>
+          <div className='flex items-center gap-2'>
+            <MessageSquare className='w-4 h-4 text-green-600 dark:text-green-400' />
+            <span className='font-semibold text-gray-900 dark:text-gray-100'>
+              弹幕设置
+            </span>
+            <span className='text-xs text-gray-500 dark:text-gray-400 ml-1'>
+              {loading ? '加载中...' : `${danmuCount}条`}
+            </span>
           </div>
           <button
             onClick={onClose}
-            className='p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors'
+            className='p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors'
           >
-            <X className='w-5 h-5 text-gray-500' />
+            <X className='w-4 h-4 text-gray-500' />
           </button>
         </div>
 
-        {/* 内容区域 */}
-        <div className='p-4 space-y-6 overflow-y-auto max-h-[calc(85vh-80px)]'>
-          {/* 启用开关 */}
-          <Toggle
-            label='启用外部弹幕'
-            checked={settings.enabled}
-            icon={MessageSquare}
-            onChange={(checked) => handleUpdate('enabled', checked)}
-          />
+        {/* 内容区域 - 更紧凑 */}
+        <div className='p-3 space-y-3 max-h-[60vh] overflow-y-auto'>
+          {/* 主开关行 */}
+          <div className='flex items-center gap-2'>
+            <Toggle
+              label='启用弹幕'
+              checked={settings.enabled}
+              onChange={(checked) => handleUpdate('enabled', checked)}
+            />
+          </div>
 
           {settings.enabled && (
             <>
-              {/* 显示开关 */}
-              <Toggle
-                label='显示弹幕'
-                checked={settings.visible}
-                icon={Eye}
-                onChange={(checked) => handleUpdate('visible', checked)}
-              />
+              {/* 快捷开关行 */}
+              <div className='flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg'>
+                <Toggle
+                  label='显示'
+                  checked={settings.visible}
+                  icon={Eye}
+                  onChange={(checked) => handleUpdate('visible', checked)}
+                />
+                <Toggle
+                  label='防重叠'
+                  checked={settings.antiOverlap}
+                  icon={Shield}
+                  onChange={(checked) => handleUpdate('antiOverlap', checked)}
+                />
+              </div>
 
-              {/* 防重叠 */}
-              <Toggle
-                label='防重叠'
-                checked={settings.antiOverlap}
-                icon={Shield}
-                onChange={(checked) => handleUpdate('antiOverlap', checked)}
-              />
+              {/* 滑块设置 - 紧凑排列 */}
+              <div className='space-y-2'>
+                <Slider
+                  label='字号'
+                  value={settings.fontSize}
+                  min={12}
+                  max={48}
+                  step={1}
+                  unit='px'
+                  icon={Type}
+                  onChange={(value) => handleUpdate('fontSize', value)}
+                />
 
-              {/* 字体大小 */}
-              <Slider
-                label='字体大小'
-                value={settings.fontSize}
-                min={12}
-                max={48}
-                step={1}
-                unit='px'
-                icon={Type}
-                onChange={(value) => handleUpdate('fontSize', value)}
-              />
+                <Slider
+                  label='速度'
+                  value={settings.speed}
+                  min={1}
+                  max={10}
+                  step={1}
+                  icon={Gauge}
+                  onChange={(value) => handleUpdate('speed', value)}
+                />
 
-              {/* 滚动速度 */}
-              <Slider
-                label='滚动速度'
-                value={settings.speed}
-                min={1}
-                max={10}
-                step={1}
-                icon={Gauge}
-                onChange={(value) => handleUpdate('speed', value)}
-              />
-
-              {/* 透明度 */}
-              <Slider
-                label='透明度'
-                value={settings.opacity}
-                min={0.1}
-                max={1}
-                step={0.1}
-                icon={Eye}
-                onChange={(value) => handleUpdate('opacity', value)}
-              />
+                <Slider
+                  label='透明'
+                  value={settings.opacity}
+                  min={0.1}
+                  max={1}
+                  step={0.1}
+                  icon={Eye}
+                  onChange={(value) => handleUpdate('opacity', value)}
+                />
+              </div>
 
               {/* 弹幕类型 */}
               <ModeSelector
@@ -302,9 +296,9 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                 <button
                   onClick={onReload}
                   disabled={loading}
-                  className='w-full py-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors'
+                  className='w-full py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors'
                 >
-                  {loading ? '加载中...' : '重新加载弹幕'}
+                  {loading ? '加载中...' : '刷新弹幕'}
                 </button>
               )}
             </>
@@ -314,16 +308,18 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
 
       {/* 动画样式 */}
       <style jsx>{`
-        @keyframes slide-up {
+        @keyframes scale-in {
           from {
-            transform: translateY(100%);
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.9);
           }
           to {
-            transform: translateY(0);
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
           }
         }
-        .animate-slide-up {
-          animation: slide-up 0.3s ease-out;
+        .animate-scale-in {
+          animation: scale-in 0.2s ease-out;
         }
       `}</style>
     </>
