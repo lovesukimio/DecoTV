@@ -5540,7 +5540,7 @@ const SiteConfigComponent = ({
             弹弹play 弹幕API配置
           </h4>
           <a
-            href='https://www.dandanplay.com/open/'
+            href='https://doc.dandanplay.com/open/'
             target='_blank'
             rel='noopener noreferrer'
             className='text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1'

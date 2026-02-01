@@ -46,7 +46,7 @@ const RecommendCard = memo(function RecommendCard({
   return (
     <div onClick={onClick} className='group shrink-0 w-32 cursor-pointer'>
       {/* 封面 */}
-      <div className='relative aspect-[2/3] rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-md group-hover:shadow-lg transition-all duration-200 group-hover:scale-[1.02]'>
+      <div className='relative aspect-2/3 rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-md group-hover:shadow-lg transition-all duration-200 group-hover:scale-[1.02]'>
         {item.poster && !imageError ? (
           <Image
             src={item.poster}
@@ -95,7 +95,7 @@ const RecommendCard = memo(function RecommendCard({
 const RecommendSkeleton = memo(function RecommendSkeleton() {
   return (
     <div className='shrink-0 w-32 animate-pulse'>
-      <div className='aspect-[2/3] rounded-xl bg-gray-200 dark:bg-gray-700' />
+      <div className='aspect-2/3 rounded-xl bg-gray-200 dark:bg-gray-700' />
       <div className='mt-2 px-1 space-y-1'>
         <div className='h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4' />
         <div className='h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2' />
@@ -219,7 +219,7 @@ export const MovieRecommends = memo(function MovieRecommends({
 
       {/* 渐变遮罩 */}
       {canScrollRight && displayItems.length > 4 && (
-        <div className='absolute right-0 top-12 bottom-0 w-12 bg-gradient-to-l from-white dark:from-gray-900 to-transparent pointer-events-none' />
+        <div className='absolute right-0 top-12 bottom-0 w-12 bg-linear-to-l from-white dark:from-gray-900 to-transparent pointer-events-none' />
       )}
     </div>
   );

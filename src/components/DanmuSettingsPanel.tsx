@@ -199,12 +199,12 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   return (
     <>
       {/* 背景遮罩 */}
-      <div className='fixed inset-0 bg-black/40 z-[100]' onClick={onClose} />
+      <div className='fixed inset-0 bg-black/40 z-100' onClick={onClose} />
 
       {/* 紧凑弹出面板 - 居中显示 */}
-      <div className='fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[320px] max-w-[90vw] bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden animate-scale-in'>
+      <div className='fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-101 w-[320px] max-w-[90vw] bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden animate-scale-in'>
         {/* 头部 - 更紧凑 */}
-        <div className='flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20'>
+        <div className='flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-linear-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20'>
           <div className='flex items-center gap-2'>
             <MessageSquare className='w-4 h-4 text-green-600 dark:text-green-400' />
             <span className='font-semibold text-gray-900 dark:text-gray-100'>
