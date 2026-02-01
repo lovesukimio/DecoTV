@@ -5021,7 +5021,7 @@ const SiteConfigComponent = ({
     FluidSearch: true,
     DandanplayAppId: '',
     DandanplayAppSecret: '',
-    LoginBackground: '',
+    LoginBackground: 'https://pan.yyds.nyc.mn/background.png',
   });
 
   // 豆瓣数据源相关状态
@@ -5087,7 +5087,9 @@ const SiteConfigComponent = ({
         FluidSearch: config.SiteConfig.FluidSearch || true,
         DandanplayAppId: config.SiteConfig.DandanplayAppId || '',
         DandanplayAppSecret: config.SiteConfig.DandanplayAppSecret || '',
-        LoginBackground: config.SiteConfig.LoginBackground || '',
+        LoginBackground:
+          config.SiteConfig.LoginBackground ||
+          'https://pan.yyds.nyc.mn/background.png',
       });
     }
   }, [config]);

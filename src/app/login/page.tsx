@@ -169,9 +169,10 @@ function LoginPageClient() {
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
-  // 默认使用背景图，避免闪烁
-  const [loginBackground, setLoginBackground] =
-    useState<string>('/background.png');
+  // 默认使用图片直链
+  const [loginBackground, setLoginBackground] = useState<string>(
+    'https://pan.yyds.nyc.mn/background.png',
+  );
 
   const { siteName } = useSite();
 
@@ -186,8 +187,10 @@ function LoginPageClient() {
         setRegistrationEnabled(
           data.EnableRegistration && storageType !== 'localstorage',
         );
-        // 设置登录背景图（空则使用动态背景）
-        setLoginBackground(data.LoginBackground || '');
+        // 设置登录背景图（如果服务器返回空，则使用默认值）
+        setLoginBackground(
+          data.LoginBackground || 'https://pan.yyds.nyc.mn/background.png',
+        );
       })
       .catch(() => {
         // 失败时使用默认值
