@@ -85,6 +85,9 @@ jobs:
           tags: |
             ghcr.io/${{ steps.lowercase.outputs.owner }}/decotv:${{ github.event.inputs.tag || 'latest' }}
             ghcr.io/${{ steps.lowercase.outputs.owner }}/decotv:${{ steps.version.outputs.version }}
+          build-args: |
+            DANDANPLAY_APP_ID=${{ secrets.DANDANPLAY_APP_ID }}
+            DANDANPLAY_APP_SECRET=${{ secrets.DANDANPLAY_APP_SECRET }}
           outputs: type=image,name=ghcr.io/${{ steps.lowercase.outputs.owner }}/decotv,name-canonical=true,push=true
 
       - name: Export digest
