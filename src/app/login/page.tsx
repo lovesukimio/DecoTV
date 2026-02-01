@@ -186,8 +186,8 @@ function LoginPageClient() {
         setRegistrationEnabled(
           data.EnableRegistration && storageType !== 'localstorage',
         );
-        // 设置登录背景图（如果服务器返回空，则使用默认值）
-        setLoginBackground(data.LoginBackground || '/background.png');
+        // 设置登录背景图（空则使用动态背景）
+        setLoginBackground(data.LoginBackground || '');
       })
       .catch(() => {
         // 失败时使用默认值
