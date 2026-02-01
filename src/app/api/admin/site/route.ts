@@ -28,8 +28,6 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy,
         DisableYellowFilter,
         FluidSearch,
-        DandanplayAppId,
-        DandanplayAppSecret,
         LoginBackground,
       } = body as {
         SiteName: string;
@@ -42,8 +40,6 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy: string;
         DisableYellowFilter: boolean;
         FluidSearch: boolean;
-        DandanplayAppId?: string;
-        DandanplayAppSecret?: string;
         LoginBackground?: string;
       };
 
@@ -59,8 +55,6 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy,
         DisableYellowFilter,
         FluidSearch,
-        DandanplayAppId,
-        DandanplayAppSecret,
         LoginBackground,
       };
       return NextResponse.json({
@@ -91,8 +85,6 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy,
       DisableYellowFilter,
       FluidSearch,
-      DandanplayAppId,
-      DandanplayAppSecret,
       LoginBackground,
     } = body as {
       SiteName: string;
@@ -105,8 +97,6 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy: string;
       DisableYellowFilter: boolean;
       FluidSearch: boolean;
-      DandanplayAppId?: string;
-      DandanplayAppSecret?: string;
       LoginBackground?: string;
     };
 
@@ -151,8 +141,6 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy,
       DisableYellowFilter,
       FluidSearch,
-      DandanplayAppId: DandanplayAppId || '',
-      DandanplayAppSecret: DandanplayAppSecret || '',
       LoginBackground: LoginBackground || '',
     };
 

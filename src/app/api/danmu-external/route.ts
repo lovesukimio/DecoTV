@@ -2,7 +2,7 @@
 import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
 
-import { getCacheTime, getConfig } from '@/lib/config';
+import { getCacheTime } from '@/lib/config';
 
 export const runtime = 'nodejs';
 
@@ -14,26 +14,12 @@ const DANDANPLAY_API_BASE = 'https://api.dandanplay.net';
 
 /**
  * 获取弹弹play API凭证
- * 优先从数据库配置读取，其次从环境变量读取
+ * 从环境变量读取（由开发者在构建时内置或部署时配置）
  */
-async function getDandanplayCredentials(): Promise<{
+function getDandanplayCredentials(): {
   appId: string;
   appSecret: string;
-}> {
-  // 优先从数据库配置读取
-  try {
-    const config = await getConfig();
-    const appId = config.SiteConfig?.DandanplayAppId || '';
-    const appSecret = config.SiteConfig?.DandanplayAppSecret || '';
-
-    if (appId && appSecret) {
-      return { appId, appSecret };
-    }
-  } catch (e) {
-    console.log('[danmu] Failed to get config, falling back to env:', e);
-  }
-
-  // 回退到环境变量
+} {
   return {
     appId: process.env.DANDANPLAY_APP_ID || '',
     appSecret: process.env.DANDANPLAY_APP_SECRET || '',
@@ -372,8 +358,8 @@ export async function GET(request: Request) {
     );
   }
 
-  // 获取API凭证（优先从数据库配置，其次从环境变量）
-  const { appId, appSecret } = await getDandanplayCredentials();
+  // 获取API凭证（从环境变量读取，由开发者在构建时内置）
+  const { appId, appSecret } = getDandanplayCredentials();
 
   // 检查API凭证配置
   if (!appId || !appSecret) {
@@ -381,10 +367,9 @@ export async function GET(request: Request) {
       {
         code: 503,
         message:
-          '弹幕服务未配置。请在管理面板的站点设置中配置弹弹play AppId 和 AppSecret。',
+          '弹幕服务暂不可用。如使用官方 Docker 镜像，请确保镜像版本正确。',
         danmus: [],
         count: 0,
-        hint: '请在管理面板 → 站点设置 → 弹弹play弹幕API配置中填入凭证',
       },
       { status: 503 },
     );
