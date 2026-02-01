@@ -85,6 +85,15 @@ export interface DoubanCommentsResponse {
   comments: DoubanComment[];
 }
 
+/** 推荐影片 */
+export interface DoubanRecommend {
+  id: string;
+  title: string;
+  poster?: string;
+  rate?: string;
+  year?: string;
+}
+
 /** Hook 返回类型 */
 export interface UseDoubanInfoResult {
   // 详情数据
@@ -98,9 +107,15 @@ export interface UseDoubanInfoResult {
   commentsError: Error | null;
   commentsTotal: number;
 
+  // 推荐数据
+  recommends: DoubanRecommend[];
+  recommendsLoading: boolean;
+  recommendsError: Error | null;
+
   // 刷新函数
   refreshDetail: () => Promise<void>;
   refreshComments: () => Promise<void>;
+  refreshRecommends: () => Promise<void>;
 }
 
 // ============================================================================
@@ -143,6 +158,27 @@ async function fetchDoubanComments(
   return response.json();
 }
 
+/**
+ * 通过代理接口获取豆瓣推荐影片
+ */
+async function fetchDoubanRecommends(doubanId: string | number): Promise<{
+  recommendations: Array<{
+    id: string;
+    title: string;
+    images?: { small?: string; medium?: string; large?: string };
+  }>;
+}> {
+  const response = await fetch(
+    `/api/douban/proxy?path=movie/subject/${doubanId}/recommendations`,
+  );
+
+  if (!response.ok) {
+    throw new Error(`获取推荐失败: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -161,6 +197,8 @@ export function useDoubanInfo(
     fetchDetail?: boolean;
     /** 是否自动获取评论，默认 true */
     fetchComments?: boolean;
+    /** 是否自动获取推荐，默认 true */
+    fetchRecommends?: boolean;
     /** 评论数量，默认 6 */
     commentsCount?: number;
   } = {},
@@ -168,6 +206,7 @@ export function useDoubanInfo(
   const {
     fetchDetail: shouldFetchDetail = true,
     fetchComments: shouldFetchComments = true,
+    fetchRecommends: shouldFetchRecommends = true,
     commentsCount = 6,
   } = options;
 
@@ -181,6 +220,11 @@ export function useDoubanInfo(
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState<Error | null>(null);
   const [commentsTotal, setCommentsTotal] = useState(0);
+
+  // 推荐状态
+  const [recommends, setRecommends] = useState<DoubanRecommend[]>([]);
+  const [recommendsLoading, setRecommendsLoading] = useState(false);
+  const [recommendsError, setRecommendsError] = useState<Error | null>(null);
 
   // 获取详情
   const refreshDetail = useCallback(async () => {
@@ -219,6 +263,35 @@ export function useDoubanInfo(
     }
   }, [doubanId, commentsCount]);
 
+  // 获取推荐
+  const refreshRecommends = useCallback(async () => {
+    if (!doubanId) return;
+
+    setRecommendsLoading(true);
+    setRecommendsError(null);
+
+    try {
+      const data = await fetchDoubanRecommends(doubanId);
+      // 转换数据格式
+      const transformedRecommends: DoubanRecommend[] = (
+        data.recommendations || []
+      ).map((rec) => ({
+        id: rec.id,
+        title: rec.title,
+        poster:
+          rec.images?.medium || rec.images?.small || rec.images?.large || '',
+      }));
+      setRecommends(transformedRecommends);
+    } catch (error) {
+      console.error('[useDoubanInfo] Failed to fetch recommends:', error);
+      setRecommendsError(
+        error instanceof Error ? error : new Error('未知错误'),
+      );
+    } finally {
+      setRecommendsLoading(false);
+    }
+  }, [doubanId]);
+
   // 初始化加载
   useEffect(() => {
     if (!doubanId) {
@@ -226,6 +299,7 @@ export function useDoubanInfo(
       setDetail(null);
       setComments([]);
       setCommentsTotal(0);
+      setRecommends([]);
       return;
     }
 
@@ -240,13 +314,19 @@ export function useDoubanInfo(
       promises.push(refreshComments());
     }
 
+    if (shouldFetchRecommends) {
+      promises.push(refreshRecommends());
+    }
+
     Promise.allSettled(promises);
   }, [
     doubanId,
     shouldFetchDetail,
     shouldFetchComments,
+    shouldFetchRecommends,
     refreshDetail,
     refreshComments,
+    refreshRecommends,
   ]);
 
   return {
@@ -257,8 +337,12 @@ export function useDoubanInfo(
     commentsLoading,
     commentsError,
     commentsTotal,
+    recommends,
+    recommendsLoading,
+    recommendsError,
     refreshDetail,
     refreshComments,
+    refreshRecommends,
   };
 }
 

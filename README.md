@@ -417,7 +417,7 @@ dockge/komodo 等 docker compose UI 也有自动更新功能
 - [ ] 手机端 APP 开发
 - [ ] 智能推荐算法
 - [ ] 用户评分系统
-- [ ] 弹幕功能
+- [x] 弹幕功能
 - [ ] 离线下载功能
 
 ## 📺 AndroidTV 使用
