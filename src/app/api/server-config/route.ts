@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     // 🔒 成人内容过滤状态（新增）
     AdultFilterEnabled: adultFilterEnabled,
     // 🖼️ 登录页面背景图
-    LoginBackground: config.SiteConfig.LoginBackground || '',
+    LoginBackground: config.SiteConfig.LoginBackground || '/background.png',
     // 提供说明信息
     AdultFilterInfo: {
       enabled: adultFilterEnabled,

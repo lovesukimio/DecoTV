@@ -169,7 +169,9 @@ function LoginPageClient() {
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
-  const [loginBackground, setLoginBackground] = useState<string>('');
+  // 默认使用背景图，避免闪烁
+  const [loginBackground, setLoginBackground] =
+    useState<string>('/background.png');
 
   const { siteName } = useSite();
 
@@ -184,10 +186,8 @@ function LoginPageClient() {
         setRegistrationEnabled(
           data.EnableRegistration && storageType !== 'localstorage',
         );
-        // 设置登录背景图
-        if (data.LoginBackground) {
-          setLoginBackground(data.LoginBackground);
-        }
+        // 设置登录背景图（如果服务器返回空，则使用默认值）
+        setLoginBackground(data.LoginBackground || '/background.png');
       })
       .catch(() => {
         // 失败时使用默认值
@@ -233,18 +233,28 @@ function LoginPageClient() {
     <div className='relative min-h-screen flex items-center justify-center px-4 overflow-hidden login-bg'>
       {/* 自定义背景图 */}
       {loginBackground && (
-        <div
-          className='absolute inset-0 z-0'
-          style={{
-            backgroundImage: `url(${loginBackground})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-          }}
-        >
-          {/* 背景遮罩层，提升文字可读性 */}
-          <div className='absolute inset-0 bg-black/40 dark:bg-black/60' />
-        </div>
+        <>
+          {/* 隐藏的 img 标签用于预加载和检测加载失败 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={loginBackground}
+            alt=''
+            className='hidden'
+            onError={() => setLoginBackground('')}
+          />
+          <div
+            className='absolute inset-0 z-0'
+            style={{
+              backgroundImage: `url(${loginBackground})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            }}
+          >
+            {/* 背景遮罩层，提升文字可读性 */}
+            <div className='absolute inset-0 bg-black/40 dark:bg-black/60' />
+          </div>
+        </>
       )}
 
       {/* Animated background gradient - 仅在没有自定义背景时显示 */}

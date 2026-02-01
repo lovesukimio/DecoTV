@@ -5087,7 +5087,7 @@ const SiteConfigComponent = ({
         FluidSearch: config.SiteConfig.FluidSearch || true,
         DandanplayAppId: config.SiteConfig.DandanplayAppId || '',
         DandanplayAppSecret: config.SiteConfig.DandanplayAppSecret || '',
-        LoginBackground: config.SiteConfig.LoginBackground || '',
+        LoginBackground: config.SiteConfig.LoginBackground || '/background.png',
       });
     }
   }, [config]);
