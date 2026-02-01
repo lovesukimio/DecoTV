@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
         FluidSearch,
         DandanplayAppId,
         DandanplayAppSecret,
+        LoginBackground,
       } = body as {
         SiteName: string;
         Announcement: string;
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
         FluidSearch: boolean;
         DandanplayAppId?: string;
         DandanplayAppSecret?: string;
+        LoginBackground?: string;
       };
 
       const localConfig = getLocalModeConfig();
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
         FluidSearch,
         DandanplayAppId,
         DandanplayAppSecret,
+        LoginBackground,
       };
       return NextResponse.json({
         message: '站点配置更新成功（本地模式）',
@@ -90,6 +93,7 @@ export async function POST(request: NextRequest) {
       FluidSearch,
       DandanplayAppId,
       DandanplayAppSecret,
+      LoginBackground,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -103,6 +107,7 @@ export async function POST(request: NextRequest) {
       FluidSearch: boolean;
       DandanplayAppId?: string;
       DandanplayAppSecret?: string;
+      LoginBackground?: string;
     };
 
     // 参数校验
@@ -148,6 +153,7 @@ export async function POST(request: NextRequest) {
       FluidSearch,
       DandanplayAppId: DandanplayAppId || '',
       DandanplayAppSecret: DandanplayAppSecret || '',
+      LoginBackground: LoginBackground || '',
     };
 
     // 写入数据库

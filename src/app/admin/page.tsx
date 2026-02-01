@@ -309,6 +309,8 @@ interface SiteConfig {
   // 弹弹play弹幕API凭证
   DandanplayAppId: string;
   DandanplayAppSecret: string;
+  // 登录页面背景图
+  LoginBackground: string;
 }
 
 // 视频源数据类型
@@ -5019,6 +5021,7 @@ const SiteConfigComponent = ({
     FluidSearch: true,
     DandanplayAppId: '',
     DandanplayAppSecret: '',
+    LoginBackground: '',
   });
 
   // 豆瓣数据源相关状态
@@ -5084,6 +5087,7 @@ const SiteConfigComponent = ({
         FluidSearch: config.SiteConfig.FluidSearch || true,
         DandanplayAppId: config.SiteConfig.DandanplayAppId || '',
         DandanplayAppSecret: config.SiteConfig.DandanplayAppSecret || '',
+        LoginBackground: config.SiteConfig.LoginBackground || '',
       });
     }
   }, [config]);
@@ -5589,6 +5593,60 @@ const SiteConfigComponent = ({
             />
           </div>
         </div>
+      </div>
+
+      {/* 登录页面背景图设置 */}
+      <div className='space-y-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700'>
+        <div className='flex items-center gap-2'>
+          <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+            🖼️ 登录页面背景设置
+          </h4>
+        </div>
+        <p className='text-xs text-gray-500 dark:text-gray-400 -mt-2'>
+          设置登录页面的背景图片。支持本地图片路径（如
+          /background.png）或外部图片直链。留空则使用默认动态背景。
+        </p>
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
+            背景图片地址
+          </label>
+          <input
+            type='text'
+            placeholder='例如: /background.png 或 https://example.com/bg.jpg'
+            value={siteSettings.LoginBackground}
+            onChange={(e) =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                LoginBackground: e.target.value,
+              }))
+            }
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400'
+          />
+        </div>
+        {/* 背景图预览 */}
+        {siteSettings.LoginBackground && (
+          <div className='mt-3'>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              背景预览
+            </label>
+            <div className='relative w-full h-32 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600'>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={siteSettings.LoginBackground}
+                alt='背景预览'
+                className='w-full h-full object-cover'
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+              <div className='absolute inset-0 bg-black/30 flex items-center justify-center'>
+                <span className='text-white text-sm font-medium px-3 py-1 bg-black/50 rounded-lg'>
+                  登录背景预览
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 操作按钮 */}

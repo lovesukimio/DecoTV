@@ -169,6 +169,7 @@ function LoginPageClient() {
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [loginBackground, setLoginBackground] = useState<string>('');
 
   const { siteName } = useSite();
 
@@ -183,6 +184,10 @@ function LoginPageClient() {
         setRegistrationEnabled(
           data.EnableRegistration && storageType !== 'localstorage',
         );
+        // 设置登录背景图
+        if (data.LoginBackground) {
+          setLoginBackground(data.LoginBackground);
+        }
       })
       .catch(() => {
         // 失败时使用默认值
@@ -226,13 +231,33 @@ function LoginPageClient() {
 
   return (
     <div className='relative min-h-screen flex items-center justify-center px-4 overflow-hidden login-bg'>
-      {/* Animated background gradient */}
-      <div className='absolute inset-0 bg-linear-to-br from-purple-900/20 via-blue-900/20 to-pink-900/20 dark:from-purple-900/40 dark:via-blue-900/40 dark:to-pink-900/40 animate-gradient-shift'></div>
+      {/* 自定义背景图 */}
+      {loginBackground && (
+        <div
+          className='absolute inset-0 z-0'
+          style={{
+            backgroundImage: `url(${loginBackground})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }}
+        >
+          {/* 背景遮罩层，提升文字可读性 */}
+          <div className='absolute inset-0 bg-black/40 dark:bg-black/60' />
+        </div>
+      )}
 
-      {/* Floating orbs */}
-      <div className='absolute top-1/4 left-1/4 w-32 h-32 bg-purple-500/30 rounded-full blur-xl animate-float-slow'></div>
-      <div className='absolute top-3/4 right-1/4 w-24 h-24 bg-blue-500/30 rounded-full blur-xl animate-float-slower'></div>
-      <div className='absolute bottom-1/4 left-1/3 w-20 h-20 bg-pink-500/30 rounded-full blur-xl animate-float'></div>
+      {/* Animated background gradient - 仅在没有自定义背景时显示 */}
+      {!loginBackground && (
+        <>
+          <div className='absolute inset-0 bg-linear-to-br from-purple-900/20 via-blue-900/20 to-pink-900/20 dark:from-purple-900/40 dark:via-blue-900/40 dark:to-pink-900/40 animate-gradient-shift'></div>
+
+          {/* Floating orbs */}
+          <div className='absolute top-1/4 left-1/4 w-32 h-32 bg-purple-500/30 rounded-full blur-xl animate-float-slow'></div>
+          <div className='absolute top-3/4 right-1/4 w-24 h-24 bg-blue-500/30 rounded-full blur-xl animate-float-slower'></div>
+          <div className='absolute bottom-1/4 left-1/3 w-20 h-20 bg-pink-500/30 rounded-full blur-xl animate-float'></div>
+        </>
+      )}
 
       <div className='absolute top-4 right-4 z-20'>
         <ThemeToggle />

@@ -19,6 +19,8 @@ export interface AdminConfig {
     // 弹弹play弹幕API凭证
     DandanplayAppId?: string;
     DandanplayAppSecret?: string;
+    // 登录页面背景图
+    LoginBackground?: string;
   };
   UserConfig: {
     Users: {
