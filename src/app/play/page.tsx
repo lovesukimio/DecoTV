@@ -1627,36 +1627,29 @@ function PlayPageClient() {
             },
           },
         ],
-        // 弹幕插件
-        plugins: danmuSettings.enabled
-          ? [
-              artplayerPluginDanmuku({
-                danmuku: danmuList.map((d: DanmuItem) => ({
-                  text: d.text,
-                  time: d.time,
-                  color: d.color || '#FFFFFF',
-                  mode: d.mode ?? 0,
-                })),
-                speed: danmuSettings.speed,
-                opacity: danmuSettings.opacity,
-                fontSize: danmuSettings.fontSize,
-                color: '#FFFFFF',
-                mode: 0,
-                margin: danmuSettings.margin,
-                antiOverlap: danmuSettings.antiOverlap,
-                synchronousPlayback: false,
-                filter: (danmu: any) => {
-                  // 根据设置的模式过滤
-                  return danmuSettings.modes.includes(danmu.mode ?? 0);
-                },
-                lockTime: 5,
-                maxLength: 200,
-                theme: 'dark',
-                heatmap: false,
-                visible: danmuSettings.visible,
-              }),
-            ]
-          : [],
+        // 弹幕插件 - 始终加载，通过 visible 控制显示/隐藏
+        plugins: [
+          artplayerPluginDanmuku({
+            danmuku: [], // 初始为空，后续通过 load() 加载
+            speed: danmuSettings.speed,
+            opacity: danmuSettings.opacity,
+            fontSize: danmuSettings.fontSize,
+            color: '#FFFFFF',
+            mode: 0,
+            margin: danmuSettings.margin,
+            antiOverlap: danmuSettings.antiOverlap,
+            synchronousPlayback: false,
+            filter: (danmu: any) => {
+              // 根据设置的模式过滤
+              return danmuSettings.modes.includes(danmu.mode ?? 0);
+            },
+            lockTime: 5,
+            maxLength: 200,
+            theme: 'dark',
+            heatmap: false,
+            visible: danmuSettings.enabled && danmuSettings.visible,
+          }),
+        ],
       });
 
       // 监听播放器事件
@@ -1833,11 +1826,11 @@ function PlayPageClient() {
     }
   }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
 
-  // 弹幕数据变化时更新弹幕插件
+  // 弹幕数据/设置变化时更新弹幕插件
   useEffect(() => {
-    if (!artPlayerRef.current || !danmuSettings.enabled) return;
+    if (!artPlayerRef.current) return;
 
-    // 获取弹幕插件实例
+    // 获取弹幕插件实例（始终加载）
     const danmuku = artPlayerRef.current.plugins?.artplayerPluginDanmuku;
     if (!danmuku) return;
 
@@ -1850,15 +1843,15 @@ function PlayPageClient() {
         antiOverlap: danmuSettings.antiOverlap,
       });
 
-      // 更新可见性
-      if (danmuSettings.visible) {
+      // 根据启用状态和可见性控制显示
+      if (danmuSettings.enabled && danmuSettings.visible) {
         danmuku.show();
       } else {
         danmuku.hide();
       }
 
-      // 如果有新弹幕数据，加载
-      if (danmuList.length > 0) {
+      // 如果启用且有弹幕数据，加载弹幕
+      if (danmuSettings.enabled && danmuList.length > 0) {
         danmuku.load(
           danmuList.map((d: DanmuItem) => ({
             text: d.text,
@@ -1870,7 +1863,9 @@ function PlayPageClient() {
       }
 
       console.log(
-        '[Danmu] Updated config and loaded',
+        '[Danmu] Updated config, enabled:',
+        danmuSettings.enabled,
+        'loaded:',
         danmuList.length,
         'danmu',
       );
