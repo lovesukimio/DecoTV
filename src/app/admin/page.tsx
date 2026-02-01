@@ -306,6 +306,9 @@ interface SiteConfig {
   DoubanImageProxy: string;
   DisableYellowFilter: boolean;
   FluidSearch: boolean;
+  // 弹弹play弹幕API凭证
+  DandanplayAppId: string;
+  DandanplayAppSecret: string;
 }
 
 // 视频源数据类型
@@ -5014,6 +5017,8 @@ const SiteConfigComponent = ({
     DoubanImageProxy: '',
     DisableYellowFilter: false,
     FluidSearch: true,
+    DandanplayAppId: '',
+    DandanplayAppSecret: '',
   });
 
   // 豆瓣数据源相关状态
@@ -5077,6 +5082,8 @@ const SiteConfigComponent = ({
         DoubanImageProxy: config.SiteConfig.DoubanImageProxy || '',
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
         FluidSearch: config.SiteConfig.FluidSearch || true,
+        DandanplayAppId: config.SiteConfig.DandanplayAppId || '',
+        DandanplayAppSecret: config.SiteConfig.DandanplayAppSecret || '',
       });
     }
   }, [config]);
@@ -5524,6 +5531,64 @@ const SiteConfigComponent = ({
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
           启用后搜索结果将实时流式返回，提升用户体验。
         </p>
+      </div>
+
+      {/* 弹弹play弹幕API配置 */}
+      <div className='space-y-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700'>
+        <div className='flex items-center gap-2'>
+          <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+            弹弹play 弹幕API配置
+          </h4>
+          <a
+            href='https://www.dandanplay.com/open/'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1'
+          >
+            申请凭证
+            <ExternalLink className='w-3 h-3' />
+          </a>
+        </div>
+        <p className='text-xs text-gray-500 dark:text-gray-400 -mt-2'>
+          配置后可在播放器中显示弹幕。发送邮件至 kaedei@dandanplay.net 申请
+          AppId 和 AppSecret。
+        </p>
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
+              AppId
+            </label>
+            <input
+              type='text'
+              placeholder='填入弹弹play AppId'
+              value={siteSettings.DandanplayAppId}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  DandanplayAppId: e.target.value,
+                }))
+              }
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400'
+            />
+          </div>
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
+              AppSecret
+            </label>
+            <input
+              type='password'
+              placeholder='填入弹弹play AppSecret'
+              value={siteSettings.DandanplayAppSecret}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  DandanplayAppSecret: e.target.value,
+                }))
+              }
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400'
+            />
+          </div>
+        </div>
       </div>
 
       {/* 操作按钮 */}

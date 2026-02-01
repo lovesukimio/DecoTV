@@ -28,6 +28,8 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy,
         DisableYellowFilter,
         FluidSearch,
+        DandanplayAppId,
+        DandanplayAppSecret,
       } = body as {
         SiteName: string;
         Announcement: string;
@@ -39,6 +41,8 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy: string;
         DisableYellowFilter: boolean;
         FluidSearch: boolean;
+        DandanplayAppId?: string;
+        DandanplayAppSecret?: string;
       };
 
       const localConfig = getLocalModeConfig();
@@ -53,6 +57,8 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy,
         DisableYellowFilter,
         FluidSearch,
+        DandanplayAppId,
+        DandanplayAppSecret,
       };
       return NextResponse.json({
         message: '站点配置更新成功（本地模式）',
@@ -82,6 +88,8 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy,
       DisableYellowFilter,
       FluidSearch,
+      DandanplayAppId,
+      DandanplayAppSecret,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -93,6 +101,8 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy: string;
       DisableYellowFilter: boolean;
       FluidSearch: boolean;
+      DandanplayAppId?: string;
+      DandanplayAppSecret?: string;
     };
 
     // 参数校验
@@ -136,6 +146,8 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy,
       DisableYellowFilter,
       FluidSearch,
+      DandanplayAppId: DandanplayAppId || '',
+      DandanplayAppSecret: DandanplayAppSecret || '',
     };
 
     // 写入数据库

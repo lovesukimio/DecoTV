@@ -16,6 +16,9 @@ export interface AdminConfig {
     DoubanImageProxy: string;
     DisableYellowFilter: boolean;
     FluidSearch: boolean;
+    // 弹弹play弹幕API凭证
+    DandanplayAppId?: string;
+    DandanplayAppSecret?: string;
   };
   UserConfig: {
     Users: {

@@ -2,7 +2,7 @@
 import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
 
-import { getCacheTime } from '@/lib/config';
+import { getCacheTime, getConfig } from '@/lib/config';
 
 export const runtime = 'nodejs';
 
@@ -10,10 +10,35 @@ export const runtime = 'nodejs';
 // 弹弹play API 配置
 // ============================================================================
 
-// 从环境变量读取弹弹play API凭证
-const DANDANPLAY_APP_ID = process.env.DANDANPLAY_APP_ID || '';
-const DANDANPLAY_APP_SECRET = process.env.DANDANPLAY_APP_SECRET || '';
 const DANDANPLAY_API_BASE = 'https://api.dandanplay.net';
+
+/**
+ * 获取弹弹play API凭证
+ * 优先从数据库配置读取，其次从环境变量读取
+ */
+async function getDandanplayCredentials(): Promise<{
+  appId: string;
+  appSecret: string;
+}> {
+  // 优先从数据库配置读取
+  try {
+    const config = await getConfig();
+    const appId = config.SiteConfig?.DandanplayAppId || '';
+    const appSecret = config.SiteConfig?.DandanplayAppSecret || '';
+
+    if (appId && appSecret) {
+      return { appId, appSecret };
+    }
+  } catch (e) {
+    console.log('[danmu] Failed to get config, falling back to env:', e);
+  }
+
+  // 回退到环境变量
+  return {
+    appId: process.env.DANDANPLAY_APP_ID || '',
+    appSecret: process.env.DANDANPLAY_APP_SECRET || '',
+  };
+}
 
 // ============================================================================
 // Types
@@ -58,8 +83,13 @@ interface DandanplayCommentResult {
  * 生成弹弹play API签名
  * 算法: base64(sha256(AppId + Timestamp + Path + AppSecret))
  */
-function generateDandanplaySignature(path: string, timestamp: number): string {
-  const data = DANDANPLAY_APP_ID + timestamp + path + DANDANPLAY_APP_SECRET;
+function generateDandanplaySignature(
+  appId: string,
+  appSecret: string,
+  path: string,
+  timestamp: number,
+): string {
+  const data = appId + timestamp + path + appSecret;
   const hash = createHash('sha256').update(data).digest('base64');
   return hash;
 }
@@ -67,18 +97,27 @@ function generateDandanplaySignature(path: string, timestamp: number): string {
 /**
  * 构建带签名的请求头
  */
-function buildDandanplayHeaders(path: string): Record<string, string> {
+function buildDandanplayHeaders(
+  appId: string,
+  appSecret: string,
+  path: string,
+): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'User-Agent': 'DecoTV/1.0',
   };
 
   // 如果配置了AppId和AppSecret，使用签名验证模式
-  if (DANDANPLAY_APP_ID && DANDANPLAY_APP_SECRET) {
+  if (appId && appSecret) {
     const timestamp = Math.floor(Date.now() / 1000);
-    const signature = generateDandanplaySignature(path, timestamp);
+    const signature = generateDandanplaySignature(
+      appId,
+      appSecret,
+      path,
+      timestamp,
+    );
 
-    headers['X-AppId'] = DANDANPLAY_APP_ID;
+    headers['X-AppId'] = appId;
     headers['X-Timestamp'] = String(timestamp);
     headers['X-Signature'] = signature;
   }
@@ -154,11 +193,13 @@ function deduplicateDanmu(danmus: DanmuItem[]): DanmuItem[] {
  * 从弹弹play搜索动画
  */
 async function searchDandanplayAnime(
+  appId: string,
+  appSecret: string,
   title: string,
 ): Promise<DandanplaySearchResult | null> {
   const path = '/api/v2/search/episodes';
   const url = `${DANDANPLAY_API_BASE}${path}?anime=${encodeURIComponent(title)}&episode=`;
-  const headers = buildDandanplayHeaders(path);
+  const headers = buildDandanplayHeaders(appId, appSecret, path);
 
   try {
     const response = await fetch(url, {
@@ -187,11 +228,13 @@ async function searchDandanplayAnime(
  * 从弹弹play获取弹幕
  */
 async function fetchDandanplayComments(
+  appId: string,
+  appSecret: string,
   episodeId: number,
 ): Promise<DandanplayCommentResult | null> {
   const path = `/api/v2/comment/${episodeId}`;
   const url = `${DANDANPLAY_API_BASE}${path}?withRelated=true&chConvert=1`;
-  const headers = buildDandanplayHeaders(path);
+  const headers = buildDandanplayHeaders(appId, appSecret, path);
 
   try {
     const response = await fetch(url, {
@@ -220,20 +263,20 @@ async function fetchDandanplayComments(
  * 从弹弹play获取弹幕（完整流程）
  */
 async function fetchDandanplayDanmu(
+  appId: string,
+  appSecret: string,
   title: string,
   episode: number = 1,
 ): Promise<DanmuItem[]> {
   // 检查是否配置了API凭证
-  if (!DANDANPLAY_APP_ID || !DANDANPLAY_APP_SECRET) {
-    console.log(
-      '[danmu] Dandanplay API credentials not configured. Set DANDANPLAY_APP_ID and DANDANPLAY_APP_SECRET environment variables.',
-    );
+  if (!appId || !appSecret) {
+    console.log('[danmu] Dandanplay API credentials not configured.');
     return [];
   }
 
   try {
     // 1. 搜索匹配的动画
-    const searchData = await searchDandanplayAnime(title);
+    const searchData = await searchDandanplayAnime(appId, appSecret, title);
 
     if (!searchData || !searchData.animes || searchData.animes.length === 0) {
       console.log('[danmu] No anime found for:', title);
@@ -273,7 +316,11 @@ async function fetchDandanplayDanmu(
     console.log('[danmu] Found episodeId:', targetEpisodeId, 'for:', title);
 
     // 2. 获取弹幕
-    const commentData = await fetchDandanplayComments(targetEpisodeId);
+    const commentData = await fetchDandanplayComments(
+      appId,
+      appSecret,
+      targetEpisodeId,
+    );
 
     if (
       !commentData ||
@@ -325,16 +372,19 @@ export async function GET(request: Request) {
     );
   }
 
+  // 获取API凭证（优先从数据库配置，其次从环境变量）
+  const { appId, appSecret } = await getDandanplayCredentials();
+
   // 检查API凭证配置
-  if (!DANDANPLAY_APP_ID || !DANDANPLAY_APP_SECRET) {
+  if (!appId || !appSecret) {
     return NextResponse.json(
       {
         code: 503,
         message:
-          '弹幕服务未配置。请在环境变量中设置 DANDANPLAY_APP_ID 和 DANDANPLAY_APP_SECRET。',
+          '弹幕服务未配置。请在管理面板的站点设置中配置弹弹play AppId 和 AppSecret。',
         danmus: [],
         count: 0,
-        hint: '请联系管理员配置弹弹play API凭证',
+        hint: '请在管理面板 → 站点设置 → 弹弹play弹幕API配置中填入凭证',
       },
       { status: 503 },
     );
@@ -342,7 +392,12 @@ export async function GET(request: Request) {
 
   try {
     // 从弹弹play获取弹幕
-    let allDanmus = await fetchDandanplayDanmu(title, episode);
+    let allDanmus = await fetchDandanplayDanmu(
+      appId,
+      appSecret,
+      title,
+      episode,
+    );
 
     // 去重
     allDanmus = deduplicateDanmu(allDanmus);
