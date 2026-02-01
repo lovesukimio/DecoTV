@@ -5021,7 +5021,7 @@ const SiteConfigComponent = ({
     FluidSearch: true,
     DandanplayAppId: '',
     DandanplayAppSecret: '',
-    LoginBackground: '',
+    LoginBackground: '/background.png',
   });
 
   // 豆瓣数据源相关状态
