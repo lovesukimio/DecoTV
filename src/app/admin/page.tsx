@@ -3051,6 +3051,38 @@ const VideoSourceConfig = ({
     });
   };
 
+  // 一键选中失效视频源（状态为 no_results 或 invalid）
+  const handleSelectInvalidSources = useCallback(() => {
+    const invalidKeys = validationResults
+      .filter((r) => r.status === 'no_results' || r.status === 'invalid')
+      .map((r) => r.key);
+
+    if (invalidKeys.length === 0) {
+      showAlert({
+        type: 'warning',
+        title: '没有失效的视频源',
+        message: '当前没有检测到失效或无法搜索的视频源',
+        timer: 3000,
+      });
+      return;
+    }
+
+    setSelectedSources(new Set(invalidKeys));
+    showAlert({
+      type: 'success',
+      title: '已选中失效源',
+      message: `已选中 ${invalidKeys.length} 个失效或无法搜索的视频源`,
+      timer: 3000,
+    });
+  }, [validationResults, showAlert]);
+
+  // 获取失效视频源数量
+  const invalidSourceCount = useMemo(() => {
+    return validationResults.filter(
+      (r) => r.status === 'no_results' || r.status === 'invalid',
+    ).length;
+  }, [validationResults]);
+
   // 一键插入CSP模板
   const handleInsertCspTemplate = async () => {
     const cspTemplate = {
@@ -3840,6 +3872,32 @@ const VideoSourceConfig = ({
                 '有效性检测'
               )}
             </button>
+            {/* 选中失效源按钮 - 只在有检测结果且存在失效源时显示 */}
+            {!isValidating && invalidSourceCount > 0 && (
+              <button
+                onClick={handleSelectInvalidSources}
+                className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1.5 bg-linear-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-sm hover:shadow-md'
+                title={`一键选中 ${invalidSourceCount} 个失效或无法搜索的视频源`}
+              >
+                <svg
+                  className='w-4 h-4'
+                  fill='none'
+                  stroke='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    strokeWidth={2}
+                    d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
+                  />
+                </svg>
+                <span className='hidden sm:inline'>
+                  选中失效源({invalidSourceCount})
+                </span>
+                <span className='sm:hidden'>{invalidSourceCount}</span>
+              </button>
+            )}
             <button
               onClick={handleInsertCspTemplate}
               disabled={isLoading('insertCspTemplate')}

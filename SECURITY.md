@@ -11,7 +11,7 @@
 
 如果您主要发现了本项目中的安全漏洞（例如 XSS、SQL 注入、密钥泄露等）：
 
-**请勿提交公开 ISSUE (DO NOT FILE A PUBLIC ISSUE)**
+### 请勿提交公开 ISSUE (DO NOT FILE A PUBLIC ISSUE)
 
 请通过以下方式私下联系：
 
