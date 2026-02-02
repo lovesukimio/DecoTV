@@ -1,7 +1,7 @@
 name: ✨ 功能建议
 description: 提出新功能想法或改进建议
-title: "[Feat]: "
-labels: ["type: feature", "status: needs-triage"]
+title: '[Feat]: '
+labels: ['type: feature', 'status: needs-triage']
 body:
   - type: checkboxes
     id: duplicate-check
@@ -19,7 +19,7 @@ body:
       placeholder: |
         痛点 (Problemo)：
         ...
-        
+
         建议方案 (Solution)：
         ...
     validations:
