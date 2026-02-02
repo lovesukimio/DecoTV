@@ -30,15 +30,22 @@ body:
     attributes:
       label: 适用场景
       options:
-        - 全平台通用
-        - 仅移动端 (Mobile)
-        - 仅桌面端 (PC)
-        - 仅 Docker 版
-        - 仅 Vercel 版
-        - 管理后台 (Admin)
-        - 其他
+        - 全平台通用 (All Platforms)
+        - 仅移动端 (Mobile Only)
+        - 仅PC/桌面端 (Desktop Only)
+        - 仅管理后台 (Admin Panel)
+        - Docker部署 (包括 NAS/VPS)
+        - Serverless部署 (Vercel/Zeabur/ClawCloud等)
+        - 其他 (Other)
     validations:
       required: true
+
+  - type: input
+    id: other-context
+    attributes:
+      label: 其他场景说明
+      description: 如果您选择了“其他”，请务必在此详细说明适用范围。
+      placeholder: 例如：仅在使用 Nginx 反代时，或仅在 TV 模式下...
 
   - type: textarea
     id: visuals

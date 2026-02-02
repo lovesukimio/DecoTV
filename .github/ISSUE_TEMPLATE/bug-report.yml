@@ -36,14 +36,37 @@ body:
   - type: dropdown
     id: deployment
     attributes:
-      label: 部署方式
+      label: 部署环境
       options:
-        - Docker
-        - Vercel
-        - 源码部署
+        - Docker (本地 / Linux / Windows)
+        - Docker (NAS - 飞牛 fnOS / 群晖 / 极空间)
+        - Vercel (Serverless)
+        - Zeabur
+        - ClawCloud
+        - 源码部署 (Source Code)
+        - 其他 (Other)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: storage
+    attributes:
+      label: 数据存储方式
+      description: 使用哪种服务来存储数据/缓存？
+      options:
+        - Kvrocks (Docker 默认内置)
+        - Redis (自建/独立部署)
+        - Upstash (Serverless Redis)
         - 其他
     validations:
       required: true
+
+  - type: input
+    id: other-env
+    attributes:
+      label: 其他环境说明
+      description: 如果您在“部署环境”或“数据存储”中选择了“其他”，请务必在此详细说明。
+      placeholder: 例如：使用 K8s 集群部署，或使用 Keydb 替代 Redis...
 
   - type: input
     id: browser
