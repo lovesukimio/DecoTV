@@ -41,6 +41,18 @@ export interface DanmuSettings {
   visible: boolean;
 }
 
+/** 弹幕匹配信息（由服务端返回） */
+export interface DanmuMatchInfo {
+  /** 匹配到的番剧标题 */
+  animeTitle: string;
+  /** 匹配到的剧集标题 */
+  episodeTitle: string;
+  /** 弹弹play episodeId */
+  episodeId: number;
+  /** 匹配方式描述 */
+  matchLevel: string;
+}
+
 /** useDanmu Hook 返回类型 */
 export interface UseDanmuResult {
   /** 弹幕数据 */
@@ -51,6 +63,8 @@ export interface UseDanmuResult {
   error: Error | null;
   /** 弹幕设置 */
   settings: DanmuSettings;
+  /** 匹配信息（命中了哪个番剧的哪一集） */
+  matchInfo: DanmuMatchInfo | null;
   /** 更新设置 */
   updateSettings: (newSettings: Partial<DanmuSettings>) => void;
   /** 重新加载弹幕 */
@@ -168,6 +182,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [settings, setSettings] = useState<DanmuSettings>(DEFAULT_SETTINGS);
+  const [matchInfo, setMatchInfo] = useState<DanmuMatchInfo | null>(null);
 
   // 防抖 ref
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -214,12 +229,15 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         const parsedCache = JSON.parse(cached);
         if (
           parsedCache.timestamp &&
-          Date.now() - parsedCache.timestamp < 30 * 60 * 1000
+          Date.now() - parsedCache.timestamp < 2 * 3600 * 1000
         ) {
           setDanmuList(parsedCache.data);
+          if (parsedCache.match) {
+            setMatchInfo(parsedCache.match as DanmuMatchInfo);
+          }
           lastFetchKeyRef.current = cacheKey;
           console.log(
-            '[useDanmu] Loaded from cache:',
+            '[useDanmu] Cache hit:',
             parsedCache.data.length,
             'danmu',
           );
@@ -263,12 +281,20 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         setDanmuList(danmus);
         lastFetchKeyRef.current = cacheKey;
 
-        // 缓存到 sessionStorage
+        // 保存匹配信息
+        if (data.match) {
+          setMatchInfo(data.match as DanmuMatchInfo);
+        } else {
+          setMatchInfo(null);
+        }
+
+        // 缓存到 sessionStorage（含匹配信息）
         try {
           sessionStorage.setItem(
             cacheKey,
             JSON.stringify({
               data: danmus,
+              match: data.match || null,
               timestamp: Date.now(),
             }),
           );
@@ -276,14 +302,23 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
           // 缓存失败，忽略
         }
 
-        console.log('[useDanmu] Fetched:', danmus.length, 'danmu');
+        console.log(
+          '[useDanmu] Fetched:',
+          danmus.length,
+          'danmu',
+          data.match
+            ? `→ ${data.match.animeTitle} [${data.match.episodeTitle}]`
+            : '',
+        );
       } else {
         setDanmuList([]);
+        setMatchInfo(null);
       }
     } catch (err) {
       console.error('[useDanmu] Fetch error:', err);
       setError(err instanceof Error ? err : new Error('加载弹幕失败'));
       setDanmuList([]);
+      setMatchInfo(null);
     } finally {
       setLoading(false);
     }
@@ -348,6 +383,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   // 清空弹幕
   const clear = useCallback(() => {
     setDanmuList([]);
+    setMatchInfo(null);
     lastFetchKeyRef.current = '';
   }, []);
 
@@ -356,6 +392,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     loading,
     error,
     settings,
+    matchInfo,
     updateSettings,
     reload,
     clear,

@@ -282,6 +282,7 @@ function PlayPageClient() {
     danmuList,
     loading: danmuLoading,
     settings: danmuSettings,
+    matchInfo: danmuMatchInfo,
     updateSettings: updateDanmuSettings,
     reload: reloadDanmu,
   } = useDanmu({
@@ -2194,6 +2195,7 @@ function PlayPageClient() {
                   danmuCount={danmuList.length}
                   loading={danmuLoading}
                   onReload={reloadDanmu}
+                  matchInfo={danmuMatchInfo}
                 />
 
                 {/* 换源加载提示 - 使用播放器自带的加载动画 */}

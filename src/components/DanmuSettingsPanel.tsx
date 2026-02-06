@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
-import type { DanmuSettings } from '@/hooks/useDanmu';
+import type { DanmuMatchInfo, DanmuSettings } from '@/hooks/useDanmu';
 
 // ============================================================================
 // Types
@@ -32,6 +32,8 @@ interface DanmuSettingsPanelProps {
   loading?: boolean;
   /** 重新加载回调 */
   onReload?: () => void;
+  /** 匹配信息（显示弹幕来源） */
+  matchInfo?: DanmuMatchInfo | null;
 }
 
 // ============================================================================
@@ -46,6 +48,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   danmuCount = 0,
   loading = false,
   onReload,
+  matchInfo,
 }: DanmuSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -134,6 +137,21 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
 
       {/* 内容区域 */}
       <div className='p-3 space-y-3 max-h-80 overflow-y-auto'>
+        {/* 匹配信息标签 */}
+        {matchInfo && settings.enabled && danmuCount > 0 && (
+          <div className='px-2 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg'>
+            <p
+              className='text-xs text-green-300 truncate'
+              title={`${matchInfo.animeTitle} - ${matchInfo.episodeTitle}`}
+            >
+              ✨ {matchInfo.animeTitle}
+            </p>
+            <p className='text-[10px] text-green-400/70 truncate'>
+              {matchInfo.episodeTitle}
+            </p>
+          </div>
+        )}
+
         {/* 主开关 */}
         <div className='flex items-center justify-between'>
           <span className='text-sm text-gray-200'>启用弹幕</span>
