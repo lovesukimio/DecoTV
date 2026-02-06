@@ -5,6 +5,7 @@ import {
   Gauge,
   Layers,
   MessageSquare,
+  RefreshCw,
   Shield,
   Type,
   X,
@@ -113,57 +114,83 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   return (
     <div
       ref={panelRef}
-      className={`absolute right-3 bottom-16 z-50 w-72 bg-gray-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-white/10 overflow-hidden transition-all duration-200 ease-out ${
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+      className={`absolute right-3 bottom-16 z-9999 w-72 bg-black/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden transition-all duration-300 ease-out ${
+        isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
       }`}
+      style={{
+        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+      }}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 头部 */}
-      <div className='flex items-center justify-between px-3 py-2.5 border-b border-white/10 bg-white/5'>
+      {/* 头部 - 精致设计 */}
+      <div className='flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5 backdrop-blur-md'>
         <div className='flex items-center gap-2'>
           <MessageSquare className='w-4 h-4 text-green-400' />
-          <span className='font-medium text-white text-sm'>弹幕设置</span>
-          <span className='text-xs text-gray-400'>
-            {loading ? '加载中...' : `${danmuCount}条`}
+          <span className='font-semibold text-white text-sm tracking-wide'>
+            弹幕设置
+          </span>
+          <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-300'>
+            {loading ? '...' : `${danmuCount}`}
           </span>
         </div>
-        <button
-          onClick={onClose}
-          className='p-1 hover:bg-white/10 rounded transition-colors'
-        >
-          <X className='w-4 h-4 text-gray-400' />
-        </button>
+        <div className='flex items-center gap-1'>
+          {/* 刷新按钮 - 移到顶部 */}
+          {onReload && (
+            <button
+              onClick={onReload}
+              disabled={loading}
+              className='p-1.5 hover:bg-white/10 rounded-lg transition-all duration-200 group'
+              title='刷新弹幕'
+            >
+              <RefreshCw
+                className={`w-4 h-4 text-gray-400 transition-all duration-300 ${
+                  loading
+                    ? 'animate-spin text-green-400'
+                    : 'group-hover:text-gray-300'
+                }`}
+              />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className='p-1.5 hover:bg-white/10 rounded-lg transition-all duration-200 group'
+          >
+            <X className='w-4 h-4 text-gray-400 transition-colors group-hover:text-white' />
+          </button>
+        </div>
       </div>
 
-      {/* 内容区域 */}
-      <div className='p-3 space-y-3 max-h-80 overflow-y-auto'>
-        {/* 匹配信息标签 */}
+      {/* 内容区域 - 零滚动设计 */}
+      <div className='px-4 py-3 space-y-3 overflow-hidden'>
+        {/* 匹配信息标签 - 紧凑设计 */}
         {matchInfo && settings.enabled && danmuCount > 0 && (
-          <div className='px-2 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg'>
+          <div className='px-3 py-2 bg-linear-to-r from-green-500/15 to-green-600/10 border border-green-500/30 rounded-xl backdrop-blur-sm'>
             <p
-              className='text-xs text-green-300 truncate'
+              className='text-xs text-green-300 font-medium whitespace-nowrap overflow-hidden text-ellipsis'
               title={`${matchInfo.animeTitle} - ${matchInfo.episodeTitle}`}
             >
               ✨ {matchInfo.animeTitle}
             </p>
-            <p className='text-[10px] text-green-400/70 truncate'>
+            <p className='text-[11px] text-green-400/70 mt-0.5 truncate'>
               {matchInfo.episodeTitle}
             </p>
           </div>
         )}
 
         {/* 主开关 */}
-        <div className='flex items-center justify-between'>
-          <span className='text-sm text-gray-200'>启用弹幕</span>
+        <div className='flex items-center justify-between py-1'>
+          <span className='text-sm font-medium text-gray-200'>启用弹幕</span>
           <button
             onClick={() => handleUpdate('enabled', !settings.enabled)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              settings.enabled ? 'bg-green-500' : 'bg-gray-600'
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 ${
+              settings.enabled
+                ? 'bg-linear-to-r from-green-500 to-emerald-600 shadow-lg shadow-green-500/50'
+                : 'bg-gray-700'
             }`}
           >
             <span
-              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                settings.enabled ? 'translate-x-4.5' : 'translate-x-1'
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
+                settings.enabled ? 'translate-x-5.5' : 'translate-x-1'
               }`}
             />
           </button>
@@ -171,57 +198,58 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
 
         {settings.enabled && (
           <>
-            {/* 快捷开关行 */}
-            <div className='flex items-center gap-4 py-2 px-2 bg-white/5 rounded-lg'>
-              <div className='flex items-center gap-2 flex-1'>
-                <Eye className='w-3.5 h-3.5 text-gray-400' />
+            {/* 快捷开关行 - 并排紧凑设计 */}
+            <div className='grid grid-cols-2 gap-2 py-1'>
+              {/* 显示开关 */}
+              <div className='flex items-center gap-2 px-3 py-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors'>
+                <Eye className='w-3.5 h-3.5 text-gray-400 shrink-0' />
                 <span className='text-xs text-gray-300'>显示</span>
                 <button
                   onClick={() => handleUpdate('visible', !settings.visible)}
-                  className={`ml-auto relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-                    settings.visible ? 'bg-green-500' : 'bg-gray-600'
+                  className={`ml-auto relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 ${
+                    settings.visible
+                      ? 'bg-linear-to-r from-green-500 to-emerald-600'
+                      : 'bg-gray-600'
                   }`}
                 >
                   <span
-                    className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
-                      settings.visible ? 'translate-x-3.5' : 'translate-x-1'
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ${
+                      settings.visible ? 'translate-x-4.5' : 'translate-x-1'
                     }`}
                   />
                 </button>
               </div>
-              <div className='w-px h-4 bg-white/10' />
-              <div className='flex items-center gap-2 flex-1'>
-                <Shield className='w-3.5 h-3.5 text-gray-400' />
+
+              {/* 防重叠开关 */}
+              <div className='flex items-center gap-2 px-3 py-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors'>
+                <Shield className='w-3.5 h-3.5 text-gray-400 shrink-0' />
                 <span className='text-xs text-gray-300'>防重叠</span>
                 <button
                   onClick={() =>
                     handleUpdate('antiOverlap', !settings.antiOverlap)
                   }
-                  className={`ml-auto relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-                    settings.antiOverlap ? 'bg-green-500' : 'bg-gray-600'
+                  className={`ml-auto relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 ${
+                    settings.antiOverlap
+                      ? 'bg-linear-to-r from-green-500 to-emerald-600'
+                      : 'bg-gray-600'
                   }`}
                 >
                   <span
-                    className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
-                      settings.antiOverlap ? 'translate-x-3.5' : 'translate-x-1'
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ${
+                      settings.antiOverlap ? 'translate-x-4.5' : 'translate-x-1'
                     }`}
                   />
                 </button>
               </div>
             </div>
 
-            {/* 滑块设置 */}
-            <div className='space-y-3'>
+            {/* 滑块设置 - 压缩间距 */}
+            <div className='space-y-2.5 py-1'>
               {/* 字号 */}
-              <div className='space-y-1.5'>
-                <div className='flex items-center justify-between'>
-                  <div className='flex items-center gap-1.5 text-xs text-gray-300'>
-                    <Type className='w-3.5 h-3.5 text-gray-400' />
-                    <span>字号</span>
-                  </div>
-                  <span className='text-xs text-gray-400'>
-                    {settings.fontSize}px
-                  </span>
+              <div className='flex items-center gap-3 py-0.5'>
+                <div className='flex items-center gap-1.5 text-xs text-gray-300 w-16 shrink-0'>
+                  <Type className='w-3.5 h-3.5 text-gray-400' />
+                  <span>字号</span>
                 </div>
                 <input
                   type='range'
@@ -232,20 +260,18 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                   onChange={(e) =>
                     handleUpdate('fontSize', parseFloat(e.target.value))
                   }
-                  className='w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500'
+                  className='flex-1 h-1.5 bg-gray-700/50 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-all'
                 />
+                <span className='text-xs text-gray-400 w-10 text-right font-mono'>
+                  {settings.fontSize}
+                </span>
               </div>
 
               {/* 速度 */}
-              <div className='space-y-1.5'>
-                <div className='flex items-center justify-between'>
-                  <div className='flex items-center gap-1.5 text-xs text-gray-300'>
-                    <Gauge className='w-3.5 h-3.5 text-gray-400' />
-                    <span>速度</span>
-                  </div>
-                  <span className='text-xs text-gray-400'>
-                    {settings.speed}
-                  </span>
+              <div className='flex items-center gap-3 py-0.5'>
+                <div className='flex items-center gap-1.5 text-xs text-gray-300 w-16 shrink-0'>
+                  <Gauge className='w-3.5 h-3.5 text-gray-400' />
+                  <span>速度</span>
                 </div>
                 <input
                   type='range'
@@ -256,20 +282,18 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                   onChange={(e) =>
                     handleUpdate('speed', parseFloat(e.target.value))
                   }
-                  className='w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500'
+                  className='flex-1 h-1.5 bg-gray-700/50 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-all'
                 />
+                <span className='text-xs text-gray-400 w-10 text-right font-mono'>
+                  {settings.speed}
+                </span>
               </div>
 
               {/* 透明度 */}
-              <div className='space-y-1.5'>
-                <div className='flex items-center justify-between'>
-                  <div className='flex items-center gap-1.5 text-xs text-gray-300'>
-                    <Eye className='w-3.5 h-3.5 text-gray-400' />
-                    <span>透明</span>
-                  </div>
-                  <span className='text-xs text-gray-400'>
-                    {settings.opacity.toFixed(1)}
-                  </span>
+              <div className='flex items-center gap-3 py-0.5'>
+                <div className='flex items-center gap-1.5 text-xs text-gray-300 w-16 shrink-0'>
+                  <Eye className='w-3.5 h-3.5 text-gray-400' />
+                  <span>透明</span>
                 </div>
                 <input
                   type='range'
@@ -280,18 +304,21 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                   onChange={(e) =>
                     handleUpdate('opacity', parseFloat(e.target.value))
                   }
-                  className='w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500'
+                  className='flex-1 h-1.5 bg-gray-700/50 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-all'
                 />
+                <span className='text-xs text-gray-400 w-10 text-right font-mono'>
+                  {settings.opacity.toFixed(1)}
+                </span>
               </div>
             </div>
 
-            {/* 弹幕类型 */}
-            <div className='space-y-2'>
-              <div className='flex items-center gap-1.5 text-xs text-gray-300'>
+            {/* 弹幕类型 - 紧凑设计 */}
+            <div className='py-1'>
+              <div className='flex items-center gap-1.5 text-xs text-gray-300 mb-2'>
                 <Layers className='w-3.5 h-3.5 text-gray-400' />
                 <span>弹幕类型</span>
               </div>
-              <div className='flex gap-2'>
+              <div className='grid grid-cols-3 gap-2'>
                 {[
                   { value: 0, label: '滚动' },
                   { value: 1, label: '顶部' },
@@ -307,10 +334,10 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                         : [...settings.modes, option.value];
                       handleUpdate('modes', modes);
                     }}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    className={`py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
                       settings.modes.includes(option.value)
-                        ? 'bg-green-500 text-white'
-                        : 'bg-white/10 text-gray-400 hover:bg-white/15'
+                        ? 'bg-linear-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30'
+                        : 'bg-white/5 text-gray-400 hover:bg-white/10 border border-white/5'
                     }`}
                   >
                     {option.label}
@@ -318,23 +345,11 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                 ))}
               </div>
             </div>
-
-            {/* 刷新按钮 */}
-            {onReload && (
-              <button
-                onClick={onReload}
-                disabled={loading}
-                className='w-full py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors'
-              >
-                {loading ? '加载中...' : '刷新弹幕'}
-              </button>
-            )}
           </>
         )}
       </div>
 
-      {/* 底部小三角指示器 */}
-      <div className='absolute -bottom-1.5 right-6 w-3 h-3 bg-gray-900/95 border-r border-b border-white/10 transform rotate-45' />
+      {/* 底部小三角指示器 - 移除（不再需要） */}
     </div>
   );
 });
