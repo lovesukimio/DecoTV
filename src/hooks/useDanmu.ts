@@ -360,6 +360,15 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   // 更新设置
   const updateSettings = useCallback((newSettings: Partial<DanmuSettings>) => {
     setSettings((prev) => {
+      const hasChanges = Object.entries(newSettings).some(([key, value]) => {
+        const settingKey = key as keyof DanmuSettings;
+        return !Object.is(prev[settingKey], value);
+      });
+
+      if (!hasChanges) {
+        return prev;
+      }
+
       const updated = { ...prev, ...newSettings };
       saveSettingsToStorage(updated);
       return updated;

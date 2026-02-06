@@ -292,6 +292,11 @@ function PlayPageClient() {
     episode: currentEpisodeIndex + 1,
   });
 
+  const danmuSettingsRef = useRef(danmuSettings);
+  useEffect(() => {
+    danmuSettingsRef.current = danmuSettings;
+  }, [danmuSettings]);
+
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
@@ -1642,7 +1647,7 @@ function PlayPageClient() {
             synchronousPlayback: false,
             filter: (danmu: any) => {
               // 根据设置的模式过滤
-              return danmuSettings.modes.includes(danmu.mode ?? 0);
+              return danmuSettingsRef.current.modes.includes(danmu.mode ?? 0);
             },
             lockTime: 5,
             maxLength: 200,
@@ -1842,6 +1847,8 @@ function PlayPageClient() {
         opacity: danmuSettings.opacity,
         fontSize: danmuSettings.fontSize,
         antiOverlap: danmuSettings.antiOverlap,
+        filter: (danmu: any) =>
+          danmuSettingsRef.current.modes.includes(danmu.mode ?? 0),
       });
 
       // 根据启用状态和可见性控制显示
@@ -1851,29 +1858,46 @@ function PlayPageClient() {
         danmuku.hide();
       }
 
-      // 如果启用且有弹幕数据，加载弹幕
-      if (danmuSettings.enabled && danmuList.length > 0) {
-        danmuku.load(
-          danmuList.map((d: DanmuItem) => ({
-            text: d.text,
-            time: d.time,
-            color: d.color || '#FFFFFF',
-            mode: d.mode ?? 0,
-          })),
-        );
-      }
-
-      console.log(
-        '[Danmu] Updated config, enabled:',
-        danmuSettings.enabled,
-        'loaded:',
-        danmuList.length,
-        'danmu',
-      );
+      // 轻量更新样式与可见性，不在这里做全量 load
+      console.log('[Danmu] Updated style/visibility config');
     } catch (err) {
-      console.error('[Danmu] Failed to update danmuku plugin:', err);
+      console.error('[Danmu] Failed to update danmuku config:', err);
     }
-  }, [danmuList, danmuSettings]);
+  }, [
+    danmuSettings.speed,
+    danmuSettings.opacity,
+    danmuSettings.fontSize,
+    danmuSettings.antiOverlap,
+    danmuSettings.modes,
+    danmuSettings.enabled,
+    danmuSettings.visible,
+    videoUrl,
+  ]);
+
+  useEffect(() => {
+    if (!artPlayerRef.current || !danmuSettings.enabled) return;
+
+    const danmuku = artPlayerRef.current.plugins?.artplayerPluginDanmuku;
+    if (!danmuku) return;
+
+    try {
+      const payload = danmuList
+        .filter((item: DanmuItem) =>
+          danmuSettingsRef.current.modes.includes(item.mode ?? 0),
+        )
+        .map((item: DanmuItem) => ({
+          text: item.text,
+          time: item.time,
+          color: item.color || '#FFFFFF',
+          mode: item.mode ?? 0,
+        }));
+
+      danmuku.load(payload);
+      console.log('[Danmu] Loaded danmu:', payload.length);
+    } catch (err) {
+      console.error('[Danmu] Failed to load danmuku data:', err);
+    }
+  }, [danmuList, danmuSettings.enabled, videoUrl]);
 
   // 当组件卸载时清理定时器、Wake Lock 和播放器资源
   useEffect(() => {

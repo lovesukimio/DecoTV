@@ -53,6 +53,9 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
 }: DanmuSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [sliderFontSize, setSliderFontSize] = useState(settings.fontSize);
+  const [sliderSpeed, setSliderSpeed] = useState(settings.speed);
+  const [sliderOpacity, setSliderOpacity] = useState(settings.opacity);
 
   // 处理打开动画
   useEffect(() => {
@@ -73,6 +76,31 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
     },
     [onSettingsChange],
   );
+
+  // 滑块 UI 状态与底层引擎设置隔离
+  useEffect(() => {
+    setSliderFontSize(settings.fontSize);
+    setSliderSpeed(settings.speed);
+    setSliderOpacity(settings.opacity);
+  }, [settings.fontSize, settings.speed, settings.opacity]);
+
+  const commitFontSize = useCallback(() => {
+    if (sliderFontSize !== settings.fontSize) {
+      handleUpdate('fontSize', sliderFontSize);
+    }
+  }, [handleUpdate, settings.fontSize, sliderFontSize]);
+
+  const commitSpeed = useCallback(() => {
+    if (sliderSpeed !== settings.speed) {
+      handleUpdate('speed', sliderSpeed);
+    }
+  }, [handleUpdate, settings.speed, sliderSpeed]);
+
+  const commitOpacity = useCallback(() => {
+    if (Math.abs(sliderOpacity - settings.opacity) > 0.001) {
+      handleUpdate('opacity', sliderOpacity);
+    }
+  }, [handleUpdate, settings.opacity, sliderOpacity]);
 
   // 点击外部关闭
   useEffect(() => {
@@ -256,14 +284,17 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                   min={12}
                   max={48}
                   step={1}
-                  value={settings.fontSize}
+                  value={sliderFontSize}
                   onChange={(e) =>
-                    handleUpdate('fontSize', parseFloat(e.target.value))
+                    setSliderFontSize(parseFloat(e.target.value))
                   }
+                  onMouseUp={commitFontSize}
+                  onTouchEnd={commitFontSize}
+                  onBlur={commitFontSize}
                   className='flex-1 h-1.5 bg-gray-700/50 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-all'
                 />
                 <span className='text-xs text-gray-400 w-10 text-right font-mono'>
-                  {settings.fontSize}
+                  {sliderFontSize}
                 </span>
               </div>
 
@@ -278,14 +309,15 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                   min={1}
                   max={10}
                   step={1}
-                  value={settings.speed}
-                  onChange={(e) =>
-                    handleUpdate('speed', parseFloat(e.target.value))
-                  }
+                  value={sliderSpeed}
+                  onChange={(e) => setSliderSpeed(parseFloat(e.target.value))}
+                  onMouseUp={commitSpeed}
+                  onTouchEnd={commitSpeed}
+                  onBlur={commitSpeed}
                   className='flex-1 h-1.5 bg-gray-700/50 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-all'
                 />
                 <span className='text-xs text-gray-400 w-10 text-right font-mono'>
-                  {settings.speed}
+                  {sliderSpeed}
                 </span>
               </div>
 
@@ -300,14 +332,15 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                   min={0.1}
                   max={1}
                   step={0.1}
-                  value={settings.opacity}
-                  onChange={(e) =>
-                    handleUpdate('opacity', parseFloat(e.target.value))
-                  }
+                  value={sliderOpacity}
+                  onChange={(e) => setSliderOpacity(parseFloat(e.target.value))}
+                  onMouseUp={commitOpacity}
+                  onTouchEnd={commitOpacity}
+                  onBlur={commitOpacity}
                   className='flex-1 h-1.5 bg-gray-700/50 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-all'
                 />
                 <span className='text-xs text-gray-400 w-10 text-right font-mono'>
-                  {settings.opacity.toFixed(1)}
+                  {sliderOpacity.toFixed(1)}
                 </span>
               </div>
             </div>
