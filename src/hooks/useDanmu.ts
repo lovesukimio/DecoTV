@@ -29,12 +29,19 @@ export interface DanmuMatchInfo {
   matchLevel: string;
 }
 
+export interface DanmuLoadMeta {
+  source: 'init' | 'cache' | 'network' | 'network-retry' | 'empty' | 'error';
+  loadedAt: number | null;
+  count: number;
+}
+
 export interface UseDanmuResult {
   danmuList: DanmuItem[];
   loading: boolean;
   error: Error | null;
   settings: DanmuSettings;
   matchInfo: DanmuMatchInfo | null;
+  loadMeta: DanmuLoadMeta;
   updateSettings: (newSettings: Partial<DanmuSettings>) => void;
   reload: () => Promise<number>;
   clear: () => void;
@@ -123,6 +130,11 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   const [error, setError] = useState<Error | null>(null);
   const [settings, setSettings] = useState<DanmuSettings>(DEFAULT_SETTINGS);
   const [matchInfo, setMatchInfo] = useState<DanmuMatchInfo | null>(null);
+  const [loadMeta, setLoadMeta] = useState<DanmuLoadMeta>({
+    source: 'init',
+    loadedAt: null,
+    count: 0,
+  });
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchKeyRef = useRef<string>('');
@@ -142,13 +154,78 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   }, [doubanId, title, year, episode]);
 
   const fetchDanmu = useCallback(
-    async (options?: { force?: boolean }): Promise<number> => {
+    async (options?: {
+      force?: boolean;
+      retryOnEmpty?: boolean;
+    }): Promise<number> => {
       const force = options?.force === true;
+      const retryOnEmpty = options?.retryOnEmpty !== false;
       const cacheKey = getCacheKey();
+
+      const applyResult = (
+        danmus: DanmuItem[],
+        match: DanmuMatchInfo | null,
+        source: DanmuLoadMeta['source'],
+      ) => {
+        const now = Date.now();
+        setDanmuList(danmus);
+        setMatchInfo(match);
+        setLoadMeta({ source, loadedAt: now, count: danmus.length });
+        if (danmus.length > 0) {
+          lastFetchKeyRef.current = cacheKey;
+        }
+
+        try {
+          sessionStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              data: danmus,
+              match: match || null,
+              timestamp: now,
+            }),
+          );
+        } catch {
+          // ignore cache write error
+        }
+      };
+
+      const fetchFromApi = async (forceRefresh: boolean) => {
+        const queryParams = new URLSearchParams();
+        if (doubanId) queryParams.set('douban_id', String(doubanId));
+        if (title) queryParams.set('title', title);
+        if (year) queryParams.set('year', year);
+        if (episode) queryParams.set('episode', String(episode));
+        if (forceRefresh) queryParams.set('force', '1');
+
+        const response = await fetch(
+          `/api/danmu-external?${queryParams.toString()}`,
+          {
+            cache: forceRefresh ? 'no-store' : 'default',
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch danmu: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.code !== 200 || !Array.isArray(data.danmus)) {
+          return {
+            danmus: [] as DanmuItem[],
+            match: null as DanmuMatchInfo | null,
+          };
+        }
+
+        return {
+          danmus: data.danmus as DanmuItem[],
+          match: (data.match || null) as DanmuMatchInfo | null,
+        };
+      };
 
       if (!cacheKey) {
         setDanmuList([]);
         setMatchInfo(null);
+        setLoadMeta({ source: 'empty', loadedAt: Date.now(), count: 0 });
         return 0;
       }
 
@@ -169,19 +246,21 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
               parsedCache.timestamp &&
               Date.now() - parsedCache.timestamp < 2 * 3600 * 1000
             ) {
-              setDanmuList(parsedCache.data);
-              setMatchInfo(
-                (parsedCache.match || null) as DanmuMatchInfo | null,
-              );
+              const cachedDanmu = Array.isArray(parsedCache.data)
+                ? (parsedCache.data as DanmuItem[])
+                : [];
+              const cachedMatch = (parsedCache.match ||
+                null) as DanmuMatchInfo | null;
+              setDanmuList(cachedDanmu);
+              setMatchInfo(cachedMatch);
+              setLoadMeta({
+                source: 'cache',
+                loadedAt: parsedCache.timestamp,
+                count: cachedDanmu.length,
+              });
               lastFetchKeyRef.current = cacheKey;
-              console.log(
-                '[useDanmu] Cache hit:',
-                parsedCache.data.length,
-                'danmu',
-              );
-              return Array.isArray(parsedCache.data)
-                ? parsedCache.data.length
-                : 0;
+              console.log('[useDanmu] Cache hit:', cachedDanmu.length, 'danmu');
+              return cachedDanmu.length;
             }
           }
         } catch {
@@ -193,63 +272,46 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
       setError(null);
 
       try {
-        const queryParams = new URLSearchParams();
-        if (doubanId) queryParams.set('douban_id', String(doubanId));
-        if (title) queryParams.set('title', title);
-        if (year) queryParams.set('year', year);
-        if (episode) queryParams.set('episode', String(episode));
-        if (force) queryParams.set('force', '1');
-
-        const response = await fetch(
-          `/api/danmu-external?${queryParams.toString()}`,
-          {
-            cache: force ? 'no-store' : 'default',
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error(`获取弹幕失败: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.code === 200 && Array.isArray(data.danmus)) {
-          const danmus: DanmuItem[] = data.danmus;
-          setDanmuList(danmus);
-          lastFetchKeyRef.current = cacheKey;
-          setMatchInfo((data.match || null) as DanmuMatchInfo | null);
-
-          try {
-            sessionStorage.setItem(
-              cacheKey,
-              JSON.stringify({
-                data: danmus,
-                match: data.match || null,
-                timestamp: Date.now(),
-              }),
-            );
-          } catch {
-            // ignore cache write error
-          }
-
+        const primaryResult = await fetchFromApi(force);
+        if (primaryResult.danmus.length > 0) {
+          applyResult(primaryResult.danmus, primaryResult.match, 'network');
           console.log(
             '[useDanmu] Fetched:',
-            danmus.length,
+            primaryResult.danmus.length,
             'danmu',
-            data.match
-              ? `-> ${data.match.animeTitle} [${data.match.episodeTitle}]`
+            primaryResult.match
+              ? `-> ${primaryResult.match.animeTitle} [${primaryResult.match.episodeTitle}]`
               : '',
           );
-          return danmus.length;
+          return primaryResult.danmus.length;
         }
 
-        setDanmuList([]);
-        setMatchInfo(null);
+        // Empty result can be transient; do one forced retry to reduce false negatives.
+        if (!force && retryOnEmpty) {
+          const retryResult = await fetchFromApi(true);
+          if (retryResult.danmus.length > 0) {
+            applyResult(retryResult.danmus, retryResult.match, 'network-retry');
+            console.log(
+              '[useDanmu] Retry fetched:',
+              retryResult.danmus.length,
+              'danmu',
+            );
+            return retryResult.danmus.length;
+          }
+          applyResult([], retryResult.match, 'empty');
+          return 0;
+        }
+
+        applyResult([], primaryResult.match, 'empty');
         return 0;
       } catch (err) {
         console.error('[useDanmu] Fetch error:', err);
-        setError(err instanceof Error ? err : new Error('加载弹幕失败'));
+        setError(
+          err instanceof Error ? err : new Error('Failed to load danmu'),
+        );
         setDanmuList([]);
         setMatchInfo(null);
+        setLoadMeta({ source: 'error', loadedAt: Date.now(), count: 0 });
         return 0;
       } finally {
         setLoading(false);
@@ -300,12 +362,13 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         // ignore
       }
     }
-    return fetchDanmu({ force: true });
+    return fetchDanmu({ force: true, retryOnEmpty: false });
   }, [fetchDanmu, getCacheKey]);
 
   const clear = useCallback(() => {
     setDanmuList([]);
     setMatchInfo(null);
+    setLoadMeta({ source: 'init', loadedAt: null, count: 0 });
     lastFetchKeyRef.current = '';
   }, []);
 
@@ -315,6 +378,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     error,
     settings,
     matchInfo,
+    loadMeta,
     updateSettings,
     reload,
     clear,

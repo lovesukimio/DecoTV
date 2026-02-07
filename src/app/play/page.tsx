@@ -278,6 +278,7 @@ function PlayPageClient() {
     danmuList,
     loading: danmuLoading,
     matchInfo,
+    loadMeta,
     reload: reloadDanmu,
   } = useDanmu({
     doubanId: videoDoubanId || undefined,
@@ -289,6 +290,48 @@ function PlayPageClient() {
   const isDanmuBusy = isDanmuReloading || danmuLoading;
   const isDanmuEmpty = !danmuLoading && danmuCount === 0;
   const shownEmptyDanmuHintRef = useRef('');
+  const [showDanmuMeta, setShowDanmuMeta] = useState(false);
+  const danmuMetaWrapRef = useRef<HTMLDivElement | null>(null);
+  const danmuMetaToggleRef = useRef<HTMLButtonElement | null>(null);
+  const autoRetryDanmuScopeRef = useRef('');
+  const danmuSourceLabel = matchInfo
+    ? `${matchInfo.animeTitle} · ${matchInfo.episodeTitle}`
+    : '未匹配到来源';
+  const danmuMatchLevelLabel = (() => {
+    if (!matchInfo?.matchLevel) return null;
+    const level = matchInfo.matchLevel.toLowerCase();
+    if (level.includes('exact') || level.includes('perfect')) {
+      return '精确匹配';
+    }
+    if (
+      level.includes('fuzzy') ||
+      level.includes('fallback') ||
+      level.includes('variant') ||
+      level.includes('partial')
+    ) {
+      return '模糊匹配';
+    }
+    return matchInfo.matchLevel;
+  })();
+  const danmuLoadedAtText = loadMeta.loadedAt
+    ? new Date(loadMeta.loadedAt).toLocaleString('zh-CN', { hour12: false })
+    : '尚未加载';
+  const danmuLoadSourceText = (() => {
+    switch (loadMeta.source) {
+      case 'cache':
+        return '会话缓存';
+      case 'network':
+        return '网络请求';
+      case 'network-retry':
+        return '网络重试';
+      case 'empty':
+        return '空结果';
+      case 'error':
+        return '请求失败';
+      default:
+        return '初始化';
+    }
+  })();
 
   const loadDanmuToPlayer = (list: DanmuItem[]) => {
     if (!artPlayerRef.current) return;
@@ -344,6 +387,72 @@ function PlayPageClient() {
     currentEpisodeIndex,
     danmuCount,
     danmuLoading,
+    videoDoubanId,
+    videoTitle,
+    videoYear,
+  ]);
+
+  useEffect(() => {
+    const scopeKey = `${videoDoubanId || videoTitle}_${videoYear || ''}_${currentEpisodeIndex + 1}`;
+    setShowDanmuMeta(false);
+    autoRetryDanmuScopeRef.current = `pending:${scopeKey}`;
+  }, [currentEpisodeIndex, videoDoubanId, videoTitle, videoYear]);
+
+  useEffect(() => {
+    if (!showDanmuMeta) return;
+
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (danmuMetaWrapRef.current?.contains(target)) return;
+      if (danmuMetaToggleRef.current?.contains(target)) return;
+      setShowDanmuMeta(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowDanmuMeta(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showDanmuMeta]);
+
+  useEffect(() => {
+    if (danmuLoading) return;
+    if (!videoDoubanId && !videoTitle) return;
+    if (danmuCount > 0) return;
+
+    const scopeKey = `${videoDoubanId || videoTitle}_${videoYear || ''}_${currentEpisodeIndex + 1}`;
+    if (autoRetryDanmuScopeRef.current !== `pending:${scopeKey}`) return;
+
+    autoRetryDanmuScopeRef.current = `done:${scopeKey}`;
+    const timer = setTimeout(async () => {
+      if (isDanmuReloadingRef.current) return;
+      try {
+        const count = await reloadDanmu();
+        if (count > 0) {
+          showToast(`已自动重试并加载 ${count} 条弹幕`, 'success');
+        }
+      } catch {
+        // ignore auto retry errors
+      }
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [
+    currentEpisodeIndex,
+    danmuCount,
+    danmuLoading,
+    reloadDanmu,
     videoDoubanId,
     videoTitle,
     videoYear,
@@ -2191,86 +2300,154 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                <div className='absolute top-3 right-3 z-40 flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg md:max-w-[360px]'>
-                  <div className='min-w-0'>
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-                        isDanmuEmpty ? 'text-amber-200' : 'text-white/90'
-                      }`}
+                <div
+                  ref={danmuMetaWrapRef}
+                  className='absolute top-3 right-3 z-40 flex items-end gap-2'
+                >
+                  <div className='flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg md:max-w-[360px]'>
+                    <div className='min-w-0'>
+                      <button
+                        ref={danmuMetaToggleRef}
+                        type='button'
+                        onClick={() => setShowDanmuMeta((prev) => !prev)}
+                        className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                          isDanmuEmpty ? 'text-amber-200' : 'text-white/90'
+                        } transition-colors hover:text-white`}
+                        title='查看弹幕加载详情'
+                      >
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${
+                            isDanmuEmpty
+                              ? 'bg-amber-300 animate-pulse'
+                              : 'bg-cyan-400'
+                          }`}
+                        />
+                        {danmuLoading && danmuCount === 0
+                          ? '弹幕加载中...'
+                          : `弹幕 ${danmuCount} 条`}
+                      </button>
+                      {!danmuLoading && matchInfo && (
+                        <p
+                          className='mt-0.5 truncate text-[11px] text-white/70'
+                          title={`匹配：${danmuSourceLabel}`}
+                        >
+                          匹配：{danmuSourceLabel}
+                          {danmuMatchLevelLabel && (
+                            <span className='ml-1 rounded bg-white/15 px-1.5 py-0.5 text-[10px] text-white/85'>
+                              {danmuMatchLevelLabel}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type='button'
+                      onClick={handleReloadDanmu}
+                      disabled={isDanmuBusy}
+                      className='inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50'
+                      title='刷新弹幕'
+                      aria-label='刷新弹幕'
                     >
-                      <span
-                        className={`inline-block h-2 w-2 rounded-full ${
-                          isDanmuEmpty
-                            ? 'bg-amber-300 animate-pulse'
-                            : 'bg-cyan-400'
-                        }`}
-                      />
-                      {danmuLoading && danmuCount === 0
-                        ? '弹幕加载中...'
-                        : `弹幕 ${danmuCount} 条`}
-                    </span>
-                    {!danmuLoading && matchInfo && (
-                      <p
-                        className='mt-0.5 truncate text-[11px] text-white/70'
-                        title={`匹配：${matchInfo.animeTitle} · ${matchInfo.episodeTitle}`}
-                      >
-                        匹配：{matchInfo.animeTitle} · {matchInfo.episodeTitle}
-                      </p>
-                    )}
+                      {isDanmuBusy ? (
+                        <svg
+                          className='h-4 w-4 animate-spin'
+                          viewBox='0 0 24 24'
+                          fill='none'
+                          xmlns='http://www.w3.org/2000/svg'
+                        >
+                          <circle
+                            cx='12'
+                            cy='12'
+                            r='9'
+                            stroke='currentColor'
+                            strokeWidth='2'
+                            strokeOpacity='0.35'
+                          />
+                          <path
+                            d='M21 12a9 9 0 0 0-9-9'
+                            stroke='currentColor'
+                            strokeWidth='2'
+                            strokeLinecap='round'
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className='h-4 w-4'
+                          viewBox='0 0 24 24'
+                          fill='none'
+                          xmlns='http://www.w3.org/2000/svg'
+                        >
+                          <path
+                            d='M20 11a8 8 0 1 0 2.3 5.7'
+                            stroke='currentColor'
+                            strokeWidth='2'
+                            strokeLinecap='round'
+                          />
+                          <path
+                            d='M20 4v7h-7'
+                            stroke='currentColor'
+                            strokeWidth='2'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          />
+                        </svg>
+                      )}
+                    </button>
                   </div>
-                  <button
-                    type='button'
-                    onClick={handleReloadDanmu}
-                    disabled={isDanmuBusy}
-                    className='inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50'
-                    title='刷新弹幕'
-                    aria-label='刷新弹幕'
-                  >
-                    {isDanmuBusy ? (
-                      <svg
-                        className='h-4 w-4 animate-spin'
-                        viewBox='0 0 24 24'
-                        fill='none'
-                        xmlns='http://www.w3.org/2000/svg'
-                      >
-                        <circle
-                          cx='12'
-                          cy='12'
-                          r='9'
-                          stroke='currentColor'
-                          strokeWidth='2'
-                          strokeOpacity='0.35'
-                        />
-                        <path
-                          d='M21 12a9 9 0 0 0-9-9'
-                          stroke='currentColor'
-                          strokeWidth='2'
-                          strokeLinecap='round'
-                        />
-                      </svg>
-                    ) : (
-                      <svg
-                        className='h-4 w-4'
-                        viewBox='0 0 24 24'
-                        fill='none'
-                        xmlns='http://www.w3.org/2000/svg'
-                      >
-                        <path
-                          d='M20 11a8 8 0 1 0 2.3 5.7'
-                          stroke='currentColor'
-                          strokeWidth='2'
-                          strokeLinecap='round'
-                        />
-                        <path
-                          d='M20 4v7h-7'
-                          stroke='currentColor'
-                          strokeWidth='2'
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                        />
-                      </svg>
-                    )}
-                  </button>
+
+                  {showDanmuMeta && (
+                    <div className='w-[min(80vw,320px)] rounded-xl border border-white/20 bg-black/75 p-3 text-white shadow-lg backdrop-blur-md'>
+                      <div className='mb-2 flex items-center justify-between gap-2'>
+                        <p className='text-xs font-medium text-white/90'>
+                          弹幕加载详情
+                        </p>
+                        <button
+                          type='button'
+                          onClick={() => setShowDanmuMeta(false)}
+                          className='inline-flex h-5 w-5 items-center justify-center rounded bg-white/10 text-[11px] text-white/80 transition-colors hover:bg-white/20 hover:text-white'
+                          aria-label='关闭弹幕详情'
+                          title='关闭'
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className='space-y-1.5 text-[11px] text-white/80'>
+                        <p className='flex items-center justify-between gap-3'>
+                          <span className='text-white/55'>总条数</span>
+                          <span className='font-medium text-white/95'>
+                            {danmuCount}
+                          </span>
+                        </p>
+                        <p className='flex items-start justify-between gap-3'>
+                          <span className='pt-0.5 text-white/55'>来源</span>
+                          <span
+                            className='max-w-[180px] truncate text-right text-white/90'
+                            title={danmuSourceLabel}
+                          >
+                            {danmuSourceLabel}
+                          </span>
+                        </p>
+                        <p className='flex items-center justify-between gap-3'>
+                          <span className='text-white/55'>匹配级别</span>
+                          <span className='text-white/90'>
+                            {danmuMatchLevelLabel || '未标注'}
+                          </span>
+                        </p>
+                        <p className='flex items-center justify-between gap-3'>
+                          <span className='text-white/55'>数据来源</span>
+                          <span className='text-right text-white/90'>
+                            {danmuLoadSourceText}
+                          </span>
+                        </p>
+                        <p className='flex items-center justify-between gap-3'>
+                          <span className='text-white/55'>最近加载</span>
+                          <span className='text-right text-white/90'>
+                            {danmuLoadedAtText}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 换源加载提示 - 使用播放器自带的加载动画 */}
