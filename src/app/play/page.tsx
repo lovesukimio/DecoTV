@@ -24,6 +24,7 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
 import { useDoubanInfo } from '@/hooks/useDoubanInfo';
 
@@ -332,6 +333,56 @@ function PlayPageClient() {
         return '初始化';
     }
   })();
+
+  // 投屏 Hook
+  const {
+    isAvailable: castAvailable,
+    isConnected: castConnected,
+    deviceName: castDeviceName,
+    requestSession: castRequestSession,
+    loadMedia: castLoadMedia,
+    endSession: castEndSession,
+  } = useCast();
+
+  // 投屏状态 refs（用于在 ArtPlayer 配置中访问最新值）
+  const castAvailableRef = useRef(castAvailable);
+  const castConnectedRef = useRef(castConnected);
+  const castDeviceNameRef = useRef(castDeviceName);
+  useEffect(() => {
+    castAvailableRef.current = castAvailable;
+    castConnectedRef.current = castConnected;
+    castDeviceNameRef.current = castDeviceName;
+  }, [castAvailable, castConnected, castDeviceName]);
+
+  // 投屏处理函数
+  const handleCastClick = async () => {
+    if (castConnectedRef.current) {
+      // 已连接，断开投屏
+      castEndSession();
+      if (artPlayerRef.current) {
+        artPlayerRef.current.notice.show = '已断开投屏';
+      }
+    } else {
+      // 未连接，请求投屏
+      try {
+        await castRequestSession();
+        // 连接成功后加载当前视频
+        if (videoUrl && castConnectedRef.current) {
+          await castLoadMedia(videoUrl, videoTitle, videoCover);
+          // 暂停本地播放器
+          if (artPlayerRef.current) {
+            artPlayerRef.current.pause();
+            artPlayerRef.current.notice.show = `正在投屏到 ${castDeviceNameRef.current || '设备'}`;
+          }
+        }
+      } catch (err) {
+        console.error('[Cast] 投屏失败:', err);
+        if (artPlayerRef.current) {
+          artPlayerRef.current.notice.show = '投屏失败，请重试';
+        }
+      }
+    }
+  };
 
   const loadDanmuToPlayer = (list: DanmuItem[]) => {
     if (!artPlayerRef.current) return;
@@ -1783,6 +1834,29 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
+          // 投屏按钮 - 仅在 Cast API 可用时显示
+          ...(castAvailableRef.current
+            ? [
+                {
+                  position: 'right',
+                  index: 5,
+                  html: `<i class="art-icon flex art-cast-btn" style="padding: 0 5px;${castConnectedRef.current ? ' color: #22c55e;' : ''}">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 18v3h3c0-1.66-1.34-3-3-3z" fill="currentColor"/>
+                      <path d="M1 14v2a5 5 0 0 1 5 5h2c0-3.87-3.13-7-7-7z" fill="currentColor"/>
+                      <path d="M1 10v2a9 9 0 0 1 9 9h2c0-6.08-4.93-11-11-11z" fill="currentColor"/>
+                      <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" fill="currentColor"/>
+                    </svg>
+                  </i>`,
+                  tooltip: castConnectedRef.current
+                    ? `正在投屏到 ${castDeviceNameRef.current || '设备'} (点击断开)`
+                    : '投屏',
+                  click: function () {
+                    handleCastClick();
+                  },
+                },
+              ]
+            : []),
         ],
         // 弹幕插件 - 只保留原生蓝色设置与发弹幕 UI
         plugins: [
