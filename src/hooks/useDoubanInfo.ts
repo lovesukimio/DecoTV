@@ -3,15 +3,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import {
-  fetchDoubanMovieFromProxy,
-  fetchDoubanRecommendsFromProxy,
-  fetchDoubanCommentsFromProxy,
-  transformMovieDetail,
-  transformRecommendations,
-  transformComments,
-} from '@/services/doubanApi';
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -128,13 +119,57 @@ export interface UseDoubanInfoResult {
 }
 
 // ============================================================================
+// API 调用函数（使用后端代理）
+// ============================================================================
+
+/**
+ * 通过后端代理获取豆瓣数据
+ * 后端代理位于 /api/douban/proxy，可以绕过 CORS 限制
+ */
+async function fetchFromBackendProxy(
+  path: string,
+  timeout = 30000,
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const url = `/api/douban/proxy?path=${encodeURIComponent(path)}`;
+    console.log('[useDoubanInfo] 请求后端代理:', url);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        '[useDoubanInfo] 后端代理错误:',
+        response.status,
+        errorText,
+      );
+      throw new Error(`请求失败: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('[useDoubanInfo] 后端代理响应成功');
+    return data;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ============================================================================
 // Hook
 // ============================================================================
 
 /**
  * 豆瓣信息 Hook
  *
- * 使用前端直接请求豆瓣代理服务，即使服务器在海外也能正常工作
+ * 使用后端代理获取豆瓣数据，避免 CORS 和网络限制
  *
  * @param doubanId - 豆瓣电影 ID
  * @param options - 配置选项
@@ -156,7 +191,6 @@ export function useDoubanInfo(
     fetchDetail: shouldFetchDetail = true,
     fetchComments: shouldFetchComments = true,
     fetchRecommends: shouldFetchRecommends = true,
-    commentsCount = 20,
   } = options;
 
   // 详情状态
@@ -175,7 +209,7 @@ export function useDoubanInfo(
   const [recommendsLoading, setRecommendsLoading] = useState(false);
   const [recommendsError, setRecommendsError] = useState<Error | null>(null);
 
-  // 获取详情 - 使用前端直接请求
+  // 获取详情 - 使用后端代理
   const refreshDetail = useCallback(async () => {
     if (!doubanId) return;
 
@@ -183,13 +217,52 @@ export function useDoubanInfo(
     setDetailError(null);
 
     try {
-      console.log('[useDoubanInfo] 前端直接获取详情:', doubanId);
-      const rawData = await fetchDoubanMovieFromProxy(doubanId);
-      const transformedData = transformMovieDetail(rawData);
+      console.log('[useDoubanInfo] 获取详情:', doubanId);
 
-      if (transformedData) {
-        setDetail(transformedData as DoubanMovieDetail);
-        console.log('[useDoubanInfo] 详情获取成功:', transformedData.title);
+      // 调用后端代理获取完整数据
+      const data = (await fetchFromBackendProxy(
+        `movie/subject/${doubanId}`,
+      )) as DoubanMovieDetail & {
+        hotComments?: DoubanComment[];
+        recommendations?: Array<{
+          id: string;
+          title: string;
+          images?: { small?: string; medium?: string; large?: string };
+          alt?: string;
+        }>;
+      };
+
+      if (data && data.title) {
+        setDetail(data);
+        console.log('[useDoubanInfo] 详情获取成功:', data.title);
+
+        // 如果后端返回了评论数据，直接使用
+        if (data.hotComments && data.hotComments.length > 0) {
+          setComments(data.hotComments);
+          setCommentsTotal(data.hotComments.length);
+          console.log(
+            '[useDoubanInfo] 评论已从详情中提取:',
+            data.hotComments.length,
+            '条',
+          );
+        }
+
+        // 如果后端返回了推荐数据，直接使用
+        if (data.recommendations && data.recommendations.length > 0) {
+          const transformedRecommends = data.recommendations.map((r) => ({
+            id: r.id,
+            title: r.title,
+            poster:
+              r.images?.large || r.images?.medium || r.images?.small || '',
+            rate: '',
+          }));
+          setRecommends(transformedRecommends);
+          console.log(
+            '[useDoubanInfo] 推荐已从详情中提取:',
+            transformedRecommends.length,
+            '个',
+          );
+        }
       } else {
         throw new Error('无法获取豆瓣数据');
       }
@@ -201,54 +274,81 @@ export function useDoubanInfo(
     }
   }, [doubanId]);
 
-  // 获取评论 - 使用前端直接请求
+  // 获取评论 - 使用后端代理（如果详情中没有）
   const refreshComments = useCallback(async () => {
     if (!doubanId) return;
+
+    // 如果已经有评论了（从详情中获取的），就不再请求
+    if (comments.length > 0) {
+      console.log('[useDoubanInfo] 评论已存在，跳过请求');
+      return;
+    }
 
     setCommentsLoading(true);
     setCommentsError(null);
 
     try {
-      console.log('[useDoubanInfo] 前端直接获取评论:', doubanId);
-      const rawComments = await fetchDoubanCommentsFromProxy(
-        doubanId,
-        commentsCount,
-      );
-      const transformedComments = transformComments(rawComments);
+      console.log('[useDoubanInfo] 获取评论:', doubanId);
+      const data = (await fetchFromBackendProxy(
+        `movie/subject/${doubanId}/comments`,
+      )) as { comments?: DoubanComment[]; total?: number };
 
-      setComments(transformedComments as DoubanComment[]);
-      setCommentsTotal(transformedComments.length);
-      console.log(
-        '[useDoubanInfo] 评论获取成功:',
-        transformedComments.length,
-        '条',
-      );
+      if (data && data.comments) {
+        setComments(data.comments);
+        setCommentsTotal(data.total || data.comments.length);
+        console.log(
+          '[useDoubanInfo] 评论获取成功:',
+          data.comments.length,
+          '条',
+        );
+      }
     } catch (error) {
       console.error('[useDoubanInfo] 评论获取失败:', error);
       setCommentsError(error instanceof Error ? error : new Error('未知错误'));
     } finally {
       setCommentsLoading(false);
     }
-  }, [doubanId, commentsCount]);
+  }, [doubanId, comments.length]);
 
-  // 获取推荐 - 使用前端直接请求
+  // 获取推荐 - 使用后端代理（如果详情中没有）
   const refreshRecommends = useCallback(async () => {
     if (!doubanId) return;
+
+    // 如果已经有推荐了（从详情中获取的），就不再请求
+    if (recommends.length > 0) {
+      console.log('[useDoubanInfo] 推荐已存在，跳过请求');
+      return;
+    }
 
     setRecommendsLoading(true);
     setRecommendsError(null);
 
     try {
-      console.log('[useDoubanInfo] 前端直接获取推荐:', doubanId);
-      const rawRecommends = await fetchDoubanRecommendsFromProxy(doubanId);
-      const transformedRecommends = transformRecommendations(rawRecommends);
+      console.log('[useDoubanInfo] 获取推荐:', doubanId);
+      const data = (await fetchFromBackendProxy(
+        `movie/subject/${doubanId}/recommendations`,
+      )) as {
+        recommendations?: Array<{
+          id: string;
+          title: string;
+          images?: { large?: string };
+        }>;
+      };
 
-      setRecommends(transformedRecommends as DoubanRecommend[]);
-      console.log(
-        '[useDoubanInfo] 推荐获取成功:',
-        transformedRecommends.length,
-        '个',
-      );
+      if (data && data.recommendations) {
+        const transformedRecommends = data.recommendations.map((r) => ({
+          id: r.id,
+          title: r.title,
+          poster: r.images?.large || '',
+          rate: '',
+        }));
+        setRecommends(transformedRecommends);
+        console.log(
+          '[useDoubanInfo] 推荐获取成功:',
+          transformedRecommends.length,
+          '个',
+        );
+      }
     } catch (error) {
       console.error('[useDoubanInfo] 推荐获取失败:', error);
       setRecommendsError(
@@ -257,7 +357,7 @@ export function useDoubanInfo(
     } finally {
       setRecommendsLoading(false);
     }
-  }, [doubanId]);
+  }, [doubanId, recommends.length]);
 
   // 初始化加载
   useEffect(() => {
@@ -270,22 +370,21 @@ export function useDoubanInfo(
       return;
     }
 
-    // 并行请求
-    const promises: Promise<void>[] = [];
-
+    // 主要通过 refreshDetail 获取所有数据（包括评论和推荐）
+    // 后端一次性返回所有数据，减少请求次数
     if (shouldFetchDetail) {
-      promises.push(refreshDetail());
+      refreshDetail();
     }
 
-    if (shouldFetchComments) {
-      promises.push(refreshComments());
+    // 如果不需要详情但需要评论或推荐，单独请求
+    if (!shouldFetchDetail) {
+      if (shouldFetchComments) {
+        refreshComments();
+      }
+      if (shouldFetchRecommends) {
+        refreshRecommends();
+      }
     }
-
-    if (shouldFetchRecommends) {
-      promises.push(refreshRecommends());
-    }
-
-    Promise.allSettled(promises);
   }, [
     doubanId,
     shouldFetchDetail,
