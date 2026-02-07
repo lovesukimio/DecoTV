@@ -558,35 +558,63 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
   // actors -> casts (添加 avatars 和 roles 字段)
   // directors 添加 roles 字段
   // hotComments 包含在返回中供评论接口使用
-  const formattedDirectors = directors.map((d) => ({
-    id: d.id,
-    name: d.name,
-    alt: d.alt,
-    avatars:
-      d.avatars.small || d.avatars.medium || d.avatars.large
-        ? {
-            small: d.avatars.small || d.avatars.medium || d.avatars.large,
-            medium: d.avatars.medium || d.avatars.large || d.avatars.small,
-            large: d.avatars.large || d.avatars.medium || d.avatars.small,
-          }
-        : undefined,
-    roles: [d.role || '导演'],
-  }));
+  const formattedDirectors = directors.map((d) => {
+    // 强制应用图片代理
+    const rawAvatars = d.avatars;
+    const small = proxyImageUrl(
+      rawAvatars?.small || rawAvatars?.medium || rawAvatars?.large,
+    );
+    const medium = proxyImageUrl(
+      rawAvatars?.medium || rawAvatars?.large || rawAvatars?.small,
+    );
+    const large = proxyImageUrl(
+      rawAvatars?.large || rawAvatars?.medium || rawAvatars?.small,
+    );
+    const hasAvatar = small || medium || large;
 
-  const formattedCasts = actors.map((a) => ({
-    id: a.id,
-    name: a.name,
-    alt: a.alt,
-    avatars:
-      a.avatars.small || a.avatars.medium || a.avatars.large
+    return {
+      id: d.id,
+      name: d.name,
+      alt: d.alt,
+      avatars: hasAvatar
         ? {
-            small: a.avatars.small || a.avatars.medium || a.avatars.large,
-            medium: a.avatars.medium || a.avatars.large || a.avatars.small,
-            large: a.avatars.large || a.avatars.medium || a.avatars.small,
+            small: small || '',
+            medium: medium || '',
+            large: large || '',
           }
         : undefined,
-    roles: a.role ? [a.role] : ['演员'],
-  }));
+      roles: [d.role || '导演'],
+    };
+  });
+
+  const formattedCasts = actors.map((a) => {
+    // 强制应用图片代理
+    const rawAvatars = a.avatars;
+    const small = proxyImageUrl(
+      rawAvatars?.small || rawAvatars?.medium || rawAvatars?.large,
+    );
+    const medium = proxyImageUrl(
+      rawAvatars?.medium || rawAvatars?.large || rawAvatars?.small,
+    );
+    const large = proxyImageUrl(
+      rawAvatars?.large || rawAvatars?.medium || rawAvatars?.small,
+    );
+    const hasAvatar = small || medium || large;
+
+    return {
+      id: a.id,
+      name: a.name,
+      alt: a.alt,
+      avatars: hasAvatar
+        ? {
+            small: small || '',
+            medium: medium || '',
+            large: large || '',
+          }
+        : undefined,
+      roles: a.role ? [a.role] : ['演员'],
+    };
+  });
 
   return {
     id: subjectId,
