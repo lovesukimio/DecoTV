@@ -242,8 +242,16 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
   // ========== 尝试从 ld+json 提取结构化数据（最稳定的方式） ==========
   let ldJsonData: {
     name?: string;
-    director?: Array<{ name: string; url?: string }>;
-    actor?: Array<{ name: string; url?: string }>;
+    director?: Array<{
+      name: string;
+      url?: string;
+      image?: string | { contentUrl?: string };
+    }>;
+    actor?: Array<{
+      name: string;
+      url?: string;
+      image?: string | { contentUrl?: string };
+    }>;
     description?: string;
     datePublished?: string;
     aggregateRating?: { ratingValue?: string; ratingCount?: string };
@@ -512,37 +520,105 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
   // ========== 使用 ld+json 补充缺失的导演/演员数据 ==========
   if (ldJsonData) {
     // 如果 HTML 解析没有获取到导演，尝试从 ld+json 获取
-    if (directors.length === 0 && ldJsonData.director) {
-      console.log('[Douban Scraper] 使用 ld+json 补充导演数据');
+    // 尝试从 ld+json 补充或更新导演数据
+    if (ldJsonData.director) {
       ldJsonData.director.forEach((d) => {
         if (d.name) {
           const idMatch = d.url?.match(/celebrity\/(\d+)/);
-          directors.push({
-            id: idMatch ? idMatch[1] : `ld_${Date.now()}_${Math.random()}`,
-            name: d.name,
-            alt: d.url || '',
-            category: '导演',
-            role: '导演',
-            avatars: { small: '', medium: '', large: '' },
-          });
+          const celId = idMatch ? idMatch[1] : '';
+
+          // 查找已存在的导演
+          const existing = directors.find(
+            (item) => (celId && item.id === celId) || item.name === d.name,
+          );
+
+          if (existing) {
+            // 如果已存在但没头像，尝试补充头像
+            const hasAvatar =
+              existing.avatars.small ||
+              existing.avatars.medium ||
+              existing.avatars.large;
+            if (!hasAvatar && d.image) {
+              const imgUrl =
+                (typeof d.image === 'string'
+                  ? d.image
+                  : d.image?.contentUrl || '') || '';
+              if (imgUrl) {
+                console.log(`[Douban Scraper] 补充导演头像: ${d.name}`);
+                existing.avatars = {
+                  small: imgUrl,
+                  medium: imgUrl,
+                  large: imgUrl,
+                };
+              }
+            }
+          } else {
+            // 如果不存在，添加新导演
+            const imgUrl =
+              (typeof d.image === 'string'
+                ? d.image
+                : d.image?.contentUrl || '') || '';
+            directors.push({
+              id: celId || `ld_${Date.now()}_${Math.random()}`,
+              name: d.name,
+              alt: d.url || '',
+              category: '导演',
+              role: '导演',
+              avatars: { small: imgUrl, medium: imgUrl, large: imgUrl },
+            });
+          }
         }
       });
     }
 
     // 如果 HTML 解析没有获取到演员，尝试从 ld+json 获取
-    if (actors.length === 0 && ldJsonData.actor) {
-      console.log('[Douban Scraper] 使用 ld+json 补充演员数据');
+    // 尝试从 ld+json 补充或更新演员数据
+    if (ldJsonData.actor) {
       ldJsonData.actor.forEach((a) => {
         if (a.name) {
           const idMatch = a.url?.match(/celebrity\/(\d+)/);
-          actors.push({
-            id: idMatch ? idMatch[1] : `ld_${Date.now()}_${Math.random()}`,
-            name: a.name,
-            alt: a.url || '',
-            category: '演员',
-            role: '',
-            avatars: { small: '', medium: '', large: '' },
-          });
+          const celId = idMatch ? idMatch[1] : '';
+
+          // 查找已存在的演员
+          const existing = actors.find(
+            (item) => (celId && item.id === celId) || item.name === a.name,
+          );
+
+          if (existing) {
+            // 如果已存在但没头像，尝试补充头像
+            const hasAvatar =
+              existing.avatars.small ||
+              existing.avatars.medium ||
+              existing.avatars.large;
+            if (!hasAvatar && a.image) {
+              const imgUrl =
+                (typeof a.image === 'string'
+                  ? a.image
+                  : a.image?.contentUrl || '') || '';
+              if (imgUrl) {
+                console.log(`[Douban Scraper] 补充演员头像: ${a.name}`);
+                existing.avatars = {
+                  small: imgUrl,
+                  medium: imgUrl,
+                  large: imgUrl,
+                };
+              }
+            }
+          } else {
+            // 如果不存在，添加新演员
+            const imgUrl =
+              (typeof a.image === 'string'
+                ? a.image
+                : a.image?.contentUrl || '') || '';
+            actors.push({
+              id: celId || `ld_${Date.now()}_${Math.random()}`,
+              name: a.name,
+              alt: a.url || '',
+              category: '演员',
+              role: '',
+              avatars: { small: imgUrl, medium: imgUrl, large: imgUrl },
+            });
+          }
         }
       });
     }
