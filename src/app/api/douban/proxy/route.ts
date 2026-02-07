@@ -563,88 +563,175 @@ async function getDoubanDataWithFallback(
 
     // 尝试使用移动端 API 获取基本信息
     try {
-      const apiUrl = `${FRODO_API_BASE}/movie/${subjectId}?apiKey=${FRODO_API_KEY}`;
-      const response = await fetch(apiUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
-          Referer:
-            'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
-        },
-        signal: AbortSignal.timeout(10000),
-      });
+      const frodoHeaders = {
+        'User-Agent':
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
+        Referer:
+          'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
+      };
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[Douban Scraper] 移动端 API 成功获取数据');
-
-        // 转换 API 数据格式为 ScrapedFullData
-        return {
-          id: subjectId,
-          title: data.title || '',
-          original_title: data.original_title || '',
-          year: data.year || '',
-          rating: data.rating
-            ? {
-                max: 10,
-                average: data.rating.value || 0,
-                stars: '',
-                min: 0,
-              }
-            : null,
-          ratings_count: data.rating?.count || 0,
-          genres: data.genres || [],
-          countries: data.countries || [],
-          durations: data.durations || [],
-          summary: data.intro || '',
-          images: {
-            small: data.pic?.normal || '',
-            medium: data.pic?.large || data.pic?.normal || '',
-            large: data.pic?.large || '',
+      // 并行获取：基本信息、推荐、短评
+      const [detailRes, recommendsRes, commentsRes] = await Promise.allSettled([
+        fetch(`${FRODO_API_BASE}/movie/${subjectId}?apiKey=${FRODO_API_KEY}`, {
+          headers: frodoHeaders,
+          signal: AbortSignal.timeout(10000),
+        }),
+        fetch(
+          `${FRODO_API_BASE}/movie/${subjectId}/recommendations?start=0&count=12&apiKey=${FRODO_API_KEY}`,
+          {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(10000),
           },
-          directors: (data.directors || []).map(
-            (d: {
-              id?: string;
-              name?: string;
-              avatar?: { normal?: string };
-            }) => ({
-              id: d.id || '',
-              name: d.name || '',
-              alt: `https://movie.douban.com/celebrity/${d.id}/`,
-              avatars: d.avatar?.normal
-                ? {
-                    small: d.avatar.normal,
-                    medium: d.avatar.normal,
-                    large: d.avatar.normal,
-                  }
-                : undefined,
-              roles: ['导演'],
-            }),
-          ),
-          casts: (data.actors || []).map(
-            (a: {
-              id?: string;
-              name?: string;
-              avatar?: { normal?: string };
-            }) => ({
-              id: a.id || '',
-              name: a.name || '',
-              alt: `https://movie.douban.com/celebrity/${a.id}/`,
-              avatars: a.avatar?.normal
-                ? {
-                    small: a.avatar.normal,
-                    medium: a.avatar.normal,
-                    large: a.avatar.normal,
-                  }
-                : undefined,
-              roles: ['演员'],
-            }),
-          ),
-          recommendations: [],
-          hotComments: [],
-          scrapedAt: Date.now(),
-        };
+        ),
+        fetch(
+          `${FRODO_API_BASE}/movie/${subjectId}/interests?start=0&count=20&order_by=hot&apiKey=${FRODO_API_KEY}`,
+          {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(10000),
+          },
+        ),
+      ]);
+
+      // 解析基本信息
+      let data: Record<string, unknown> | null = null;
+      if (detailRes.status === 'fulfilled' && detailRes.value.ok) {
+        data = await detailRes.value.json();
+        console.log('[Douban Scraper] 移动端 API 成功获取基本数据');
       }
+
+      if (!data) {
+        throw new Error('移动端 API 基本信息获取失败');
+      }
+
+      // 解析推荐数据
+      let recommendations: ScrapedFullData['recommendations'] = [];
+      if (recommendsRes.status === 'fulfilled' && recommendsRes.value.ok) {
+        try {
+          const recData = await recommendsRes.value.json();
+          recommendations = (recData.items || recData.subjects || [])
+            .slice(0, 12)
+            .map(
+              (item: {
+                id?: string;
+                title?: string;
+                pic?: { normal?: string };
+                rating?: { value?: number };
+              }) => ({
+                id: String(item.id || ''),
+                title: item.title || '',
+                image: item.pic?.normal || '',
+                rating: item.rating?.value || 0,
+              }),
+            );
+          console.log(
+            `[Douban Scraper] 获取到 ${recommendations.length} 个推荐`,
+          );
+        } catch (e) {
+          console.warn('[Douban Scraper] 解析推荐数据失败:', e);
+        }
+      }
+
+      // 解析短评数据
+      let hotComments: ScrapedFullData['hotComments'] = [];
+      if (commentsRes.status === 'fulfilled' && commentsRes.value.ok) {
+        try {
+          const commentData = await commentsRes.value.json();
+          hotComments = (commentData.interests || [])
+            .slice(0, 20)
+            .map(
+              (item: {
+                user?: { name?: string; avatar?: string };
+                comment?: string;
+                rating?: { value?: number };
+                vote_count?: number;
+                create_time?: string;
+              }) => ({
+                userName: item.user?.name || '匿名用户',
+                userAvatar: item.user?.avatar || '',
+                content: item.comment || '',
+                rating: item.rating?.value
+                  ? Math.round(item.rating.value / 2)
+                  : 0,
+                votes: item.vote_count || 0,
+                date: item.create_time || '',
+              }),
+            );
+          console.log(`[Douban Scraper] 获取到 ${hotComments.length} 条短评`);
+        } catch (e) {
+          console.warn('[Douban Scraper] 解析短评数据失败:', e);
+        }
+      }
+
+      // 处理演员头像 - 确保提取正确的 URL
+      const extractAvatar = (
+        avatar: unknown,
+      ): { small: string; medium: string; large: string } | undefined => {
+        if (!avatar) return undefined;
+        if (typeof avatar === 'string') {
+          return { small: avatar, medium: avatar, large: avatar };
+        }
+        if (typeof avatar === 'object' && avatar !== null) {
+          const avatarObj = avatar as { normal?: string; large?: string };
+          const url = avatarObj.large || avatarObj.normal || '';
+          if (url) {
+            return { small: url, medium: url, large: url };
+          }
+        }
+        return undefined;
+      };
+
+      // 类型定义
+      type PersonData = {
+        id?: string;
+        name?: string;
+        avatar?: string | { normal?: string; large?: string };
+      };
+
+      // 转换 API 数据格式为 ScrapedFullData
+      return {
+        id: subjectId,
+        title: (data.title as string) || '',
+        original_title: (data.original_title as string) || '',
+        year: (data.year as string) || '',
+        rating: data.rating
+          ? {
+              max: 10,
+              average: (data.rating as { value?: number }).value || 0,
+              stars: '',
+              min: 0,
+            }
+          : null,
+        ratings_count: (data.rating as { count?: number })?.count || 0,
+        genres: (data.genres as string[]) || [],
+        countries: (data.countries as string[]) || [],
+        durations: (data.durations as string[]) || [],
+        summary: (data.intro as string) || '',
+        images: {
+          small: (data.pic as { normal?: string })?.normal || '',
+          medium:
+            (data.pic as { large?: string; normal?: string })?.large ||
+            (data.pic as { normal?: string })?.normal ||
+            '',
+          large: (data.pic as { large?: string })?.large || '',
+        },
+        directors: ((data.directors as PersonData[]) || []).map((d) => ({
+          id: d.id || '',
+          name: d.name || '',
+          alt: `https://movie.douban.com/celebrity/${d.id}/`,
+          avatars: extractAvatar(d.avatar),
+          roles: ['导演'],
+        })),
+        casts: ((data.actors as PersonData[]) || []).map((a) => ({
+          id: a.id || '',
+          name: a.name || '',
+          alt: `https://movie.douban.com/celebrity/${a.id}/`,
+          avatars: extractAvatar(a.avatar),
+          roles: ['演员'],
+        })),
+        recommendations,
+        hotComments,
+        scrapedAt: Date.now(),
+      };
     } catch (apiError) {
       console.error('[Douban Scraper] 移动端 API 也失败:', apiError);
     }
