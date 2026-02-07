@@ -552,13 +552,14 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
     id: d.id,
     name: d.name,
     alt: d.alt,
-    avatars: d.avatars.small
-      ? {
-          small: d.avatars.small,
-          medium: d.avatars.medium,
-          large: d.avatars.large,
-        }
-      : undefined,
+    avatars:
+      d.avatars.small || d.avatars.medium || d.avatars.large
+        ? {
+            small: d.avatars.small || d.avatars.medium || d.avatars.large,
+            medium: d.avatars.medium || d.avatars.large || d.avatars.small,
+            large: d.avatars.large || d.avatars.medium || d.avatars.small,
+          }
+        : undefined,
     roles: [d.role || '导演'],
   }));
 
@@ -566,13 +567,14 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
     id: a.id,
     name: a.name,
     alt: a.alt,
-    avatars: a.avatars.small
-      ? {
-          small: a.avatars.small,
-          medium: a.avatars.medium,
-          large: a.avatars.large,
-        }
-      : undefined,
+    avatars:
+      a.avatars.small || a.avatars.medium || a.avatars.large
+        ? {
+            small: a.avatars.small || a.avatars.medium || a.avatars.large,
+            medium: a.avatars.medium || a.avatars.large || a.avatars.small,
+            large: a.avatars.large || a.avatars.medium || a.avatars.small,
+          }
+        : undefined,
     roles: a.role ? [a.role] : ['演员'],
   }));
 
