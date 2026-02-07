@@ -56,15 +56,25 @@ const BROWSER_HEADERS: Record<string, string> = {
 // ============================================================================
 
 /**
- * 将豆瓣图片 URL 转换为代理 URL
- * 解决豆瓣图片防盗链问题
+ * 代理豆瓣图片 URL
+ * 使用 cmliussss 的公开代理服务解决豆瓣图片防盗链问题
+ * 原理: 将 img*.doubanio.com 替换为 img.doubanio.cmliussss.net
  */
 function proxyImageUrl(url: string | undefined | null): string {
   if (!url) return '';
+
   // 检查是否是豆瓣图片
-  if (url.includes('doubanio.com') || url.includes('douban.com')) {
+  if (url.includes('doubanio.com')) {
+    // 使用 cmliussss 的豆瓣图片代理
+    // 将 img*.doubanio.com 替换为 img.doubanio.cmliussss.net
+    return url.replace(/img\d*\.doubanio\.com/g, 'img.doubanio.cmliussss.net');
+  }
+
+  // 对于 douban.com 的图片（非 doubanio），使用本地代理
+  if (url.includes('douban.com')) {
     return `/api/image-proxy?url=${encodeURIComponent(url)}`;
   }
+
   return url;
 }
 
