@@ -43,6 +43,66 @@ const BROWSER_HEADERS: Record<string, string> = {
 };
 
 // ============================================================================
+// 图片代理工具函数
+// ============================================================================
+
+/**
+ * 将豆瓣图片 URL 转换为代理 URL
+ * 解决豆瓣图片防盗链问题
+ */
+function proxyImageUrl(url: string | undefined | null): string {
+  if (!url) return '';
+  // 检查是否是豆瓣图片
+  if (url.includes('doubanio.com') || url.includes('douban.com')) {
+    return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
+/**
+ * 处理图片对象中的所有 URL
+ */
+function proxyImageObject(
+  images: { small?: string; medium?: string; large?: string } | undefined,
+): { small: string; medium: string; large: string } {
+  if (!images) return { small: '', medium: '', large: '' };
+  return {
+    small: proxyImageUrl(images.small),
+    medium: proxyImageUrl(images.medium),
+    large: proxyImageUrl(images.large),
+  };
+}
+
+/**
+ * 处理整个 ScrapedFullData 中的所有图片 URL
+ */
+function proxyAllImages(data: ScrapedFullData): ScrapedFullData {
+  return {
+    ...data,
+    images: proxyImageObject(data.images),
+    directors: data.directors.map((d) => ({
+      ...d,
+      avatars: d.avatars ? proxyImageObject(d.avatars) : undefined,
+    })),
+    casts: data.casts.map((c) => ({
+      ...c,
+      avatars: c.avatars ? proxyImageObject(c.avatars) : undefined,
+    })),
+    recommendations: data.recommendations.map((r) => ({
+      ...r,
+      images: proxyImageObject(r.images),
+    })),
+    hotComments: data.hotComments.map((c) => ({
+      ...c,
+      author: {
+        ...c.author,
+        avatar: proxyImageUrl(c.author.avatar),
+      },
+    })),
+  };
+}
+
+// ============================================================================
 // 数据类型定义
 // ============================================================================
 
@@ -614,13 +674,18 @@ async function getDoubanDataWithFallback(
               (item: {
                 id?: string;
                 title?: string;
-                pic?: { normal?: string };
+                pic?: { normal?: string; large?: string };
                 rating?: { value?: number };
               }) => ({
                 id: String(item.id || ''),
                 title: item.title || '',
-                image: item.pic?.normal || '',
-                rating: item.rating?.value || 0,
+                // 转换为 images 对象格式
+                images: {
+                  small: item.pic?.normal || '',
+                  medium: item.pic?.large || item.pic?.normal || '',
+                  large: item.pic?.large || '',
+                },
+                alt: `https://movie.douban.com/subject/${item.id}/`,
               }),
             );
           console.log(
@@ -636,26 +701,43 @@ async function getDoubanDataWithFallback(
       if (commentsRes.status === 'fulfilled' && commentsRes.value.ok) {
         try {
           const commentData = await commentsRes.value.json();
-          hotComments = (commentData.interests || [])
-            .slice(0, 20)
-            .map(
-              (item: {
-                user?: { name?: string; avatar?: string };
-                comment?: string;
-                rating?: { value?: number };
-                vote_count?: number;
-                create_time?: string;
-              }) => ({
-                userName: item.user?.name || '匿名用户',
-                userAvatar: item.user?.avatar || '',
-                content: item.comment || '',
-                rating: item.rating?.value
-                  ? Math.round(item.rating.value / 2)
-                  : 0,
-                votes: item.vote_count || 0,
-                date: item.create_time || '',
-              }),
-            );
+          hotComments = (commentData.interests || []).slice(0, 20).map(
+            (item: {
+              id?: string;
+              user?: {
+                id?: string;
+                name?: string;
+                avatar?: string;
+                uid?: string;
+              };
+              comment?: string;
+              rating?: { value?: number; max?: number; min?: number };
+              vote_count?: number;
+              create_time?: string;
+            }) => ({
+              // 转换为 ScrapedComment 格式
+              id: String(item.id || `comment_${Date.now()}_${Math.random()}`),
+              created_at: item.create_time || '',
+              content: item.comment || '',
+              useful_count: item.vote_count || 0,
+              rating: item.rating?.value
+                ? {
+                    max: item.rating.max || 10,
+                    value: item.rating.value,
+                    min: item.rating.min || 0,
+                  }
+                : null,
+              author: {
+                id: String(item.user?.id || ''),
+                uid: item.user?.uid || '',
+                name: item.user?.name || '匿名用户',
+                avatar: item.user?.avatar || '',
+                alt: item.user?.id
+                  ? `https://www.douban.com/people/${item.user.id}/`
+                  : '',
+              },
+            }),
+          );
           console.log(`[Douban Scraper] 获取到 ${hotComments.length} 条短评`);
         } catch (e) {
           console.warn('[Douban Scraper] 解析短评数据失败:', e);
@@ -938,9 +1020,16 @@ export async function GET(request: NextRequest) {
       let data: unknown;
 
       switch (scrapeType) {
-        case 'full':
-          data = await scrapeDoubanData(subjectId);
+        case 'full': {
+          const rawData = await scrapeDoubanData(subjectId);
+          // 应用图片代理转换，解决防盗链问题
+          data = proxyAllImages(rawData);
+          // 添加调试信息
+          console.log(
+            `[Douban Proxy] 获取数据: directors=${rawData.directors.length}, casts=${rawData.casts.length}, comments=${rawData.hotComments.length}, recommendations=${rawData.recommendations.length}`,
+          );
           break;
+        }
         case 'comments':
           data = await scrapeComments(subjectId);
           break;
