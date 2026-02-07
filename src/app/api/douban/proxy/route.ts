@@ -60,22 +60,63 @@ const BROWSER_HEADERS: Record<string, string> = {
  * 使用 cmliussss 的公开代理服务解决豆瓣图片防盗链问题
  * 原理: 将 img*.doubanio.com 替换为 img.doubanio.cmliussss.net
  */
-function proxyImageUrl(url: string | undefined | null): string {
+function normalizeImageUrl(url: string | undefined | null): string {
   if (!url) return '';
+  const normalized = url
+    .replace(/&quot;/g, '')
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim();
 
-  // 检查是否是豆瓣图片
-  if (url.includes('doubanio.com')) {
-    // 使用 cmliussss 的豆瓣图片代理
-    // 将 img*.doubanio.com 替换为 img.doubanio.cmliussss.net
-    return url.replace(/img\d*\.doubanio\.com/g, 'img.doubanio.cmliussss.net');
+  if (normalized.startsWith('//')) {
+    return `https:${normalized}`;
   }
 
-  // 对于 douban.com 的图片（非 doubanio），使用本地代理
-  if (url.includes('douban.com')) {
-    return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+  return normalized;
+}
+
+function proxyImageUrl(url: string | undefined | null): string {
+  const normalizedUrl = normalizeImageUrl(url);
+  if (!normalizedUrl) return '';
+
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    const hostname = parsedUrl.hostname.toLowerCase();
+
+    // 已经是 cmliussss 代理域名
+    if (
+      hostname === 'img.doubanio.cmliussss.net' ||
+      hostname === 'img.doubanio.cmliussss.com'
+    ) {
+      return normalizedUrl;
+    }
+
+    // 豆瓣图片统一走 cmliussss，避免防盗链
+    if (hostname.endsWith('doubanio.com')) {
+      parsedUrl.protocol = 'https:';
+      parsedUrl.hostname = 'img.doubanio.cmliussss.net';
+      return parsedUrl.toString();
+    }
+
+    // 其他 douban.com 图片走本地代理
+    if (hostname.endsWith('douban.com')) {
+      return `/api/image-proxy?url=${encodeURIComponent(normalizedUrl)}`;
+    }
+  } catch {
+    // 忽略 URL 解析错误，继续走字符串规则
   }
 
-  return url;
+  if (normalizedUrl.includes('doubanio.com')) {
+    return normalizedUrl.replace(
+      /https?:\/\/[^/]*doubanio\.com/gi,
+      'https://img.doubanio.cmliussss.net',
+    );
+  }
+
+  if (normalizedUrl.includes('douban.com')) {
+    return `/api/image-proxy?url=${encodeURIComponent(normalizedUrl)}`;
+  }
+
+  return normalizedUrl;
 }
 
 /**
@@ -185,6 +226,200 @@ interface ScrapedFullData {
   casts: FormattedCelebrity[];
   // 元数据
   scrapedAt: number;
+}
+
+type ApiCelebrityItem = {
+  id?: string | number;
+  name?: string;
+  url?: string;
+  avatar?:
+    | string
+    | {
+        small?: string;
+        medium?: string;
+        large?: string;
+        normal?: string;
+        url?: string;
+      };
+  character?: string;
+  simple_character?: string;
+  category?: string;
+};
+
+function extractAvatarImages(
+  avatar: ApiCelebrityItem['avatar'],
+): { small: string; medium: string; large: string } | undefined {
+  if (!avatar) return undefined;
+
+  if (typeof avatar === 'string') {
+    const url = normalizeImageUrl(avatar);
+    return url ? { small: url, medium: url, large: url } : undefined;
+  }
+
+  const small = normalizeImageUrl(
+    avatar.small ||
+      avatar.normal ||
+      avatar.medium ||
+      avatar.large ||
+      avatar.url,
+  );
+  const medium = normalizeImageUrl(
+    avatar.medium ||
+      avatar.normal ||
+      avatar.large ||
+      avatar.small ||
+      avatar.url,
+  );
+  const large = normalizeImageUrl(
+    avatar.large ||
+      avatar.medium ||
+      avatar.normal ||
+      avatar.small ||
+      avatar.url,
+  );
+
+  if (!small && !medium && !large) return undefined;
+
+  return {
+    small: small || medium || large || '',
+    medium: medium || large || small || '',
+    large: large || medium || small || '',
+  };
+}
+
+function normalizeRoleText(
+  rawRole: string | undefined,
+  fallbackRole: string,
+): string {
+  const normalized = (rawRole || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallbackRole;
+
+  const cleaned = normalized
+    .replace(/^(演员|导演|编剧)\s*(Actor|Actress|Director|Writer)?\s*/i, '')
+    .replace(/^\(|\)$/g, '')
+    .trim();
+
+  return cleaned || fallbackRole;
+}
+
+function toFormattedCelebrity(
+  person: ApiCelebrityItem,
+  fallbackRole: string,
+): FormattedCelebrity | null {
+  const name = (person.name || '').trim();
+  if (!name) return null;
+
+  const rawId = person.id != null ? String(person.id).trim() : '';
+  const altFromPayload = normalizeImageUrl(person.url || '');
+  const idFromUrl = altFromPayload.match(/celebrity\/(\d+)/)?.[1] || '';
+  const id =
+    rawId ||
+    idFromUrl ||
+    `cel_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const alt = altFromPayload || `${DOUBAN_WEB_BASE}/celebrity/${id}/`;
+  const avatars = extractAvatarImages(person.avatar);
+  const role = normalizeRoleText(
+    person.simple_character || person.character,
+    fallbackRole,
+  );
+
+  return {
+    id,
+    name,
+    alt,
+    avatars,
+    roles: [role],
+  };
+}
+
+function upsertFormattedCelebrity(
+  list: FormattedCelebrity[],
+  incoming: FormattedCelebrity,
+) {
+  const existing = list.find(
+    (item) =>
+      (incoming.id && item.id === incoming.id) || item.name === incoming.name,
+  );
+
+  if (!existing) {
+    list.push(incoming);
+    return;
+  }
+
+  if (!existing.alt && incoming.alt) {
+    existing.alt = incoming.alt;
+  }
+
+  if (incoming.avatars) {
+    const merged = existing.avatars || { small: '', medium: '', large: '' };
+    merged.small = merged.small || incoming.avatars.small || '';
+    merged.medium = merged.medium || incoming.avatars.medium || '';
+    merged.large = merged.large || incoming.avatars.large || '';
+    if (merged.small || merged.medium || merged.large) {
+      existing.avatars = merged;
+    }
+  }
+
+  if (incoming.roles?.length) {
+    const roleSet = new Set([...(existing.roles || []), ...incoming.roles]);
+    existing.roles = Array.from(roleSet).filter(Boolean);
+  }
+}
+
+function parseCelebritiesFromApiPayload(payload: unknown): {
+  directors: FormattedCelebrity[];
+  casts: FormattedCelebrity[];
+} {
+  const directors: FormattedCelebrity[] = [];
+  const casts: FormattedCelebrity[] = [];
+
+  if (!payload || typeof payload !== 'object') {
+    return { directors, casts };
+  }
+
+  const data = payload as Record<string, unknown>;
+  const append = (
+    items: unknown,
+    fallbackRole: '导演' | '演员',
+    target: FormattedCelebrity[],
+  ) => {
+    if (!Array.isArray(items)) return;
+
+    items.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      const formatted = toFormattedCelebrity(
+        item as ApiCelebrityItem,
+        fallbackRole,
+      );
+      if (formatted) {
+        upsertFormattedCelebrity(target, formatted);
+      }
+    });
+  };
+
+  append(data.directors, '导演', directors);
+  append(data.actors, '演员', casts);
+
+  if (Array.isArray(data.items)) {
+    data.items.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      const person = item as ApiCelebrityItem;
+      const category = (person.category || '').toLowerCase();
+
+      if (category.includes('导') || category.includes('director')) {
+        const formatted = toFormattedCelebrity(person, '导演');
+        if (formatted) upsertFormattedCelebrity(directors, formatted);
+        return;
+      }
+
+      if (category.includes('演') || category.includes('actor') || !category) {
+        const formatted = toFormattedCelebrity(person, '演员');
+        if (formatted) upsertFormattedCelebrity(casts, formatted);
+      }
+    });
+  }
+
+  return { directors, casts };
 }
 
 // ============================================================================
@@ -431,35 +666,58 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
   // 尝试从 celebrities 区块获取头像 (增强版：双重匹配 + 高清替换)
   $('#celebrities .celebrity').each((_, element) => {
     const $item = $(element);
-    const $link = $item.find('a.name');
-    const $avatar = $item.find('.avatar');
+    const $link = $item
+      .find('a.name, .info a[href*="/celebrity/"], a[href*="/celebrity/"]')
+      .first();
+    const $avatar = $item
+      .find('.avatar, a.avatar, .avatar-wrapper, [style*="background-image"]')
+      .first();
 
-    const href = $link.attr('href') || '';
+    const href =
+      $link.attr('href') ||
+      $item.find('a[href*="/celebrity/"]').first().attr('href') ||
+      '';
     const idMatch = href.match(/celebrity\/(\d+)/);
     const celId = idMatch ? idMatch[1] : '';
-    const name = $link.text().trim();
-    const role = $item.find('.role').text().trim();
+    const name =
+      $link.text().trim() ||
+      $item.find('.info .name').text().trim() ||
+      $item.find('.info a').first().text().trim() ||
+      '';
+    const role =
+      $item.find('.role').text().trim() ||
+      $item.find('.info .character').text().trim() ||
+      $item.find('.info .meta').text().trim();
 
     // 双重匹配头像 URL
     let avatarUrl = '';
 
     // 方法 1: CSS 背景图
-    const avatarStyle = $avatar.attr('style') || '';
+    const avatarStyle =
+      $avatar.attr('style') ||
+      $item.find('[style*="background-image"]').first().attr('style') ||
+      '';
     const bgMatch = avatarStyle.match(/background-image:\s*url\(([^)]+)\)/);
     if (bgMatch) {
-      avatarUrl = bgMatch[1].replace(/['"]|&quot;/g, '');
+      avatarUrl = normalizeImageUrl(bgMatch[1]);
     }
 
     // 方法 2: IMG 标签 (fallback)
     if (!avatarUrl) {
       const $img = $avatar.find('img');
-      avatarUrl = $img.attr('src') || $img.attr('data-src') || '';
+      avatarUrl =
+        normalizeImageUrl($img.attr('src') || $img.attr('data-src')) || '';
     }
 
     // 方法 3: 直接从 a 标签下的 img
     if (!avatarUrl) {
-      const $directImg = $item.find('a img.avatar, a img[class*="avatar"]');
-      avatarUrl = $directImg.attr('src') || '';
+      const $directImg = $item.find(
+        'a img.avatar, a img[class*="avatar"], .avatar img',
+      );
+      avatarUrl =
+        normalizeImageUrl(
+          $directImg.attr('src') || $directImg.attr('data-src'),
+        ) || '';
     }
 
     // 高清图替换: /s/ -> /l/, /m/ -> /l/
@@ -473,11 +731,18 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
 
     // 不再过滤默认头像 - 即使是 personage-default 也保留
     if (name) {
-      const isDirector = role.includes('导演');
+      const existingDirector = directors.find(
+        (c) => (celId && c.id === celId) || c.name === name,
+      );
+      const existingActor = actors.find(
+        (c) => (celId && c.id === celId) || c.name === name,
+      );
+      const isDirector = role.includes('导演') || Boolean(existingDirector);
       const target = isDirector ? directors : actors;
 
-      // 更新或添加
-      const existing = target.find((c) => c.id === celId || c.name === name);
+      const existing =
+        (isDirector ? existingDirector : existingActor) ||
+        target.find((c) => c.id === celId || c.name === name);
       if (existing) {
         // 只有当新头像有效时才更新
         if (avatarUrl) {
@@ -744,9 +1009,11 @@ async function getDoubanDataWithFallback(
   try {
     return await _scrapeDoubanData(subjectId);
   } catch (error) {
-    console.error('[Douban Scraper] 爬虫失败，尝试移动端 API:', error);
+    console.error(
+      '[Douban Scraper] Scraper failed, fallback to mobile API:',
+      error,
+    );
 
-    // 尝试使用移动端 API 获取数据（优先使用原始 API，因为代理服务可能也被封）
     const frodoHeaders = {
       'User-Agent':
         'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
@@ -754,70 +1021,86 @@ async function getDoubanDataWithFallback(
         'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
     };
 
-    // 尝试每个代理 URL
     for (const proxyBase of DOUBAN_PROXY_URLS) {
       try {
-        console.log(`[Douban Scraper] 尝试代理: ${proxyBase}`);
+        console.log('[Douban Scraper] Trying proxy: ' + proxyBase);
 
-        // 构建 API URL - 根据代理类型调整
         const isUieee = proxyBase.includes('uieee.com');
         const detailUrl = isUieee
-          ? `${proxyBase}/v2/movie/subject/${subjectId}`
-          : `${proxyBase}/movie/${subjectId}?apiKey=${FRODO_API_KEY}`;
+          ? proxyBase + '/v2/movie/subject/' + subjectId
+          : proxyBase + '/movie/' + subjectId + '?apiKey=' + FRODO_API_KEY;
         const recommendsUrl = isUieee
-          ? `${proxyBase}/v2/movie/subject/${subjectId}/recommendations?count=12`
-          : `${proxyBase}/movie/${subjectId}/recommendations?start=0&count=12&apiKey=${FRODO_API_KEY}`;
+          ? proxyBase +
+            '/v2/movie/subject/' +
+            subjectId +
+            '/recommendations?count=12'
+          : proxyBase +
+            '/movie/' +
+            subjectId +
+            '/recommendations?start=0&count=12&apiKey=' +
+            FRODO_API_KEY;
         const commentsUrl = isUieee
-          ? `${proxyBase}/v2/movie/subject/${subjectId}/comments?count=20`
-          : `${proxyBase}/movie/${subjectId}/interests?start=0&count=20&order_by=hot&apiKey=${FRODO_API_KEY}`;
+          ? proxyBase + '/v2/movie/subject/' + subjectId + '/comments?count=20'
+          : proxyBase +
+            '/movie/' +
+            subjectId +
+            '/interests?start=0&count=20&order_by=hot&apiKey=' +
+            FRODO_API_KEY;
+        const celebritiesUrl = isUieee
+          ? proxyBase + '/v2/movie/subject/' + subjectId + '/celebrities'
+          : proxyBase +
+            '/movie/' +
+            subjectId +
+            '/celebrities?apiKey=' +
+            FRODO_API_KEY;
+        const creditsUrl = isUieee
+          ? proxyBase + '/v2/movie/subject/' + subjectId + '/credits'
+          : proxyBase +
+            '/movie/' +
+            subjectId +
+            '/credits?apiKey=' +
+            FRODO_API_KEY;
 
-        console.log(`[Douban Scraper] 请求 URL: ${detailUrl}`);
-
-        // 缩短超时时间，使得请求更快失败（Vercel 函数有 10-30s 超时限制）
         const TIMEOUT_MS = 8000;
 
-        // 并行获取：基本信息、推荐、短评
-        const [detailRes, recommendsRes, commentsRes] =
-          await Promise.allSettled([
-            fetch(detailUrl, {
-              headers: frodoHeaders,
-              signal: AbortSignal.timeout(TIMEOUT_MS),
-            }),
-            fetch(recommendsUrl, {
-              headers: frodoHeaders,
-              signal: AbortSignal.timeout(TIMEOUT_MS),
-            }),
-            fetch(commentsUrl, {
-              headers: frodoHeaders,
-              signal: AbortSignal.timeout(TIMEOUT_MS),
-            }),
-          ]);
+        const [
+          detailRes,
+          recommendsRes,
+          commentsRes,
+          celebritiesRes,
+          creditsRes,
+        ] = await Promise.allSettled([
+          fetch(detailUrl, {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+          fetch(recommendsUrl, {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+          fetch(commentsUrl, {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+          fetch(celebritiesUrl, {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+          fetch(creditsUrl, {
+            headers: frodoHeaders,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+        ]);
 
-        // 检查详情请求状态
         if (detailRes.status === 'rejected') {
-          console.error(`[Douban Scraper] 详情请求失败:`, detailRes.reason);
-          throw new Error(`详情请求失败: ${detailRes.reason}`);
+          throw new Error('Detail request failed: ' + String(detailRes.reason));
         }
-
         if (!detailRes.value.ok) {
-          console.error(
-            `[Douban Scraper] 详情请求返回 ${detailRes.value.status}`,
-          );
-          throw new Error(`详情请求返回 ${detailRes.value.status}`);
+          throw new Error('Detail request status: ' + detailRes.value.status);
         }
 
-        // 解析基本信息
-        let data: Record<string, unknown> | null = null;
-        if (detailRes.status === 'fulfilled' && detailRes.value.ok) {
-          data = await detailRes.value.json();
-          console.log('[Douban Scraper] 移动端 API 成功获取基本数据');
-        }
+        const data = (await detailRes.value.json()) as Record<string, unknown>;
 
-        if (!data) {
-          throw new Error('移动端 API 基本信息获取失败');
-        }
-
-        // 解析推荐数据
         let recommendations: ScrapedFullData['recommendations'] = [];
         if (recommendsRes.status === 'fulfilled' && recommendsRes.value.ok) {
           try {
@@ -829,28 +1112,28 @@ async function getDoubanDataWithFallback(
                   id?: string;
                   title?: string;
                   pic?: { normal?: string; large?: string };
-                  rating?: { value?: number };
                 }) => ({
                   id: String(item.id || ''),
                   title: item.title || '',
-                  // 转换为 images 对象格式
                   images: {
                     small: item.pic?.normal || '',
                     medium: item.pic?.large || item.pic?.normal || '',
                     large: item.pic?.large || '',
                   },
-                  alt: `https://movie.douban.com/subject/${item.id}/`,
+                  alt:
+                    'https://movie.douban.com/subject/' +
+                    String(item.id || '') +
+                    '/',
                 }),
               );
-            console.log(
-              `[Douban Scraper] 获取到 ${recommendations.length} 个推荐`,
-            );
           } catch (e) {
-            console.warn('[Douban Scraper] 解析推荐数据失败:', e);
+            console.warn(
+              '[Douban Scraper] Failed to parse recommendations:',
+              e,
+            );
           }
         }
 
-        // 解析短评数据
         let hotComments: ScrapedFullData['hotComments'] = [];
         if (commentsRes.status === 'fulfilled' && commentsRes.value.ok) {
           try {
@@ -869,8 +1152,9 @@ async function getDoubanDataWithFallback(
                 vote_count?: number;
                 create_time?: string;
               }) => ({
-                // 转换为 ScrapedComment 格式
-                id: String(item.id || `comment_${Date.now()}_${Math.random()}`),
+                id: String(
+                  item.id || 'comment_' + Date.now() + '_' + Math.random(),
+                ),
                 created_at: item.create_time || '',
                 content: item.comment || '',
                 useful_count: item.vote_count || 0,
@@ -884,46 +1168,112 @@ async function getDoubanDataWithFallback(
                 author: {
                   id: String(item.user?.id || ''),
                   uid: item.user?.uid || '',
-                  name: item.user?.name || '匿名用户',
+                  name: item.user?.name || 'Anonymous User',
                   avatar: item.user?.avatar || '',
                   alt: item.user?.id
-                    ? `https://www.douban.com/people/${item.user.id}/`
+                    ? 'https://www.douban.com/people/' + item.user.id + '/'
                     : '',
                 },
               }),
             );
-            console.log(`[Douban Scraper] 获取到 ${hotComments.length} 条短评`);
           } catch (e) {
-            console.warn('[Douban Scraper] 解析短评数据失败:', e);
+            console.warn('[Douban Scraper] Failed to parse comments:', e);
           }
         }
 
-        // 处理演员头像 - 确保提取正确的 URL
-        const extractAvatar = (
-          avatar: unknown,
-        ): { small: string; medium: string; large: string } | undefined => {
-          if (!avatar) return undefined;
-          if (typeof avatar === 'string') {
-            return { small: avatar, medium: avatar, large: avatar };
-          }
-          if (typeof avatar === 'object' && avatar !== null) {
-            const avatarObj = avatar as { normal?: string; large?: string };
-            const url = avatarObj.large || avatarObj.normal || '';
-            if (url) {
-              return { small: url, medium: url, large: url };
-            }
-          }
-          return undefined;
+        const mergedCelebrities: {
+          directors: FormattedCelebrity[];
+          casts: FormattedCelebrity[];
+        } = { directors: [], casts: [] };
+
+        const mergeCelebritiesFromPayload = (payload: unknown) => {
+          const parsed = parseCelebritiesFromApiPayload(payload);
+          parsed.directors.forEach((item) =>
+            upsertFormattedCelebrity(mergedCelebrities.directors, item),
+          );
+          parsed.casts.forEach((item) =>
+            upsertFormattedCelebrity(mergedCelebrities.casts, item),
+          );
         };
 
-        // 类型定义
+        if (celebritiesRes.status === 'fulfilled' && celebritiesRes.value.ok) {
+          try {
+            mergeCelebritiesFromPayload(await celebritiesRes.value.json());
+          } catch (e) {
+            console.warn(
+              '[Douban Scraper] Failed to parse celebrities payload:',
+              e,
+            );
+          }
+        }
+
+        if (creditsRes.status === 'fulfilled' && creditsRes.value.ok) {
+          try {
+            mergeCelebritiesFromPayload(await creditsRes.value.json());
+          } catch (e) {
+            console.warn(
+              '[Douban Scraper] Failed to parse credits payload:',
+              e,
+            );
+          }
+        }
+
         type PersonData = {
-          id?: string;
+          id?: string | number;
           name?: string;
-          avatar?: string | { normal?: string; large?: string };
+          url?: string;
+          avatar?: ApiCelebrityItem['avatar'];
+          character?: string;
+          simple_character?: string;
         };
 
-        // 转换 API 数据格式为 ScrapedFullData
+        const fallbackDirectors = (
+          (data.directors as PersonData[]) || []
+        ).reduce<FormattedCelebrity[]>((acc, item) => {
+          const formatted = toFormattedCelebrity(
+            {
+              ...item,
+              url:
+                item.url ||
+                (item.id
+                  ? DOUBAN_WEB_BASE + '/celebrity/' + item.id + '/'
+                  : undefined),
+            },
+            '\u5bfc\u6f14',
+          );
+          if (formatted) {
+            upsertFormattedCelebrity(acc, formatted);
+          }
+          return acc;
+        }, []);
+
+        const fallbackCasts = ((data.actors as PersonData[]) || []).reduce<
+          FormattedCelebrity[]
+        >((acc, item) => {
+          const formatted = toFormattedCelebrity(
+            {
+              ...item,
+              url:
+                item.url ||
+                (item.id
+                  ? DOUBAN_WEB_BASE + '/celebrity/' + item.id + '/'
+                  : undefined),
+            },
+            '\u6f14\u5458',
+          );
+          if (formatted) {
+            upsertFormattedCelebrity(acc, formatted);
+          }
+          return acc;
+        }, []);
+
+        fallbackDirectors.forEach((item) =>
+          upsertFormattedCelebrity(mergedCelebrities.directors, item),
+        );
+        fallbackCasts.forEach((item) =>
+          upsertFormattedCelebrity(mergedCelebrities.casts, item),
+        );
+
         return {
           id: subjectId,
           title: (data.title as string) || '',
@@ -950,33 +1300,21 @@ async function getDoubanDataWithFallback(
               '',
             large: (data.pic as { large?: string })?.large || '',
           },
-          directors: ((data.directors as PersonData[]) || []).map((d) => ({
-            id: d.id || '',
-            name: d.name || '',
-            alt: `https://movie.douban.com/celebrity/${d.id}/`,
-            avatars: extractAvatar(d.avatar),
-            roles: ['导演'],
-          })),
-          casts: ((data.actors as PersonData[]) || []).map((a) => ({
-            id: a.id || '',
-            name: a.name || '',
-            alt: `https://movie.douban.com/celebrity/${a.id}/`,
-            avatars: extractAvatar(a.avatar),
-            roles: ['演员'],
-          })),
+          directors: mergedCelebrities.directors,
+          casts: mergedCelebrities.casts,
           recommendations,
           hotComments,
           scrapedAt: Date.now(),
         };
       } catch (apiError) {
-        console.error(`[Douban Scraper] 代理 ${proxyBase} 失败:`, apiError);
-        // 继续尝试下一个代理
+        console.error('[Douban Scraper] Proxy failed: ' + proxyBase, apiError);
         continue;
       }
     }
 
-    // 所有代理都失败，返回空数据结构
-    console.warn('[Douban Scraper] 所有方法都失败，返回空数据');
+    console.warn(
+      '[Douban Scraper] All fallback methods failed; returning empty data',
+    );
     return {
       id: subjectId,
       title: '',
@@ -1178,7 +1516,26 @@ export async function GET(request: NextRequest) {
 
       switch (scrapeType) {
         case 'full': {
-          const rawData = await scrapeDoubanData(subjectId);
+          let rawData = await scrapeDoubanData(subjectId);
+          const hasCelebrityAvatar = [
+            ...rawData.directors,
+            ...rawData.casts,
+          ].some((item) =>
+            Boolean(
+              item.avatars?.small ||
+              item.avatars?.medium ||
+              item.avatars?.large,
+            ),
+          );
+
+          // 旧缓存里可能没有演员头像，命中时主动绕过缓存刷新一次
+          if (!hasCelebrityAvatar) {
+            console.warn(
+              `[Douban Proxy] 缓存数据缺少演职员头像，触发实时刷新: ${subjectId}`,
+            );
+            rawData = await getDoubanDataWithFallback(subjectId);
+          }
+
           // 应用图片代理转换，解决防盗链问题
           data = proxyAllImages(rawData);
           // 添加调试信息
