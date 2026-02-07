@@ -13,22 +13,30 @@ const API_KEY_B = '0df993c66c0c636e29ecbb5344252a4a';
 const DOUBAN_API_BASE = 'https://api.douban.com/v2';
 const DOUBAN_WEB_BASE = 'https://movie.douban.com';
 
-// Chrome/Mac 真实 User-Agent
-const BROWSER_HEADERS = {
+// Chrome/Windows 真实 User-Agent (2024 更新版)
+// NOTE: 增强伪装以应对豆瓣反爬机制
+const BROWSER_HEADERS: Record<string, string> = {
   'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   Accept:
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br',
   Referer: 'https://movie.douban.com/',
+  Host: 'movie.douban.com',
+  Connection: 'keep-alive',
   'Sec-Ch-Ua':
-    '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
   'Sec-Ch-Ua-Mobile': '?0',
-  'Sec-Ch-Ua-Platform': '"macOS"',
+  'Sec-Ch-Ua-Platform': '"Windows"',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'same-origin',
-  'Cache-Control': 'no-cache',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
+  'Cache-Control': 'max-age=0',
+  // 模拟游客会话 cookie (bid 是豆瓣的匿名用户标识)
+  Cookie: `bid=${Math.random().toString(36).substring(2, 13)}; ll="118371"`,
 };
 
 // ============================================================================
@@ -111,17 +119,67 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
 
   const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/`;
 
+  // 随机延迟 100-500ms 模拟真实用户行为
+  await new Promise((resolve) =>
+    setTimeout(resolve, 100 + Math.random() * 400),
+  );
+
   const response = await fetch(url, {
-    headers: BROWSER_HEADERS,
+    headers: {
+      ...BROWSER_HEADERS,
+      // 每次请求生成新的 bid 避免被追踪
+      Cookie: `bid=${Math.random().toString(36).substring(2, 13)}; ll="118371"`,
+    },
     signal: AbortSignal.timeout(20000),
   });
 
+  console.log(
+    `[Douban Scraper] 响应状态: ${response.status} ${response.statusText}`,
+  );
+
   if (!response.ok) {
+    console.error(`[Douban Scraper] 请求失败: ${response.status}`);
     throw new Error(`爬取失败: ${response.status}`);
   }
 
   const html = await response.text();
+  console.log(`[Douban Scraper] HTML 长度: ${html.length} 字符`);
+
+  // 检查是否被重定向到验证码页面或登录页面
+  if (
+    html.includes('sec.douban.com') ||
+    html.includes('账号登录') ||
+    html.length < 5000
+  ) {
+    console.error('[Douban Scraper] 可能触发了反爬机制，页面内容异常');
+    throw new Error('触发豆瓣反爬机制，请稍后重试');
+  }
+
   const $ = cheerio.load(html);
+
+  // ========== 尝试从 ld+json 提取结构化数据（最稳定的方式） ==========
+  let ldJsonData: {
+    name?: string;
+    director?: Array<{ name: string; url?: string }>;
+    actor?: Array<{ name: string; url?: string }>;
+    description?: string;
+    datePublished?: string;
+    aggregateRating?: { ratingValue?: string; ratingCount?: string };
+    genre?: string[];
+    image?: string;
+  } | null = null;
+
+  const ldJsonScript = $('script[type="application/ld+json"]').html();
+  if (ldJsonScript) {
+    try {
+      ldJsonData = JSON.parse(ldJsonScript);
+      console.log('[Douban Scraper] 成功解析 ld+json 数据');
+    } catch (e) {
+      console.warn('[Douban Scraper] ld+json 解析失败:', e);
+    }
+  } else {
+    console.warn('[Douban Scraper] 未找到 ld+json 数据，使用传统 HTML 解析');
+  }
 
   // ========== 基础信息 ==========
   const title =
@@ -369,8 +427,50 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
     }
   });
 
+  // ========== 使用 ld+json 补充缺失的导演/演员数据 ==========
+  if (ldJsonData) {
+    // 如果 HTML 解析没有获取到导演，尝试从 ld+json 获取
+    if (directors.length === 0 && ldJsonData.director) {
+      console.log('[Douban Scraper] 使用 ld+json 补充导演数据');
+      ldJsonData.director.forEach((d) => {
+        if (d.name) {
+          const idMatch = d.url?.match(/celebrity\/(\d+)/);
+          directors.push({
+            id: idMatch ? idMatch[1] : `ld_${Date.now()}_${Math.random()}`,
+            name: d.name,
+            alt: d.url || '',
+            category: '导演',
+            role: '导演',
+            avatars: { small: '', medium: '', large: '' },
+          });
+        }
+      });
+    }
+
+    // 如果 HTML 解析没有获取到演员，尝试从 ld+json 获取
+    if (actors.length === 0 && ldJsonData.actor) {
+      console.log('[Douban Scraper] 使用 ld+json 补充演员数据');
+      ldJsonData.actor.forEach((a) => {
+        if (a.name) {
+          const idMatch = a.url?.match(/celebrity\/(\d+)/);
+          actors.push({
+            id: idMatch ? idMatch[1] : `ld_${Date.now()}_${Math.random()}`,
+            name: a.name,
+            alt: a.url || '',
+            category: '演员',
+            role: '',
+            avatars: { small: '', medium: '', large: '' },
+          });
+        }
+      });
+    }
+  }
+
   const elapsed = Date.now() - startTime;
   console.log(`[Douban Scraper] 完成: ${subjectId} (${elapsed}ms)`);
+  console.log(
+    `[Douban Scraper] 解析结果: 标题="${title}", 导演=${directors.length}人, 演员=${actors.length}人, 短评=${hotComments.length}条, 推荐=${recommendations.length}部`,
+  );
 
   // 转换为前端组件期望的格式
   // actors -> casts (添加 avatars 和 roles 字段)
