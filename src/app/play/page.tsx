@@ -356,12 +356,38 @@ function PlayPageClient() {
 
   // 投屏处理函数
   const handleCastClick = async () => {
+    // 检测浏览器是否支持 Cast
+    if (!castAvailableRef.current) {
+      // 检测是否为 Chromium 浏览器
+      const isChrome =
+        typeof window !== 'undefined' &&
+        typeof window.chrome !== 'undefined' &&
+        window.chrome !== null;
+
+      if (!isChrome) {
+        // 非 Chromium 浏览器
+        if (artPlayerRef.current) {
+          artPlayerRef.current.notice.show =
+            '📱 请使用 Chrome 或 Edge 浏览器投屏';
+        }
+        showToast('投屏功能仅支持 Chrome/Edge 浏览器', 'info');
+      } else {
+        // Chromium 浏览器但未检测到设备
+        if (artPlayerRef.current) {
+          artPlayerRef.current.notice.show = '📺 未发现可用的投屏设备';
+        }
+        showToast('请确保 Chromecast 设备在同一网络', 'info');
+      }
+      return;
+    }
+
     if (castConnectedRef.current) {
       // 已连接，断开投屏
       castEndSession();
       if (artPlayerRef.current) {
-        artPlayerRef.current.notice.show = '已断开投屏';
+        artPlayerRef.current.notice.show = '✅ 已断开投屏';
       }
+      showToast('已断开投屏', 'success');
     } else {
       // 未连接，请求投屏
       try {
@@ -372,14 +398,19 @@ function PlayPageClient() {
           // 暂停本地播放器
           if (artPlayerRef.current) {
             artPlayerRef.current.pause();
-            artPlayerRef.current.notice.show = `正在投屏到 ${castDeviceNameRef.current || '设备'}`;
+            artPlayerRef.current.notice.show = `📺 正在投屏到 ${castDeviceNameRef.current || '设备'}`;
           }
+          showToast(
+            `正在投屏到 ${castDeviceNameRef.current || '设备'}`,
+            'success',
+          );
         }
       } catch (err) {
         console.error('[Cast] 投屏失败:', err);
         if (artPlayerRef.current) {
-          artPlayerRef.current.notice.show = '投屏失败，请重试';
+          artPlayerRef.current.notice.show = '❌ 投屏失败，请重试';
         }
+        showToast('投屏失败，请重试', 'error');
       }
     }
   };
@@ -1834,29 +1865,50 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
-          // 投屏按钮 - 仅在 Cast API 可用时显示
-          ...(castAvailableRef.current
-            ? [
-                {
-                  position: 'right',
-                  index: 5,
-                  html: `<i class="art-icon flex art-cast-btn" style="padding: 0 5px;${castConnectedRef.current ? ' color: #22c55e;' : ''}">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M1 18v3h3c0-1.66-1.34-3-3-3z" fill="currentColor"/>
-                      <path d="M1 14v2a5 5 0 0 1 5 5h2c0-3.87-3.13-7-7-7z" fill="currentColor"/>
-                      <path d="M1 10v2a9 9 0 0 1 9 9h2c0-6.08-4.93-11-11-11z" fill="currentColor"/>
-                      <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" fill="currentColor"/>
-                    </svg>
-                  </i>`,
-                  tooltip: castConnectedRef.current
-                    ? `正在投屏到 ${castDeviceNameRef.current || '设备'} (点击断开)`
-                    : '投屏',
-                  click: function () {
-                    handleCastClick();
-                  },
-                },
-              ]
-            : []),
+          // 投屏按钮 - 始终显示，美观的 UI 设计
+          {
+            position: 'right',
+            index: 5,
+            html: (() => {
+              const isConnected = castConnectedRef.current;
+              const isAvailable = castAvailableRef.current;
+              // 根据状态设置不同的样式
+              let iconStyle = '';
+              if (isConnected) {
+                // 已连接：绿色高亮 + 轻微光晕效果
+                iconStyle =
+                  'color: #22c55e; filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.6));';
+              } else if (isAvailable) {
+                // 有设备可用：正常颜色
+                iconStyle = 'color: inherit;';
+              } else {
+                // 无设备/不支持：较淡的颜色
+                iconStyle = 'color: inherit; opacity: 0.6;';
+              }
+              return `<i class="art-icon flex art-cast-btn" style="padding: 0 6px; transition: all 0.2s ease; ${iconStyle}">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1 18v3h3c0-1.66-1.34-3-3-3z" fill="currentColor"/>
+                  <path d="M1 14v2a5 5 0 0 1 5 5h2c0-3.87-3.13-7-7-7z" fill="currentColor"/>
+                  <path d="M1 10v2a9 9 0 0 1 9 9h2c0-6.08-4.93-11-11-11z" fill="currentColor"/>
+                  <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" fill="currentColor"/>
+                  ${isConnected ? '<circle cx="19" cy="19" r="3" fill="#22c55e" stroke="white" stroke-width="1"/>' : ''}
+                </svg>
+              </i>`;
+            })(),
+            tooltip: (() => {
+              if (castConnectedRef.current) {
+                return `📺 正在投屏到 ${castDeviceNameRef.current || '设备'}
+🔔 点击断开`;
+              } else if (castAvailableRef.current) {
+                return '📺 投屏到电视';
+              } else {
+                return '📺 投屏 (Chromecast)';
+              }
+            })(),
+            click: function () {
+              handleCastClick();
+            },
+          },
         ],
         // 弹幕插件 - 只保留原生蓝色设置与发弹幕 UI
         plugins: [
