@@ -2304,7 +2304,7 @@ function PlayPageClient() {
                   ref={danmuMetaWrapRef}
                   className='absolute top-3 right-3 z-40 flex items-end gap-2'
                 >
-                  <div className='flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg md:max-w-[360px]'>
+                  <div className='flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg md:max-w-90'>
                     <div className='min-w-0'>
                       <button
                         ref={danmuMetaToggleRef}
@@ -2421,7 +2421,7 @@ function PlayPageClient() {
                         <p className='flex items-start justify-between gap-3'>
                           <span className='pt-0.5 text-white/55'>来源</span>
                           <span
-                            className='max-w-[180px] truncate text-right text-white/90'
+                            className='max-w-45 truncate text-right text-white/90'
                             title={danmuSourceLabel}
                           >
                             {danmuSourceLabel}
