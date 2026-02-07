@@ -86,6 +86,7 @@ const CelebrityCard = memo(function CelebrityCard({
             src={avatarUrl}
             alt={celebrity.name}
             fill
+            unoptimized
             className='object-cover'
             referrerPolicy='no-referrer'
             onError={() => setImageError(true)}
