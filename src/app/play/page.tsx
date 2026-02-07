@@ -277,6 +277,7 @@ function PlayPageClient() {
   const {
     danmuList,
     loading: danmuLoading,
+    matchInfo,
     reload: reloadDanmu,
   } = useDanmu({
     doubanId: videoDoubanId || undefined,
@@ -284,6 +285,10 @@ function PlayPageClient() {
     year: videoYear,
     episode: currentEpisodeIndex + 1,
   });
+  const danmuCount = danmuList.length;
+  const isDanmuBusy = isDanmuReloading || danmuLoading;
+  const isDanmuEmpty = !danmuLoading && danmuCount === 0;
+  const shownEmptyDanmuHintRef = useRef('');
 
   const loadDanmuToPlayer = (list: DanmuItem[]) => {
     if (!artPlayerRef.current) return;
@@ -325,6 +330,24 @@ function PlayPageClient() {
       setIsDanmuReloading(false);
     }
   };
+
+  useEffect(() => {
+    if (danmuLoading) return;
+    if (!videoDoubanId && !videoTitle) return;
+
+    const scopeKey = `${videoDoubanId || videoTitle}_${videoYear || ''}_${currentEpisodeIndex + 1}`;
+    if (danmuCount === 0 && shownEmptyDanmuHintRef.current !== scopeKey) {
+      shownEmptyDanmuHintRef.current = scopeKey;
+      showToast('本集暂未加载到弹幕，可点击右上角刷新重试', 'info');
+    }
+  }, [
+    currentEpisodeIndex,
+    danmuCount,
+    danmuLoading,
+    videoDoubanId,
+    videoTitle,
+    videoYear,
+  ]);
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -2168,22 +2191,42 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                <div className='absolute top-3 right-3 z-40 flex items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg'>
-                  <span className='inline-flex items-center gap-1.5 text-xs font-medium text-white/90'>
-                    <span className='inline-block h-2 w-2 rounded-full bg-cyan-400' />
-                    {danmuLoading && danmuList.length === 0
-                      ? '弹幕加载中...'
-                      : `弹幕 ${danmuList.length} 条`}
-                  </span>
+                <div className='absolute top-3 right-3 z-40 flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg md:max-w-[360px]'>
+                  <div className='min-w-0'>
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                        isDanmuEmpty ? 'text-amber-200' : 'text-white/90'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          isDanmuEmpty
+                            ? 'bg-amber-300 animate-pulse'
+                            : 'bg-cyan-400'
+                        }`}
+                      />
+                      {danmuLoading && danmuCount === 0
+                        ? '弹幕加载中...'
+                        : `弹幕 ${danmuCount} 条`}
+                    </span>
+                    {!danmuLoading && matchInfo && (
+                      <p
+                        className='mt-0.5 truncate text-[11px] text-white/70'
+                        title={`匹配：${matchInfo.animeTitle} · ${matchInfo.episodeTitle}`}
+                      >
+                        匹配：{matchInfo.animeTitle} · {matchInfo.episodeTitle}
+                      </p>
+                    )}
+                  </div>
                   <button
                     type='button'
                     onClick={handleReloadDanmu}
-                    disabled={isDanmuReloading || danmuLoading}
+                    disabled={isDanmuBusy}
                     className='inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50'
                     title='刷新弹幕'
                     aria-label='刷新弹幕'
                   >
-                    {isDanmuReloading || danmuLoading ? (
+                    {isDanmuBusy ? (
                       <svg
                         className='h-4 w-4 animate-spin'
                         viewBox='0 0 24 24'
