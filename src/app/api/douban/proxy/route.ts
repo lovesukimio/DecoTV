@@ -19,10 +19,10 @@ const DOUBAN_WEB_BASE = 'https://movie.douban.com';
 // 第三方 CDN 代理服务（用于绕过豆瓣 IP 封禁）
 // 参考 LunaTV 项目：https://github.com/SzeMeng76/LunaTV
 // ============================================================================
-// 公开豆瓣 API 代理服务
+// 代理服务列表（按优先级排序）
 const DOUBAN_PROXY_URLS = [
-  'https://douban.uieee.com', // 主要代理（不被云平台封禁）
-  'https://frodo.douban.com/api/v2', // 原始 API（备用）
+  'https://frodo.douban.com/api/v2', // 原始 frodo API（可能被封，但最稳定）
+  'https://douban.uieee.com', // 公开代理服务
 ];
 
 // Chrome/Windows 真实 User-Agent (2024 更新版)
@@ -628,19 +628,20 @@ async function getDoubanDataWithFallback(
   try {
     return await _scrapeDoubanData(subjectId);
   } catch (error) {
-    console.error('[Douban Scraper] 爬虫失败，尝试 CDN 代理:', error);
+    console.error('[Douban Scraper] 爬虫失败，尝试移动端 API:', error);
 
-    // 尝试使用 CDN 代理服务获取数据
+    // 尝试使用移动端 API 获取数据（优先使用原始 API，因为代理服务可能也被封）
+    const frodoHeaders = {
+      'User-Agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
+      Referer:
+        'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
+    };
+
+    // 尝试每个代理 URL
     for (const proxyBase of DOUBAN_PROXY_URLS) {
       try {
         console.log(`[Douban Scraper] 尝试代理: ${proxyBase}`);
-
-        const frodoHeaders = {
-          'User-Agent':
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
-          Referer: 'https://movie.douban.com/',
-          // 对于 uieee 代理，不需要 apiKey
-        };
 
         // 构建 API URL - 根据代理类型调整
         const isUieee = proxyBase.includes('uieee.com');
@@ -654,22 +655,40 @@ async function getDoubanDataWithFallback(
           ? `${proxyBase}/v2/movie/subject/${subjectId}/comments?count=20`
           : `${proxyBase}/movie/${subjectId}/interests?start=0&count=20&order_by=hot&apiKey=${FRODO_API_KEY}`;
 
+        console.log(`[Douban Scraper] 请求 URL: ${detailUrl}`);
+
+        // 缩短超时时间，使得请求更快失败（Vercel 函数有 10-30s 超时限制）
+        const TIMEOUT_MS = 8000;
+
         // 并行获取：基本信息、推荐、短评
         const [detailRes, recommendsRes, commentsRes] =
           await Promise.allSettled([
             fetch(detailUrl, {
               headers: frodoHeaders,
-              signal: AbortSignal.timeout(15000),
+              signal: AbortSignal.timeout(TIMEOUT_MS),
             }),
             fetch(recommendsUrl, {
               headers: frodoHeaders,
-              signal: AbortSignal.timeout(15000),
+              signal: AbortSignal.timeout(TIMEOUT_MS),
             }),
             fetch(commentsUrl, {
               headers: frodoHeaders,
-              signal: AbortSignal.timeout(15000),
+              signal: AbortSignal.timeout(TIMEOUT_MS),
             }),
           ]);
+
+        // 检查详情请求状态
+        if (detailRes.status === 'rejected') {
+          console.error(`[Douban Scraper] 详情请求失败:`, detailRes.reason);
+          throw new Error(`详情请求失败: ${detailRes.reason}`);
+        }
+
+        if (!detailRes.value.ok) {
+          console.error(
+            `[Douban Scraper] 详情请求返回 ${detailRes.value.status}`,
+          );
+          throw new Error(`详情请求返回 ${detailRes.value.status}`);
+        }
 
         // 解析基本信息
         let data: Record<string, unknown> | null = null;
