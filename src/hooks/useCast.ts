@@ -44,11 +44,34 @@ export interface UseCastReturn {
 }
 
 /**
+ * 检测当前是否为 iOS 设备
+ * iOS 上所有浏览器都被强制使用 WebKit 引擎，无法支持 Cast SDK
+ */
+export function isIOSPlatform(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  // 检测 iOS 设备：iPhone、iPad、iPod
+  // 也检测在桌面模式下的 iPad（会显示为 Macintosh 但支持 touch）
+  const isIOS =
+    /iphone|ipad|ipod/.test(userAgent) ||
+    (userAgent.includes('macintosh') && 'ontouchend' in document);
+
+  return isIOS;
+}
+
+/**
  * 检测当前是否为 Chromium 内核浏览器
- * Cast SDK 仅在 Chrome/Edge 等 Chromium 浏览器中可用
+ * Cast SDK 仅在桌面版 Chrome/Edge 等 Chromium 浏览器中可用
+ * NOTE: iOS 上的 Chrome/Edge 使用 WebKit 引擎，不支持 Cast SDK
  */
 function isChromiumBrowser(): boolean {
   if (typeof window === 'undefined') return false;
+
+  // iOS 设备上的所有浏览器都使用 WebKit，不支持 Cast SDK
+  if (isIOSPlatform()) {
+    return false;
+  }
 
   // 检测 window.chrome 对象是否存在
   // Safari 和 Firefox 没有这个对象

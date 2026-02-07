@@ -25,7 +25,7 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { useCast } from '@/hooks/useCast';
+import { isIOSPlatform, useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
 import { useDoubanInfo } from '@/hooks/useDoubanInfo';
 
@@ -359,6 +359,20 @@ function PlayPageClient() {
   const handleCastClick = async () => {
     // 检测浏览器是否支持 Cast
     if (!castAvailableRef.current) {
+      // 检测是否为 iOS 设备
+      if (isIOSPlatform()) {
+        // iOS 设备上的所有浏览器都使用 WebKit 引擎，无法支持投屏
+        if (artPlayerRef.current) {
+          artPlayerRef.current.notice.show =
+            '📱 iOS 设备不支持 Chromecast 投屏';
+        }
+        showToast(
+          'iOS 设备不支持 Chromecast 投屏，请使用电脑端 Chrome/Edge 浏览器',
+          'info',
+        );
+        return;
+      }
+
       // 检测是否为 Chromium 浏览器
       const isChrome =
         typeof window !== 'undefined' &&
@@ -371,7 +385,7 @@ function PlayPageClient() {
           artPlayerRef.current.notice.show =
             '📱 请使用 Chrome 或 Edge 浏览器投屏';
         }
-        showToast('投屏功能仅支持 Chrome/Edge 浏览器', 'info');
+        showToast('投屏功能仅支持电脑端 Chrome/Edge 浏览器', 'info');
       } else {
         // Chromium 浏览器但未检测到设备
         if (artPlayerRef.current) {
