@@ -89,7 +89,7 @@ const STORAGE_KEYS = {
 } as const;
 
 const DEFAULT_SETTINGS: DanmuSettings = {
-  enabled: false,
+  enabled: true,
   fontSize: 25,
   speed: 5,
   opacity: 1,
@@ -113,7 +113,7 @@ function loadSettingsFromStorage(): DanmuSettings {
 
   try {
     return {
-      enabled: localStorage.getItem(STORAGE_KEYS.enabled) === 'true',
+      enabled: true,
       fontSize: parseInt(
         localStorage.getItem(STORAGE_KEYS.fontSize) || '25',
         10,
@@ -205,140 +205,138 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   }, [doubanId, title, year, episode]);
 
   // 加载弹幕
-  const fetchDanmu = useCallback(async () => {
-    if (!settings.enabled) {
-      setDanmuList([]);
-      return;
-    }
+  const fetchDanmu = useCallback(
+    async (options?: { force?: boolean }) => {
+      const force = options?.force === true;
+      const cacheKey = getCacheKey();
+      if (!cacheKey) {
+        setDanmuList([]);
+        return;
+      }
 
-    const cacheKey = getCacheKey();
-    if (!cacheKey) {
-      setDanmuList([]);
-      return;
-    }
+      // 防止重复请求同一资源
+      if (
+        !force &&
+        cacheKey === lastFetchKeyRef.current &&
+        danmuList.length > 0
+      ) {
+        return;
+      }
 
-    // 防止重复请求同一资源
-    if (cacheKey === lastFetchKeyRef.current && danmuList.length > 0) {
-      return;
-    }
-
-    // 尝试从缓存读取
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        const parsedCache = JSON.parse(cached);
-        if (
-          parsedCache.timestamp &&
-          Date.now() - parsedCache.timestamp < 2 * 3600 * 1000
-        ) {
-          setDanmuList(parsedCache.data);
-          if (parsedCache.match) {
-            setMatchInfo(parsedCache.match as DanmuMatchInfo);
+      // 尝试从缓存读取
+      if (!force) {
+        try {
+          const cached = sessionStorage.getItem(cacheKey);
+          if (cached) {
+            const parsedCache = JSON.parse(cached);
+            if (
+              parsedCache.timestamp &&
+              Date.now() - parsedCache.timestamp < 2 * 3600 * 1000
+            ) {
+              setDanmuList(parsedCache.data);
+              if (parsedCache.match) {
+                setMatchInfo(parsedCache.match as DanmuMatchInfo);
+              }
+              lastFetchKeyRef.current = cacheKey;
+              console.log(
+                '[useDanmu] Cache hit:',
+                parsedCache.data.length,
+                'danmu',
+              );
+              return;
+            }
           }
-          lastFetchKeyRef.current = cacheKey;
-          console.log(
-            '[useDanmu] Cache hit:',
-            parsedCache.data.length,
-            'danmu',
-          );
-          return;
+        } catch {
+          // 缓存读取失败，继续请求
         }
       }
-    } catch {
-      // 缓存读取失败，继续请求
-    }
 
-    setLoading(true);
-    setError(null);
+      setLoading(true);
+      setError(null);
 
-    try {
-      const queryParams = new URLSearchParams();
-      if (doubanId) {
-        queryParams.set('douban_id', String(doubanId));
-      }
-      if (title) {
-        queryParams.set('title', title);
-      }
-      if (year) {
-        queryParams.set('year', year);
-      }
-      if (episode) {
-        queryParams.set('episode', String(episode));
-      }
+      try {
+        const queryParams = new URLSearchParams();
+        if (doubanId) {
+          queryParams.set('douban_id', String(doubanId));
+        }
+        if (title) {
+          queryParams.set('title', title);
+        }
+        if (year) {
+          queryParams.set('year', year);
+        }
+        if (episode) {
+          queryParams.set('episode', String(episode));
+        }
+        if (force) {
+          queryParams.set('force', '1');
+        }
 
-      const response = await fetch(
-        `/api/danmu-external?${queryParams.toString()}`,
-      );
+        const response = await fetch(
+          `/api/danmu-external?${queryParams.toString()}`,
+          {
+            cache: force ? 'no-store' : 'default',
+          },
+        );
 
-      if (!response.ok) {
-        throw new Error(`获取弹幕失败: ${response.status}`);
-      }
+        if (!response.ok) {
+          throw new Error(`获取弹幕失败: ${response.status}`);
+        }
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (data.code === 200 && Array.isArray(data.danmus)) {
-        const danmus: DanmuItem[] = data.danmus;
-        setDanmuList(danmus);
-        lastFetchKeyRef.current = cacheKey;
+        if (data.code === 200 && Array.isArray(data.danmus)) {
+          const danmus: DanmuItem[] = data.danmus;
+          setDanmuList(danmus);
+          lastFetchKeyRef.current = cacheKey;
 
-        // 保存匹配信息
-        if (data.match) {
-          setMatchInfo(data.match as DanmuMatchInfo);
+          // 保存匹配信息
+          if (data.match) {
+            setMatchInfo(data.match as DanmuMatchInfo);
+          } else {
+            setMatchInfo(null);
+          }
+
+          // 缓存到 sessionStorage（含匹配信息）
+          try {
+            sessionStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                data: danmus,
+                match: data.match || null,
+                timestamp: Date.now(),
+              }),
+            );
+          } catch {
+            // 缓存失败，忽略
+          }
+
+          console.log(
+            '[useDanmu] Fetched:',
+            danmus.length,
+            'danmu',
+            data.match
+              ? `→ ${data.match.animeTitle} [${data.match.episodeTitle}]`
+              : '',
+          );
         } else {
+          setDanmuList([]);
           setMatchInfo(null);
         }
-
-        // 缓存到 sessionStorage（含匹配信息）
-        try {
-          sessionStorage.setItem(
-            cacheKey,
-            JSON.stringify({
-              data: danmus,
-              match: data.match || null,
-              timestamp: Date.now(),
-            }),
-          );
-        } catch {
-          // 缓存失败，忽略
-        }
-
-        console.log(
-          '[useDanmu] Fetched:',
-          danmus.length,
-          'danmu',
-          data.match
-            ? `→ ${data.match.animeTitle} [${data.match.episodeTitle}]`
-            : '',
-        );
-      } else {
+      } catch (err) {
+        console.error('[useDanmu] Fetch error:', err);
+        setError(err instanceof Error ? err : new Error('加载弹幕失败'));
         setDanmuList([]);
         setMatchInfo(null);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('[useDanmu] Fetch error:', err);
-      setError(err instanceof Error ? err : new Error('加载弹幕失败'));
-      setDanmuList([]);
-      setMatchInfo(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    settings.enabled,
-    doubanId,
-    title,
-    year,
-    episode,
-    getCacheKey,
-    danmuList.length,
-  ]);
+    },
+    [doubanId, title, year, episode, getCacheKey, danmuList.length],
+  );
 
   // 监听参数变化，带防抖加载弹幕
   useEffect(() => {
-    if (!settings.enabled) {
-      setDanmuList([]);
-      return;
-    }
-
     // 清除之前的防抖
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -355,7 +353,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.enabled, doubanId, title, year, episode]);
+  }, [doubanId, title, year, episode]);
 
   // 更新设置
   const updateSettings = useCallback((newSettings: Partial<DanmuSettings>) => {
@@ -386,7 +384,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         // ignore
       }
     }
-    await fetchDanmu();
+    await fetchDanmu({ force: true });
   }, [fetchDanmu, getCacheKey]);
 
   // 清空弹幕

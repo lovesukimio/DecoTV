@@ -399,6 +399,22 @@ function resolveEpisodeId(
  * p 格式: "时间,模式,颜色,用户ID" 如 "12.345,1,16777215,uid123"
  * 模式: 1-普通滚动, 4-底部, 5-顶部
  */
+function normalizeDanmuMode(mode: number): 0 | 1 | 2 {
+  switch (mode) {
+    case 4:
+      return 2; // 底部
+    case 5:
+      return 1; // 顶部
+    // 与 bilibili/xml 兼容：2/3/6 归并为滚动
+    case 1:
+    case 2:
+    case 3:
+    case 6:
+    default:
+      return 0; // 滚动
+  }
+}
+
 function parseDandanComment(
   p: string,
   m: string,
@@ -409,27 +425,14 @@ function parseDandanComment(
     const time = parseFloat(parts[0]) + shift;
     const mode = parseInt(parts[1], 10);
     const colorNum = parseInt(parts[2], 10);
+    const text = typeof m === 'string' ? m.trim() : '';
 
-    if (isNaN(time) || time < 0) return null;
+    if (isNaN(time) || time < 0 || !text) return null;
 
     // 转换颜色为十六进制
     const color = '#' + (colorNum >>> 0).toString(16).padStart(6, '0');
 
-    // 转换模式: 弹弹play 1->滚动, 4->底部, 5->顶部
-    // ArtPlayer: 0-滚动, 1-顶部, 2-底部
-    let artMode: 0 | 1 | 2;
-    switch (mode) {
-      case 4:
-        artMode = 2; // 底部
-        break;
-      case 5:
-        artMode = 1; // 顶部
-        break;
-      default:
-        artMode = 0; // 滚动
-    }
-
-    return { time, text: m, color, mode: artMode };
+    return { time, text, color, mode: normalizeDanmuMode(mode) };
   } catch {
     return null;
   }
@@ -600,6 +603,7 @@ async function fetchDanmu(
   title: string,
   episode: number,
   year?: string,
+  forceRefresh: boolean = false,
 ): Promise<DanmuResult> {
   const emptyResult: DanmuResult = { danmus: [], matchInfo: null };
 
@@ -621,7 +625,9 @@ async function fetchDanmu(
 
     // 第二步: 检查弹幕数据缓存
     const danmuCacheKey = `danmu:${matched.episodeId}`;
-    const cachedDanmu = getCacheValid(danmuCache, danmuCacheKey);
+    const cachedDanmu = forceRefresh
+      ? null
+      : getCacheValid(danmuCache, danmuCacheKey);
     if (cachedDanmu) {
       console.log(
         `[danmu] Danmu cache hit: ep ${matched.episodeId}, ${cachedDanmu.length} items`,
@@ -706,6 +712,7 @@ export async function GET(request: Request) {
   const title = searchParams.get('title');
   const episodeStr = searchParams.get('episode');
   const year = searchParams.get('year') || undefined;
+  const forceRefresh = searchParams.get('force') === '1';
   const episode = episodeStr ? parseInt(episodeStr, 10) : 1;
 
   if (!title) {
@@ -731,13 +738,29 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await fetchDanmu(appId, appSecret, title, episode, year);
+    const result = await fetchDanmu(
+      appId,
+      appSecret,
+      title,
+      episode,
+      year,
+      forceRefresh,
+    );
 
     // 去重 + 排序
     let finalDanmus = deduplicateDanmu(result.danmus);
     finalDanmus.sort((a, b) => a.time - b.time);
 
     const cacheTime = await getCacheTime();
+    const headers = forceRefresh
+      ? {
+          'Cache-Control': 'no-store, max-age=0',
+          'CDN-Cache-Control': 'no-store',
+        }
+      : {
+          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+        };
 
     return NextResponse.json(
       {
@@ -748,12 +771,7 @@ export async function GET(request: Request) {
         source: 'dandanplay',
         match: result.matchInfo,
       },
-      {
-        headers: {
-          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        },
-      },
+      { headers },
     );
   } catch (err) {
     console.error('[danmu] API error:', err);
