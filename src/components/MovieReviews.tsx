@@ -91,6 +91,7 @@ const CommentCard = memo(function CommentCard({
               src={comment.author.avatar}
               alt={comment.author.name}
               fill
+              unoptimized
               className='object-cover'
               referrerPolicy='no-referrer'
               onError={() => setAvatarError(true)}

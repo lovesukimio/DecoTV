@@ -52,6 +52,7 @@ const RecommendCard = memo(function RecommendCard({
             src={item.poster}
             alt={item.title}
             fill
+            unoptimized
             className='object-cover'
             referrerPolicy='no-referrer'
             onError={() => setImageError(true)}
