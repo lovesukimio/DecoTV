@@ -3,79 +3,42 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/** 弹幕数据项 */
 export interface DanmuItem {
-  /** 弹幕出现时间（秒） */
   time: number;
-  /** 弹幕文本内容 */
   text: string;
-  /** 弹幕颜色（十六进制） */
   color?: string;
-  /** 弹幕模式：0-滚动，1-顶部，2-底部 */
   mode?: 0 | 1 | 2;
-  /** 边框颜色 */
   border?: boolean;
 }
 
-/** 弹幕设置配置 */
 export interface DanmuSettings {
-  /** 是否启用外部弹幕 */
   enabled: boolean;
-  /** 字体大小 (12-48) */
   fontSize: number;
-  /** 滚动速度 (1-10) */
   speed: number;
-  /** 透明度 (0-1) */
   opacity: number;
-  /** 弹幕区域占比 (0-1) */
-  margin: [number, number]; // [top, bottom]
-  /** 启用的弹幕模式 */
-  modes: number[]; // [0, 1, 2] 对应 滚动/顶部/底部
-  /** 防重叠 */
+  margin: [number, number];
+  modes: number[];
   antiOverlap: boolean;
-  /** 是否显示弹幕 */
   visible: boolean;
 }
 
-/** 弹幕匹配信息（由服务端返回） */
 export interface DanmuMatchInfo {
-  /** 匹配到的番剧标题 */
   animeTitle: string;
-  /** 匹配到的剧集标题 */
   episodeTitle: string;
-  /** 弹弹play episodeId */
   episodeId: number;
-  /** 匹配方式描述 */
   matchLevel: string;
 }
 
-/** useDanmu Hook 返回类型 */
 export interface UseDanmuResult {
-  /** 弹幕数据 */
   danmuList: DanmuItem[];
-  /** 是否正在加载 */
   loading: boolean;
-  /** 错误信息 */
   error: Error | null;
-  /** 弹幕设置 */
   settings: DanmuSettings;
-  /** 匹配信息（命中了哪个番剧的哪一集） */
   matchInfo: DanmuMatchInfo | null;
-  /** 更新设置 */
   updateSettings: (newSettings: Partial<DanmuSettings>) => void;
-  /** 重新加载弹幕 */
-  reload: () => Promise<void>;
-  /** 清空弹幕 */
+  reload: () => Promise<number>;
   clear: () => void;
 }
-
-// ============================================================================
-// Constants
-// ============================================================================
 
 const STORAGE_KEYS = {
   enabled: 'enable_external_danmu',
@@ -99,13 +62,6 @@ const DEFAULT_SETTINGS: DanmuSettings = {
   visible: true,
 };
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * 从 localStorage 读取设置
- */
 function loadSettingsFromStorage(): DanmuSettings {
   if (typeof window === 'undefined') {
     return DEFAULT_SETTINGS;
@@ -132,9 +88,6 @@ function loadSettingsFromStorage(): DanmuSettings {
   }
 }
 
-/**
- * 保存设置到 localStorage
- */
 function saveSettingsToStorage(settings: DanmuSettings): void {
   if (typeof window === 'undefined') return;
 
@@ -155,45 +108,29 @@ function saveSettingsToStorage(settings: DanmuSettings): void {
   }
 }
 
-// ============================================================================
-// Hook
-// ============================================================================
-
 interface UseDanmuParams {
-  /** 豆瓣 ID */
   doubanId?: number | string | null;
-  /** 影片标题 */
   title?: string;
-  /** 年份 */
   year?: string;
-  /** 集数（从 1 开始） */
   episode?: number;
 }
 
-/**
- * 弹幕 Hook
- * 负责外部弹幕的加载、缓存、设置管理
- */
 export function useDanmu(params: UseDanmuParams): UseDanmuResult {
   const { doubanId, title, year, episode } = params;
 
-  // 状态
   const [danmuList, setDanmuList] = useState<DanmuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [settings, setSettings] = useState<DanmuSettings>(DEFAULT_SETTINGS);
   const [matchInfo, setMatchInfo] = useState<DanmuMatchInfo | null>(null);
 
-  // 防抖 ref
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchKeyRef = useRef<string>('');
 
-  // 初始化设置
   useEffect(() => {
     setSettings(loadSettingsFromStorage());
   }, []);
 
-  // 生成缓存 key
   const getCacheKey = useCallback(() => {
     if (doubanId) {
       return `danmu_${doubanId}_${episode || 1}`;
@@ -204,26 +141,25 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     return '';
   }, [doubanId, title, year, episode]);
 
-  // 加载弹幕
   const fetchDanmu = useCallback(
-    async (options?: { force?: boolean }) => {
+    async (options?: { force?: boolean }): Promise<number> => {
       const force = options?.force === true;
       const cacheKey = getCacheKey();
+
       if (!cacheKey) {
         setDanmuList([]);
-        return;
+        setMatchInfo(null);
+        return 0;
       }
 
-      // 防止重复请求同一资源
       if (
         !force &&
         cacheKey === lastFetchKeyRef.current &&
         danmuList.length > 0
       ) {
-        return;
+        return danmuList.length;
       }
 
-      // 尝试从缓存读取
       if (!force) {
         try {
           const cached = sessionStorage.getItem(cacheKey);
@@ -234,20 +170,22 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
               Date.now() - parsedCache.timestamp < 2 * 3600 * 1000
             ) {
               setDanmuList(parsedCache.data);
-              if (parsedCache.match) {
-                setMatchInfo(parsedCache.match as DanmuMatchInfo);
-              }
+              setMatchInfo(
+                (parsedCache.match || null) as DanmuMatchInfo | null,
+              );
               lastFetchKeyRef.current = cacheKey;
               console.log(
                 '[useDanmu] Cache hit:',
                 parsedCache.data.length,
                 'danmu',
               );
-              return;
+              return Array.isArray(parsedCache.data)
+                ? parsedCache.data.length
+                : 0;
             }
           }
         } catch {
-          // 缓存读取失败，继续请求
+          // ignore cache parse error
         }
       }
 
@@ -256,21 +194,11 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
 
       try {
         const queryParams = new URLSearchParams();
-        if (doubanId) {
-          queryParams.set('douban_id', String(doubanId));
-        }
-        if (title) {
-          queryParams.set('title', title);
-        }
-        if (year) {
-          queryParams.set('year', year);
-        }
-        if (episode) {
-          queryParams.set('episode', String(episode));
-        }
-        if (force) {
-          queryParams.set('force', '1');
-        }
+        if (doubanId) queryParams.set('douban_id', String(doubanId));
+        if (title) queryParams.set('title', title);
+        if (year) queryParams.set('year', year);
+        if (episode) queryParams.set('episode', String(episode));
+        if (force) queryParams.set('force', '1');
 
         const response = await fetch(
           `/api/danmu-external?${queryParams.toString()}`,
@@ -284,20 +212,12 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         }
 
         const data = await response.json();
-
         if (data.code === 200 && Array.isArray(data.danmus)) {
           const danmus: DanmuItem[] = data.danmus;
           setDanmuList(danmus);
           lastFetchKeyRef.current = cacheKey;
+          setMatchInfo((data.match || null) as DanmuMatchInfo | null);
 
-          // 保存匹配信息
-          if (data.match) {
-            setMatchInfo(data.match as DanmuMatchInfo);
-          } else {
-            setMatchInfo(null);
-          }
-
-          // 缓存到 sessionStorage（含匹配信息）
           try {
             sessionStorage.setItem(
               cacheKey,
@@ -308,7 +228,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
               }),
             );
           } catch {
-            // 缓存失败，忽略
+            // ignore cache write error
           }
 
           console.log(
@@ -316,18 +236,21 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
             danmus.length,
             'danmu',
             data.match
-              ? `→ ${data.match.animeTitle} [${data.match.episodeTitle}]`
+              ? `-> ${data.match.animeTitle} [${data.match.episodeTitle}]`
               : '',
           );
-        } else {
-          setDanmuList([]);
-          setMatchInfo(null);
+          return danmus.length;
         }
+
+        setDanmuList([]);
+        setMatchInfo(null);
+        return 0;
       } catch (err) {
         console.error('[useDanmu] Fetch error:', err);
         setError(err instanceof Error ? err : new Error('加载弹幕失败'));
         setDanmuList([]);
         setMatchInfo(null);
+        return 0;
       } finally {
         setLoading(false);
       }
@@ -335,14 +258,11 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     [doubanId, title, year, episode, getCacheKey, danmuList.length],
   );
 
-  // 监听参数变化，带防抖加载弹幕
   useEffect(() => {
-    // 清除之前的防抖
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
 
-    // 300ms 防抖
     debounceRef.current = setTimeout(() => {
       fetchDanmu();
     }, 300);
@@ -355,7 +275,6 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doubanId, title, year, episode]);
 
-  // 更新设置
   const updateSettings = useCallback((newSettings: Partial<DanmuSettings>) => {
     setSettings((prev) => {
       const hasChanges = Object.entries(newSettings).some(([key, value]) => {
@@ -363,9 +282,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         return !Object.is(prev[settingKey], value);
       });
 
-      if (!hasChanges) {
-        return prev;
-      }
+      if (!hasChanges) return prev;
 
       const updated = { ...prev, ...newSettings };
       saveSettingsToStorage(updated);
@@ -373,9 +290,8 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     });
   }, []);
 
-  // 重新加载
   const reload = useCallback(async () => {
-    lastFetchKeyRef.current = ''; // 清除缓存 key，强制重新请求
+    lastFetchKeyRef.current = '';
     const cacheKey = getCacheKey();
     if (cacheKey) {
       try {
@@ -384,10 +300,9 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         // ignore
       }
     }
-    await fetchDanmu({ force: true });
+    return fetchDanmu({ force: true });
   }, [fetchDanmu, getCacheKey]);
 
-  // 清空弹幕
   const clear = useCallback(() => {
     setDanmuList([]);
     setMatchInfo(null);

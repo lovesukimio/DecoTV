@@ -236,6 +236,7 @@ function PlayPageClient() {
 
   // 弹幕刷新状态
   const isDanmuReloadingRef = useRef(false);
+  const [isDanmuReloading, setIsDanmuReloading] = useState(false);
 
   // Toast 通知状态
   const [toast, setToast] = useState<{
@@ -273,7 +274,11 @@ function PlayPageClient() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   // 弹幕 Hook
-  const { danmuList, reload: reloadDanmu } = useDanmu({
+  const {
+    danmuList,
+    loading: danmuLoading,
+    reload: reloadDanmu,
+  } = useDanmu({
     doubanId: videoDoubanId || undefined,
     title: videoTitle,
     year: videoYear,
@@ -304,14 +309,20 @@ function PlayPageClient() {
     if (isDanmuReloadingRef.current) return;
 
     isDanmuReloadingRef.current = true;
+    setIsDanmuReloading(true);
     try {
-      await reloadDanmu();
-      showToast('弹幕已刷新', 'success');
+      const count = await reloadDanmu();
+      if (count > 0) {
+        showToast(`弹幕已刷新，共 ${count} 条`, 'success');
+      } else {
+        showToast('当前影片暂无弹幕（0 条）', 'info');
+      }
     } catch (err) {
       console.error('[Danmu] Reload failed:', err);
       showToast('刷新弹幕失败', 'error');
     } finally {
       isDanmuReloadingRef.current = false;
+      setIsDanmuReloading(false);
     }
   };
 
@@ -1640,16 +1651,6 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
-          // 弹幕刷新按钮
-          {
-            position: 'right',
-            index: 10,
-            html: `<i class="art-icon flex" style="padding: 0 5px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 11a8 8 0 1 0 2.3 5.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M20 4v7h-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></i>`,
-            tooltip: '刷新弹幕',
-            click: function () {
-              handleReloadDanmu();
-            },
-          },
         ],
         // 弹幕插件 - 只保留原生蓝色设置与发弹幕 UI
         plugins: [
@@ -2166,6 +2167,68 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
+
+                <div className='absolute top-3 right-3 z-40 flex items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg'>
+                  <span className='inline-flex items-center gap-1.5 text-xs font-medium text-white/90'>
+                    <span className='inline-block h-2 w-2 rounded-full bg-cyan-400' />
+                    {danmuLoading && danmuList.length === 0
+                      ? '弹幕加载中...'
+                      : `弹幕 ${danmuList.length} 条`}
+                  </span>
+                  <button
+                    type='button'
+                    onClick={handleReloadDanmu}
+                    disabled={isDanmuReloading || danmuLoading}
+                    className='inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50'
+                    title='刷新弹幕'
+                    aria-label='刷新弹幕'
+                  >
+                    {isDanmuReloading || danmuLoading ? (
+                      <svg
+                        className='h-4 w-4 animate-spin'
+                        viewBox='0 0 24 24'
+                        fill='none'
+                        xmlns='http://www.w3.org/2000/svg'
+                      >
+                        <circle
+                          cx='12'
+                          cy='12'
+                          r='9'
+                          stroke='currentColor'
+                          strokeWidth='2'
+                          strokeOpacity='0.35'
+                        />
+                        <path
+                          d='M21 12a9 9 0 0 0-9-9'
+                          stroke='currentColor'
+                          strokeWidth='2'
+                          strokeLinecap='round'
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className='h-4 w-4'
+                        viewBox='0 0 24 24'
+                        fill='none'
+                        xmlns='http://www.w3.org/2000/svg'
+                      >
+                        <path
+                          d='M20 11a8 8 0 1 0 2.3 5.7'
+                          stroke='currentColor'
+                          strokeWidth='2'
+                          strokeLinecap='round'
+                        />
+                        <path
+                          d='M20 4v7h-7'
+                          stroke='currentColor'
+                          strokeWidth='2'
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
 
                 {/* 换源加载提示 - 使用播放器自带的加载动画 */}
                 {isVideoLoading && (
