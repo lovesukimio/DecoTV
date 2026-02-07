@@ -8,10 +8,13 @@ export const runtime = 'nodejs';
 // API Keys (备用，主要使用爬虫)
 const API_KEY_A = '0ab215a8b1977939201640fa14c66bab';
 const API_KEY_B = '0df993c66c0c636e29ecbb5344252a4a';
+// 豆瓣移动端 API (小程序/App 使用的接口，更稳定)
+const FRODO_API_KEY = '0ac44ae016490db2204ce0a042db2916';
 
 // URL 常量
 const DOUBAN_API_BASE = 'https://api.douban.com/v2';
 const DOUBAN_WEB_BASE = 'https://movie.douban.com';
+const FRODO_API_BASE = 'https://frodo.douban.com/api/v2';
 
 // Chrome/Windows 真实 User-Agent (2024 更新版)
 // NOTE: 增强伪装以应对豆瓣反爬机制
@@ -548,11 +551,135 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
  * - 第一次访问会触发爬虫
  * - 后续请求直接读取缓存
  * - 24小时后自动重新验证
+ * - 出错时返回空数据而非抛出错误
  */
-const scrapeDoubanData = unstable_cache(_scrapeDoubanData, ['douban-scraper'], {
-  revalidate: 86400, // 24小时缓存
-  tags: ['douban'],
-});
+async function getDoubanDataWithFallback(
+  subjectId: string,
+): Promise<ScrapedFullData> {
+  try {
+    return await _scrapeDoubanData(subjectId);
+  } catch (error) {
+    console.error('[Douban Scraper] 爬虫失败，尝试移动端 API:', error);
+
+    // 尝试使用移动端 API 获取基本信息
+    try {
+      const apiUrl = `${FRODO_API_BASE}/movie/${subjectId}?apiKey=${FRODO_API_KEY}`;
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
+          Referer:
+            'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[Douban Scraper] 移动端 API 成功获取数据');
+
+        // 转换 API 数据格式为 ScrapedFullData
+        return {
+          id: subjectId,
+          title: data.title || '',
+          original_title: data.original_title || '',
+          year: data.year || '',
+          rating: data.rating
+            ? {
+                max: 10,
+                average: data.rating.value || 0,
+                stars: '',
+                min: 0,
+              }
+            : null,
+          ratings_count: data.rating?.count || 0,
+          genres: data.genres || [],
+          countries: data.countries || [],
+          durations: data.durations || [],
+          summary: data.intro || '',
+          images: {
+            small: data.pic?.normal || '',
+            medium: data.pic?.large || data.pic?.normal || '',
+            large: data.pic?.large || '',
+          },
+          directors: (data.directors || []).map(
+            (d: {
+              id?: string;
+              name?: string;
+              avatar?: { normal?: string };
+            }) => ({
+              id: d.id || '',
+              name: d.name || '',
+              alt: `https://movie.douban.com/celebrity/${d.id}/`,
+              avatars: d.avatar?.normal
+                ? {
+                    small: d.avatar.normal,
+                    medium: d.avatar.normal,
+                    large: d.avatar.normal,
+                  }
+                : undefined,
+              roles: ['导演'],
+            }),
+          ),
+          casts: (data.actors || []).map(
+            (a: {
+              id?: string;
+              name?: string;
+              avatar?: { normal?: string };
+            }) => ({
+              id: a.id || '',
+              name: a.name || '',
+              alt: `https://movie.douban.com/celebrity/${a.id}/`,
+              avatars: a.avatar?.normal
+                ? {
+                    small: a.avatar.normal,
+                    medium: a.avatar.normal,
+                    large: a.avatar.normal,
+                  }
+                : undefined,
+              roles: ['演员'],
+            }),
+          ),
+          recommendations: [],
+          hotComments: [],
+          scrapedAt: Date.now(),
+        };
+      }
+    } catch (apiError) {
+      console.error('[Douban Scraper] 移动端 API 也失败:', apiError);
+    }
+
+    // 所有方法都失败，返回空数据结构
+    console.warn('[Douban Scraper] 所有方法都失败，返回空数据');
+    return {
+      id: subjectId,
+      title: '',
+      original_title: '',
+      year: '',
+      rating: null,
+      ratings_count: 0,
+      genres: [],
+      countries: [],
+      durations: [],
+      summary: '',
+      images: { small: '', medium: '', large: '' },
+      directors: [],
+      casts: [],
+      recommendations: [],
+      hotComments: [],
+      scrapedAt: Date.now(),
+    };
+  }
+}
+
+const scrapeDoubanData = unstable_cache(
+  getDoubanDataWithFallback,
+  ['douban-scraper'],
+  {
+    revalidate: 86400, // 24小时缓存
+    tags: ['douban'],
+  },
+);
 
 // ============================================================================
 // 独立数据抓取 (带缓存)
