@@ -66,22 +66,33 @@ interface ScrapedCelebrity {
   avatars: { small: string; medium: string; large: string };
 }
 
+/** 前端期望的名人格式 */
+interface FormattedCelebrity {
+  id: string;
+  name: string;
+  alt: string;
+  avatars?: { small: string; medium: string; large: string };
+  roles: string[];
+}
+
 interface ScrapedFullData {
   // 基础信息
+  id: string;
   title: string;
   original_title: string;
   year: string;
-  rating: { average: number; stars: string; count: number } | null;
+  rating: { max: number; average: number; stars: string; min: number } | null;
+  ratings_count: number;
   genres: string[];
   countries: string[];
   durations: string[];
   summary: string;
-  poster: string;
-  // 富媒体数据
+  images: { small: string; medium: string; large: string };
+  // 富媒体数据（前端期望格式）
   recommendations: ScrapedRecommendation[];
   hotComments: ScrapedComment[];
-  directors: ScrapedCelebrity[];
-  actors: ScrapedCelebrity[];
+  directors: FormattedCelebrity[];
+  casts: FormattedCelebrity[];
   // 元数据
   scrapedAt: number;
 }
@@ -361,23 +372,69 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
   const elapsed = Date.now() - startTime;
   console.log(`[Douban Scraper] 完成: ${subjectId} (${elapsed}ms)`);
 
+  // 转换为前端组件期望的格式
+  // actors -> casts (添加 avatars 和 roles 字段)
+  // directors 添加 roles 字段
+  // hotComments 包含在返回中供评论接口使用
+  const formattedDirectors = directors.map((d) => ({
+    id: d.id,
+    name: d.name,
+    alt: d.alt,
+    avatars: d.avatars.small
+      ? {
+          small: d.avatars.small,
+          medium: d.avatars.medium,
+          large: d.avatars.large,
+        }
+      : undefined,
+    roles: [d.role || '导演'],
+  }));
+
+  const formattedCasts = actors.map((a) => ({
+    id: a.id,
+    name: a.name,
+    alt: a.alt,
+    avatars: a.avatars.small
+      ? {
+          small: a.avatars.small,
+          medium: a.avatars.medium,
+          large: a.avatars.large,
+        }
+      : undefined,
+    roles: a.role ? [a.role] : ['演员'],
+  }));
+
   return {
+    id: subjectId,
     title,
     original_title: originalTitle,
     year,
     rating:
       ratingAvg > 0
-        ? { average: ratingAvg, stars: ratingStars, count: ratingCount }
+        ? {
+            max: 10,
+            average: ratingAvg,
+            stars: ratingStars,
+            min: 0,
+          }
         : null,
+    ratings_count: ratingCount,
     genres,
     countries,
     durations,
     summary,
-    poster,
+    images: {
+      small: poster,
+      medium: poster.replace('/s_ratio/', '/m_ratio/'),
+      large: poster.replace('/s_ratio/', '/l_ratio/'),
+    },
+    // 前端组件期望的字段名
+    directors: formattedDirectors,
+    casts: formattedCasts,
+    // 推荐影片
     recommendations,
+    // 热门短评（供单独的评论接口使用）
     hotComments,
-    directors,
-    actors,
     scrapedAt: Date.now(),
   };
 }
@@ -488,9 +545,12 @@ const scrapeRecommendations = unstable_cache(
 const scrapeCelebrities = unstable_cache(
   async (
     subjectId: string,
-  ): Promise<{ directors: ScrapedCelebrity[]; actors: ScrapedCelebrity[] }> => {
+  ): Promise<{
+    directors: FormattedCelebrity[];
+    casts: FormattedCelebrity[];
+  }> => {
     const data = await scrapeDoubanData(subjectId);
-    return { directors: data.directors, actors: data.actors };
+    return { directors: data.directors, casts: data.casts };
   },
   ['douban-celebrities'],
   { revalidate: 86400, tags: ['douban'] },
