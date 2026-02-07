@@ -2736,7 +2736,11 @@ function PlayPageClient() {
         </div>
 
         {/* 豆瓣富媒体信息区域 */}
-        <DoubanInfoSection doubanId={videoDoubanId} />
+        <DoubanInfoSection
+          doubanId={videoDoubanId}
+          title={videoTitle}
+          year={videoYear}
+        />
       </div>
 
       {/* 跳过片头片尾设置面板 */}
@@ -2763,7 +2767,81 @@ function PlayPageClient() {
 }
 
 // 豆瓣富媒体信息区域组件
-const DoubanInfoSection = ({ doubanId }: { doubanId: number }) => {
+const DoubanInfoSection = ({
+  doubanId: initialDoubanId,
+  title,
+  year,
+}: {
+  doubanId: number;
+  title: string;
+  year: string;
+}) => {
+  const [resolvedDoubanId, setResolvedDoubanId] = useState(initialDoubanId);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // 当 doubanId 为 0 时，通过标题搜索豆瓣获取 ID
+  useEffect(() => {
+    // 如果已有有效的 doubanId 或者没有标题，不需要搜索
+    if (initialDoubanId > 0 || !title) {
+      setResolvedDoubanId(initialDoubanId);
+      return;
+    }
+
+    const searchDoubanId = async () => {
+      setIsSearching(true);
+      try {
+        // 通过豆瓣搜索 API 查找影片
+        const searchQuery = encodeURIComponent(title);
+        const response = await fetch(
+          `/api/douban/proxy?path=movie/search&q=${searchQuery}&count=5`,
+        );
+
+        if (!response.ok) {
+          console.warn('[DoubanInfoSection] 豆瓣搜索失败:', response.status);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.subjects && data.subjects.length > 0) {
+          // 尝试匹配标题和年份
+          const normalizedTitle = title.toLowerCase().trim();
+          const matchedSubject =
+            data.subjects.find(
+              (subject: { title: string; year?: string; id?: string }) => {
+                const subjectTitle = subject.title?.toLowerCase().trim();
+                const titleMatch =
+                  subjectTitle === normalizedTitle ||
+                  subjectTitle?.includes(normalizedTitle) ||
+                  normalizedTitle.includes(subjectTitle || '');
+                const yearMatch = !year || subject.year === year;
+                return titleMatch && yearMatch;
+              },
+            ) || data.subjects[0]; // 如果没有精确匹配，取第一个结果
+
+          if (matchedSubject?.id) {
+            const foundId = parseInt(matchedSubject.id, 10);
+            console.log(
+              '[DoubanInfoSection] 搜索找到豆瓣 ID:',
+              foundId,
+              '标题:',
+              matchedSubject.title,
+            );
+            setResolvedDoubanId(foundId);
+          }
+        } else {
+          console.warn('[DoubanInfoSection] 豆瓣搜索无结果:', title);
+        }
+      } catch (error) {
+        console.error('[DoubanInfoSection] 豆瓣搜索出错:', error);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    searchDoubanId();
+  }, [initialDoubanId, title, year]);
+
   const {
     detail: doubanDetail,
     comments,
@@ -2772,10 +2850,12 @@ const DoubanInfoSection = ({ doubanId }: { doubanId: number }) => {
     commentsLoading,
     recommendsLoading,
     commentsTotal,
-  } = useDoubanInfo(doubanId > 0 ? doubanId : null);
+  } = useDoubanInfo(resolvedDoubanId > 0 ? resolvedDoubanId : null);
 
-  // 如果没有豆瓣 ID，不渲染
-  if (!doubanId || doubanId === 0) {
+  // 如果没有豆瓣 ID 且不在搜索中，不渲染
+  if ((!resolvedDoubanId || resolvedDoubanId === 0) && !isSearching) {
+    // 仍在初始搜索中时显示加载状态
+    if (!title) return null;
     return null;
   }
 
@@ -2802,7 +2882,7 @@ const DoubanInfoSection = ({ doubanId }: { doubanId: number }) => {
         comments={comments}
         loading={commentsLoading}
         total={commentsTotal}
-        doubanId={doubanId}
+        doubanId={resolvedDoubanId}
         maxDisplay={6}
       />
     </div>
