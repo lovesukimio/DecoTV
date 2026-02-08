@@ -228,6 +228,44 @@ interface ScrapedFullData {
   scrapedAt: number;
 }
 
+const RUNTIME_SUBJECT_CACHE_TTL_MS = 30 * 60 * 1000;
+const RUNTIME_REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+const runtimeSubjectCache = new Map<
+  string,
+  { data: ScrapedFullData; expiresAt: number }
+>();
+const runtimeRefreshAtMap = new Map<string, number>();
+
+function getRuntimeSubjectCache(subjectId: string): ScrapedFullData | null {
+  const cached = runtimeSubjectCache.get(subjectId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    runtimeSubjectCache.delete(subjectId);
+    return null;
+  }
+  return cached.data;
+}
+
+function setRuntimeSubjectCache(
+  subjectId: string,
+  data: ScrapedFullData,
+): void {
+  runtimeSubjectCache.set(subjectId, {
+    data,
+    expiresAt: Date.now() + RUNTIME_SUBJECT_CACHE_TTL_MS,
+  });
+}
+
+function shouldRefreshSubject(subjectId: string): boolean {
+  const now = Date.now();
+  const lastRefreshAt = runtimeRefreshAtMap.get(subjectId) || 0;
+  if (now - lastRefreshAt < RUNTIME_REFRESH_COOLDOWN_MS) {
+    return false;
+  }
+  runtimeRefreshAtMap.set(subjectId, now);
+  return true;
+}
+
 type ApiCelebrityItem = {
   id?: string | number;
   name?: string;
@@ -435,11 +473,6 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
   const startTime = Date.now();
 
   const url = `${DOUBAN_WEB_BASE}/subject/${subjectId}/`;
-
-  // 随机延迟 100-500ms 模拟真实用户行为
-  await new Promise((resolve) =>
-    setTimeout(resolve, 100 + Math.random() * 400),
-  );
 
   const response = await fetch(url, {
     headers: {
@@ -1003,336 +1036,431 @@ async function _scrapeDoubanData(subjectId: string): Promise<ScrapedFullData> {
  * - 24小时后自动重新验证
  * - 出错时返回空数据而非抛出错误
  */
+function buildEmptyScrapedData(subjectId: string): ScrapedFullData {
+  return {
+    id: subjectId,
+    title: '',
+    original_title: '',
+    year: '',
+    rating: null,
+    ratings_count: 0,
+    genres: [],
+    countries: [],
+    durations: [],
+    summary: '',
+    images: { small: '', medium: '', large: '' },
+    directors: [],
+    casts: [],
+    recommendations: [],
+    hotComments: [],
+    scrapedAt: Date.now(),
+  };
+}
+
+function hasCelebrityAvatar(
+  data: Pick<ScrapedFullData, 'directors' | 'casts'>,
+): boolean {
+  return [...data.directors, ...data.casts].some((item) =>
+    Boolean(item.avatars?.small || item.avatars?.medium || item.avatars?.large),
+  );
+}
+
+function mergeScrapedData(
+  primary: ScrapedFullData,
+  fallback: ScrapedFullData | null,
+): ScrapedFullData {
+  if (!fallback) {
+    return primary;
+  }
+
+  const hasImages =
+    Boolean(primary.images.small) ||
+    Boolean(primary.images.medium) ||
+    Boolean(primary.images.large);
+
+  return {
+    ...primary,
+    original_title: primary.original_title || fallback.original_title || '',
+    year: primary.year || fallback.year || '',
+    rating: primary.rating || fallback.rating,
+    ratings_count: primary.ratings_count || fallback.ratings_count || 0,
+    genres: primary.genres.length > 0 ? primary.genres : fallback.genres,
+    countries:
+      primary.countries.length > 0 ? primary.countries : fallback.countries,
+    durations:
+      primary.durations.length > 0 ? primary.durations : fallback.durations,
+    summary: primary.summary || fallback.summary || '',
+    images: hasImages ? primary.images : fallback.images,
+    directors:
+      primary.directors.length > 0 ? primary.directors : fallback.directors,
+    casts: primary.casts.length > 0 ? primary.casts : fallback.casts,
+    recommendations:
+      primary.recommendations.length > 0
+        ? primary.recommendations
+        : fallback.recommendations,
+    hotComments:
+      primary.hotComments.length > 0
+        ? primary.hotComments
+        : fallback.hotComments,
+    scrapedAt: Date.now(),
+  };
+}
+
+type MobileApiHeaders = {
+  'User-Agent': string;
+  Referer: string;
+};
+
+type MobileApiPerson = {
+  id?: string | number;
+  name?: string;
+  url?: string;
+  avatar?: ApiCelebrityItem['avatar'];
+  character?: string;
+  simple_character?: string;
+};
+
+async function fetchDoubanDataFromSingleProxy(
+  subjectId: string,
+  proxyBase: string,
+  headers: MobileApiHeaders,
+): Promise<ScrapedFullData> {
+  console.log('[Douban Scraper] Trying proxy: ' + proxyBase);
+
+  const isUieee = proxyBase.includes('uieee.com');
+  const detailUrl = isUieee
+    ? proxyBase + '/v2/movie/subject/' + subjectId
+    : proxyBase + '/movie/' + subjectId + '?apiKey=' + FRODO_API_KEY;
+  const recommendsUrl = isUieee
+    ? proxyBase + '/v2/movie/subject/' + subjectId + '/recommendations?count=12'
+    : proxyBase +
+      '/movie/' +
+      subjectId +
+      '/recommendations?start=0&count=12&apiKey=' +
+      FRODO_API_KEY;
+  const commentsUrl = isUieee
+    ? proxyBase + '/v2/movie/subject/' + subjectId + '/comments?count=20'
+    : proxyBase +
+      '/movie/' +
+      subjectId +
+      '/interests?start=0&count=20&order_by=hot&apiKey=' +
+      FRODO_API_KEY;
+  const celebritiesUrl = isUieee
+    ? proxyBase + '/v2/movie/subject/' + subjectId + '/celebrities'
+    : proxyBase +
+      '/movie/' +
+      subjectId +
+      '/celebrities?apiKey=' +
+      FRODO_API_KEY;
+  const creditsUrl = isUieee
+    ? proxyBase + '/v2/movie/subject/' + subjectId + '/credits'
+    : proxyBase + '/movie/' + subjectId + '/credits?apiKey=' + FRODO_API_KEY;
+
+  const TIMEOUT_MS = 5500;
+
+  const [detailRes, recommendsRes, commentsRes, celebritiesRes, creditsRes] =
+    await Promise.allSettled([
+      fetch(detailUrl, {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }),
+      fetch(recommendsUrl, {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }),
+      fetch(commentsUrl, {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }),
+      fetch(celebritiesUrl, {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }),
+      fetch(creditsUrl, {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }),
+    ]);
+
+  if (detailRes.status === 'rejected') {
+    throw new Error('Detail request failed: ' + String(detailRes.reason));
+  }
+  if (!detailRes.value.ok) {
+    throw new Error('Detail request status: ' + detailRes.value.status);
+  }
+
+  const data = (await detailRes.value.json()) as Record<string, unknown>;
+
+  let recommendations: ScrapedFullData['recommendations'] = [];
+  if (recommendsRes.status === 'fulfilled' && recommendsRes.value.ok) {
+    try {
+      const recData = await recommendsRes.value.json();
+      recommendations = (recData.items || recData.subjects || [])
+        .slice(0, 12)
+        .map(
+          (item: {
+            id?: string;
+            title?: string;
+            pic?: { normal?: string; large?: string };
+          }) => ({
+            id: String(item.id || ''),
+            title: item.title || '',
+            images: {
+              small: item.pic?.normal || '',
+              medium: item.pic?.large || item.pic?.normal || '',
+              large: item.pic?.large || '',
+            },
+            alt:
+              'https://movie.douban.com/subject/' + String(item.id || '') + '/',
+          }),
+        );
+    } catch (e) {
+      console.warn('[Douban Scraper] Failed to parse recommendations:', e);
+    }
+  }
+
+  let hotComments: ScrapedFullData['hotComments'] = [];
+  if (commentsRes.status === 'fulfilled' && commentsRes.value.ok) {
+    try {
+      const commentData = (await commentsRes.value.json()) as Record<
+        string,
+        unknown
+      >;
+      const sourceItems = (
+        (commentData.interests as Array<Record<string, unknown>>) ||
+        (commentData.comments as Array<Record<string, unknown>>) ||
+        []
+      ).slice(0, 20);
+
+      hotComments = sourceItems.map((item) => {
+        const user = ((item.user || item.author || {}) as {
+          id?: string | number;
+          name?: string;
+          avatar?: string;
+          uid?: string;
+          alt?: string;
+        }) || { name: 'Anonymous User' };
+        const ratingPayload = (item.rating || null) as {
+          value?: number;
+          max?: number;
+          min?: number;
+        } | null;
+        const ratingValue =
+          typeof item.rating === 'number'
+            ? Number(item.rating)
+            : ratingPayload?.value || 0;
+
+        return {
+          id: String(
+            item.id ||
+              item.cid ||
+              'comment_' + Date.now() + '_' + Math.random(),
+          ),
+          created_at: String(
+            item.create_time || item.created_at || item.time || '',
+          ),
+          content: String(item.comment || item.content || ''),
+          useful_count: Number(item.vote_count || item.useful_count || 0),
+          rating: ratingValue
+            ? {
+                max: ratingPayload?.max || 10,
+                value: ratingValue,
+                min: ratingPayload?.min || 0,
+              }
+            : null,
+          author: {
+            id: String(user.id || ''),
+            uid: user.uid || '',
+            name: user.name || 'Anonymous User',
+            avatar: user.avatar || '',
+            alt:
+              user.alt ||
+              (user.id ? 'https://www.douban.com/people/' + user.id + '/' : ''),
+          },
+        };
+      });
+    } catch (e) {
+      console.warn('[Douban Scraper] Failed to parse comments:', e);
+    }
+  }
+
+  const mergedCelebrities: {
+    directors: FormattedCelebrity[];
+    casts: FormattedCelebrity[];
+  } = { directors: [], casts: [] };
+
+  const mergeCelebritiesFromPayload = (payload: unknown) => {
+    const parsed = parseCelebritiesFromApiPayload(payload);
+    parsed.directors.forEach((item) =>
+      upsertFormattedCelebrity(mergedCelebrities.directors, item),
+    );
+    parsed.casts.forEach((item) =>
+      upsertFormattedCelebrity(mergedCelebrities.casts, item),
+    );
+  };
+
+  if (celebritiesRes.status === 'fulfilled' && celebritiesRes.value.ok) {
+    try {
+      mergeCelebritiesFromPayload(await celebritiesRes.value.json());
+    } catch (e) {
+      console.warn('[Douban Scraper] Failed to parse celebrities payload:', e);
+    }
+  }
+
+  if (creditsRes.status === 'fulfilled' && creditsRes.value.ok) {
+    try {
+      mergeCelebritiesFromPayload(await creditsRes.value.json());
+    } catch (e) {
+      console.warn('[Douban Scraper] Failed to parse credits payload:', e);
+    }
+  }
+
+  const fallbackDirectors = (
+    (data.directors as MobileApiPerson[]) || []
+  ).reduce<FormattedCelebrity[]>((acc, item) => {
+    const formatted = toFormattedCelebrity(
+      {
+        ...item,
+        url:
+          item.url ||
+          (item.id
+            ? DOUBAN_WEB_BASE + '/celebrity/' + item.id + '/'
+            : undefined),
+      },
+      '导演',
+    );
+    if (formatted) {
+      upsertFormattedCelebrity(acc, formatted);
+    }
+    return acc;
+  }, []);
+
+  const fallbackCasts = ((data.actors as MobileApiPerson[]) || []).reduce<
+    FormattedCelebrity[]
+  >((acc, item) => {
+    const formatted = toFormattedCelebrity(
+      {
+        ...item,
+        url:
+          item.url ||
+          (item.id
+            ? DOUBAN_WEB_BASE + '/celebrity/' + item.id + '/'
+            : undefined),
+      },
+      '演员',
+    );
+    if (formatted) {
+      upsertFormattedCelebrity(acc, formatted);
+    }
+    return acc;
+  }, []);
+
+  fallbackDirectors.forEach((item) =>
+    upsertFormattedCelebrity(mergedCelebrities.directors, item),
+  );
+  fallbackCasts.forEach((item) =>
+    upsertFormattedCelebrity(mergedCelebrities.casts, item),
+  );
+
+  const ratingPayload = (data.rating || null) as {
+    value?: number;
+    average?: number;
+    count?: number;
+  } | null;
+
+  return {
+    id: subjectId,
+    title: (data.title as string) || '',
+    original_title: (data.original_title as string) || '',
+    year: (data.year as string) || '',
+    rating: ratingPayload
+      ? {
+          max: 10,
+          average: ratingPayload.value || ratingPayload.average || 0,
+          stars: '',
+          min: 0,
+        }
+      : null,
+    ratings_count: ratingPayload?.count || (data.ratings_count as number) || 0,
+    genres: (data.genres as string[]) || [],
+    countries: (data.countries as string[]) || [],
+    durations: (data.durations as string[]) || [],
+    summary: (data.intro as string) || (data.summary as string) || '',
+    images: {
+      small: (data.pic as { normal?: string })?.normal || '',
+      medium:
+        (data.pic as { large?: string; normal?: string })?.large ||
+        (data.pic as { normal?: string })?.normal ||
+        '',
+      large: (data.pic as { large?: string })?.large || '',
+    },
+    directors: mergedCelebrities.directors,
+    casts: mergedCelebrities.casts,
+    recommendations,
+    hotComments,
+    scrapedAt: Date.now(),
+  };
+}
+
+async function fetchDoubanDataViaMobileApi(
+  subjectId: string,
+): Promise<ScrapedFullData> {
+  const headers: MobileApiHeaders = {
+    'User-Agent':
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
+    Referer: 'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
+  };
+
+  const tasks = DOUBAN_PROXY_URLS.map((proxyBase) =>
+    fetchDoubanDataFromSingleProxy(subjectId, proxyBase, headers).catch(
+      (error) => {
+        console.error('[Douban Scraper] Proxy failed: ' + proxyBase, error);
+        throw error;
+      },
+    ),
+  );
+
+  return Promise.any(tasks);
+}
+
 async function getDoubanDataWithFallback(
   subjectId: string,
 ): Promise<ScrapedFullData> {
+  let mobileData: ScrapedFullData | null = null;
+
   try {
-    return await _scrapeDoubanData(subjectId);
-  } catch (error) {
-    console.error(
-      '[Douban Scraper] Scraper failed, fallback to mobile API:',
-      error,
+    mobileData = await fetchDoubanDataViaMobileApi(subjectId);
+    const hasBaseInfo = Boolean(mobileData.title);
+    const hasCelebrities =
+      mobileData.directors.length + mobileData.casts.length > 0;
+    if (hasBaseInfo && hasCelebrities && hasCelebrityAvatar(mobileData)) {
+      console.log('[Douban Scraper] Fast mobile API hit: ' + subjectId);
+      return mobileData;
+    }
+    console.warn(
+      '[Douban Scraper] Mobile API data incomplete, fallback to HTML scraper',
     );
+  } catch (mobileError) {
+    console.warn(
+      '[Douban Scraper] Mobile API failed, fallback to HTML scraper:',
+      mobileError,
+    );
+  }
 
-    const frodoHeaders = {
-      'User-Agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.38(0x18002627) NetType/WIFI Language/zh_CN',
-      Referer:
-        'https://servicewechat.com/wx2f9b06c1de1ccfca/114/page-frame.html',
-    };
-
-    for (const proxyBase of DOUBAN_PROXY_URLS) {
-      try {
-        console.log('[Douban Scraper] Trying proxy: ' + proxyBase);
-
-        const isUieee = proxyBase.includes('uieee.com');
-        const detailUrl = isUieee
-          ? proxyBase + '/v2/movie/subject/' + subjectId
-          : proxyBase + '/movie/' + subjectId + '?apiKey=' + FRODO_API_KEY;
-        const recommendsUrl = isUieee
-          ? proxyBase +
-            '/v2/movie/subject/' +
-            subjectId +
-            '/recommendations?count=12'
-          : proxyBase +
-            '/movie/' +
-            subjectId +
-            '/recommendations?start=0&count=12&apiKey=' +
-            FRODO_API_KEY;
-        const commentsUrl = isUieee
-          ? proxyBase + '/v2/movie/subject/' + subjectId + '/comments?count=20'
-          : proxyBase +
-            '/movie/' +
-            subjectId +
-            '/interests?start=0&count=20&order_by=hot&apiKey=' +
-            FRODO_API_KEY;
-        const celebritiesUrl = isUieee
-          ? proxyBase + '/v2/movie/subject/' + subjectId + '/celebrities'
-          : proxyBase +
-            '/movie/' +
-            subjectId +
-            '/celebrities?apiKey=' +
-            FRODO_API_KEY;
-        const creditsUrl = isUieee
-          ? proxyBase + '/v2/movie/subject/' + subjectId + '/credits'
-          : proxyBase +
-            '/movie/' +
-            subjectId +
-            '/credits?apiKey=' +
-            FRODO_API_KEY;
-
-        const TIMEOUT_MS = 8000;
-
-        const [
-          detailRes,
-          recommendsRes,
-          commentsRes,
-          celebritiesRes,
-          creditsRes,
-        ] = await Promise.allSettled([
-          fetch(detailUrl, {
-            headers: frodoHeaders,
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-          }),
-          fetch(recommendsUrl, {
-            headers: frodoHeaders,
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-          }),
-          fetch(commentsUrl, {
-            headers: frodoHeaders,
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-          }),
-          fetch(celebritiesUrl, {
-            headers: frodoHeaders,
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-          }),
-          fetch(creditsUrl, {
-            headers: frodoHeaders,
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-          }),
-        ]);
-
-        if (detailRes.status === 'rejected') {
-          throw new Error('Detail request failed: ' + String(detailRes.reason));
-        }
-        if (!detailRes.value.ok) {
-          throw new Error('Detail request status: ' + detailRes.value.status);
-        }
-
-        const data = (await detailRes.value.json()) as Record<string, unknown>;
-
-        let recommendations: ScrapedFullData['recommendations'] = [];
-        if (recommendsRes.status === 'fulfilled' && recommendsRes.value.ok) {
-          try {
-            const recData = await recommendsRes.value.json();
-            recommendations = (recData.items || recData.subjects || [])
-              .slice(0, 12)
-              .map(
-                (item: {
-                  id?: string;
-                  title?: string;
-                  pic?: { normal?: string; large?: string };
-                }) => ({
-                  id: String(item.id || ''),
-                  title: item.title || '',
-                  images: {
-                    small: item.pic?.normal || '',
-                    medium: item.pic?.large || item.pic?.normal || '',
-                    large: item.pic?.large || '',
-                  },
-                  alt:
-                    'https://movie.douban.com/subject/' +
-                    String(item.id || '') +
-                    '/',
-                }),
-              );
-          } catch (e) {
-            console.warn(
-              '[Douban Scraper] Failed to parse recommendations:',
-              e,
-            );
-          }
-        }
-
-        let hotComments: ScrapedFullData['hotComments'] = [];
-        if (commentsRes.status === 'fulfilled' && commentsRes.value.ok) {
-          try {
-            const commentData = await commentsRes.value.json();
-            hotComments = (commentData.interests || []).slice(0, 20).map(
-              (item: {
-                id?: string;
-                user?: {
-                  id?: string;
-                  name?: string;
-                  avatar?: string;
-                  uid?: string;
-                };
-                comment?: string;
-                rating?: { value?: number; max?: number; min?: number };
-                vote_count?: number;
-                create_time?: string;
-              }) => ({
-                id: String(
-                  item.id || 'comment_' + Date.now() + '_' + Math.random(),
-                ),
-                created_at: item.create_time || '',
-                content: item.comment || '',
-                useful_count: item.vote_count || 0,
-                rating: item.rating?.value
-                  ? {
-                      max: item.rating.max || 10,
-                      value: item.rating.value,
-                      min: item.rating.min || 0,
-                    }
-                  : null,
-                author: {
-                  id: String(item.user?.id || ''),
-                  uid: item.user?.uid || '',
-                  name: item.user?.name || 'Anonymous User',
-                  avatar: item.user?.avatar || '',
-                  alt: item.user?.id
-                    ? 'https://www.douban.com/people/' + item.user.id + '/'
-                    : '',
-                },
-              }),
-            );
-          } catch (e) {
-            console.warn('[Douban Scraper] Failed to parse comments:', e);
-          }
-        }
-
-        const mergedCelebrities: {
-          directors: FormattedCelebrity[];
-          casts: FormattedCelebrity[];
-        } = { directors: [], casts: [] };
-
-        const mergeCelebritiesFromPayload = (payload: unknown) => {
-          const parsed = parseCelebritiesFromApiPayload(payload);
-          parsed.directors.forEach((item) =>
-            upsertFormattedCelebrity(mergedCelebrities.directors, item),
-          );
-          parsed.casts.forEach((item) =>
-            upsertFormattedCelebrity(mergedCelebrities.casts, item),
-          );
-        };
-
-        if (celebritiesRes.status === 'fulfilled' && celebritiesRes.value.ok) {
-          try {
-            mergeCelebritiesFromPayload(await celebritiesRes.value.json());
-          } catch (e) {
-            console.warn(
-              '[Douban Scraper] Failed to parse celebrities payload:',
-              e,
-            );
-          }
-        }
-
-        if (creditsRes.status === 'fulfilled' && creditsRes.value.ok) {
-          try {
-            mergeCelebritiesFromPayload(await creditsRes.value.json());
-          } catch (e) {
-            console.warn(
-              '[Douban Scraper] Failed to parse credits payload:',
-              e,
-            );
-          }
-        }
-
-        type PersonData = {
-          id?: string | number;
-          name?: string;
-          url?: string;
-          avatar?: ApiCelebrityItem['avatar'];
-          character?: string;
-          simple_character?: string;
-        };
-
-        const fallbackDirectors = (
-          (data.directors as PersonData[]) || []
-        ).reduce<FormattedCelebrity[]>((acc, item) => {
-          const formatted = toFormattedCelebrity(
-            {
-              ...item,
-              url:
-                item.url ||
-                (item.id
-                  ? DOUBAN_WEB_BASE + '/celebrity/' + item.id + '/'
-                  : undefined),
-            },
-            '\u5bfc\u6f14',
-          );
-          if (formatted) {
-            upsertFormattedCelebrity(acc, formatted);
-          }
-          return acc;
-        }, []);
-
-        const fallbackCasts = ((data.actors as PersonData[]) || []).reduce<
-          FormattedCelebrity[]
-        >((acc, item) => {
-          const formatted = toFormattedCelebrity(
-            {
-              ...item,
-              url:
-                item.url ||
-                (item.id
-                  ? DOUBAN_WEB_BASE + '/celebrity/' + item.id + '/'
-                  : undefined),
-            },
-            '\u6f14\u5458',
-          );
-          if (formatted) {
-            upsertFormattedCelebrity(acc, formatted);
-          }
-          return acc;
-        }, []);
-
-        fallbackDirectors.forEach((item) =>
-          upsertFormattedCelebrity(mergedCelebrities.directors, item),
-        );
-        fallbackCasts.forEach((item) =>
-          upsertFormattedCelebrity(mergedCelebrities.casts, item),
-        );
-
-        return {
-          id: subjectId,
-          title: (data.title as string) || '',
-          original_title: (data.original_title as string) || '',
-          year: (data.year as string) || '',
-          rating: data.rating
-            ? {
-                max: 10,
-                average: (data.rating as { value?: number }).value || 0,
-                stars: '',
-                min: 0,
-              }
-            : null,
-          ratings_count: (data.rating as { count?: number })?.count || 0,
-          genres: (data.genres as string[]) || [],
-          countries: (data.countries as string[]) || [],
-          durations: (data.durations as string[]) || [],
-          summary: (data.intro as string) || '',
-          images: {
-            small: (data.pic as { normal?: string })?.normal || '',
-            medium:
-              (data.pic as { large?: string; normal?: string })?.large ||
-              (data.pic as { normal?: string })?.normal ||
-              '',
-            large: (data.pic as { large?: string })?.large || '',
-          },
-          directors: mergedCelebrities.directors,
-          casts: mergedCelebrities.casts,
-          recommendations,
-          hotComments,
-          scrapedAt: Date.now(),
-        };
-      } catch (apiError) {
-        console.error('[Douban Scraper] Proxy failed: ' + proxyBase, apiError);
-        continue;
-      }
+  try {
+    const scraped = await _scrapeDoubanData(subjectId);
+    return mergeScrapedData(scraped, mobileData);
+  } catch (scrapeError) {
+    console.error('[Douban Scraper] HTML scraper failed:', scrapeError);
+    if (mobileData && mobileData.title) {
+      console.warn('[Douban Scraper] Return mobile API data as fallback');
+      return mobileData;
     }
 
     console.warn(
       '[Douban Scraper] All fallback methods failed; returning empty data',
     );
-    return {
-      id: subjectId,
-      title: '',
-      original_title: '',
-      year: '',
-      rating: null,
-      ratings_count: 0,
-      genres: [],
-      countries: [],
-      durations: [],
-      summary: '',
-      images: { small: '', medium: '', large: '' },
-      directors: [],
-      casts: [],
-      recommendations: [],
-      hotComments: [],
-      scrapedAt: Date.now(),
-    };
+    return buildEmptyScrapedData(subjectId);
   }
 }
 
@@ -1516,24 +1644,23 @@ export async function GET(request: NextRequest) {
 
       switch (scrapeType) {
         case 'full': {
-          let rawData = await scrapeDoubanData(subjectId);
-          const hasCelebrityAvatar = [
-            ...rawData.directors,
-            ...rawData.casts,
-          ].some((item) =>
-            Boolean(
-              item.avatars?.small ||
-              item.avatars?.medium ||
-              item.avatars?.large,
-            ),
-          );
-
+          const runtimeCached = getRuntimeSubjectCache(subjectId);
+          let rawData = runtimeCached || (await scrapeDoubanData(subjectId));
           // 旧缓存里可能没有演员头像，命中时主动绕过缓存刷新一次
-          if (!hasCelebrityAvatar) {
-            console.warn(
-              `[Douban Proxy] 缓存数据缺少演职员头像，触发实时刷新: ${subjectId}`,
-            );
-            rawData = await getDoubanDataWithFallback(subjectId);
+          if (!hasCelebrityAvatar(rawData)) {
+            if (shouldRefreshSubject(subjectId)) {
+              console.warn(
+                `[Douban Proxy] 缓存数据缺少演职员头像，触发实时刷新: ${subjectId}`,
+              );
+              rawData = await getDoubanDataWithFallback(subjectId);
+              setRuntimeSubjectCache(subjectId, rawData);
+            } else {
+              console.log(
+                `[Douban Proxy] 缺头像数据刷新冷却中，直接使用热缓存: ${subjectId}`,
+              );
+            }
+          } else {
+            setRuntimeSubjectCache(subjectId, rawData);
           }
 
           // 应用图片代理转换，解决防盗链问题

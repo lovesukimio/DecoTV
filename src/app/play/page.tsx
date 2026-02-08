@@ -24,6 +24,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
+import { generateCacheKey, globalCache } from '@/lib/unified-cache';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 import { isIOSPlatform, useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
@@ -2779,18 +2780,31 @@ const DoubanInfoSection = ({
   const [resolvedDoubanId, setResolvedDoubanId] = useState(initialDoubanId);
   const [isSearching, setIsSearching] = useState(false);
 
-  // 当 doubanId 为 0 时，通过标题搜索豆瓣获取 ID
   useEffect(() => {
-    // 如果已有有效的 doubanId 或者没有标题，不需要搜索
+    const normalizedTitle = title.toLowerCase().trim();
+    const doubanIdCacheKey = generateCacheKey('douban-resolved-id', {
+      title: normalizedTitle,
+      year: year || '',
+    });
+
     if (initialDoubanId > 0 || !title) {
       setResolvedDoubanId(initialDoubanId);
+      if (initialDoubanId > 0 && normalizedTitle) {
+        globalCache.set(doubanIdCacheKey, initialDoubanId, 7 * 24 * 60 * 60);
+      }
+      return;
+    }
+
+    const cachedDoubanId = globalCache.get<number>(doubanIdCacheKey);
+    if (cachedDoubanId && cachedDoubanId > 0) {
+      console.log('[DoubanInfoSection] 命中豆瓣 ID 本地缓存:', cachedDoubanId);
+      setResolvedDoubanId(cachedDoubanId);
       return;
     }
 
     const searchDoubanId = async () => {
       setIsSearching(true);
       try {
-        // 通过豆瓣搜索 API 查找影片
         const searchQuery = encodeURIComponent(title);
         const response = await fetch(
           `/api/douban/proxy?path=movie/search&q=${searchQuery}&count=5`,
@@ -2802,10 +2816,7 @@ const DoubanInfoSection = ({
         }
 
         const data = await response.json();
-
         if (data.subjects && data.subjects.length > 0) {
-          // 尝试匹配标题和年份
-          const normalizedTitle = title.toLowerCase().trim();
           const matchedSubject =
             data.subjects.find(
               (subject: { title: string; year?: string; id?: string }) => {
@@ -2817,7 +2828,7 @@ const DoubanInfoSection = ({
                 const yearMatch = !year || subject.year === year;
                 return titleMatch && yearMatch;
               },
-            ) || data.subjects[0]; // 如果没有精确匹配，取第一个结果
+            ) || data.subjects[0];
 
           if (matchedSubject?.id) {
             const foundId = parseInt(matchedSubject.id, 10);
@@ -2828,6 +2839,7 @@ const DoubanInfoSection = ({
               matchedSubject.title,
             );
             setResolvedDoubanId(foundId);
+            globalCache.set(doubanIdCacheKey, foundId, 7 * 24 * 60 * 60);
           }
         } else {
           console.warn('[DoubanInfoSection] 豆瓣搜索无结果:', title);
@@ -2852,16 +2864,13 @@ const DoubanInfoSection = ({
     commentsTotal,
   } = useDoubanInfo(resolvedDoubanId > 0 ? resolvedDoubanId : null);
 
-  // 如果没有豆瓣 ID 且不在搜索中，不渲染
   if ((!resolvedDoubanId || resolvedDoubanId === 0) && !isSearching) {
-    // 仍在初始搜索中时显示加载状态
     if (!title) return null;
     return null;
   }
 
   return (
     <div className='mt-8 space-y-8 pb-8'>
-      {/* 元信息：演员表、标签、简介 */}
       <MovieMetaInfo
         detail={doubanDetail}
         loading={detailLoading}
@@ -2870,14 +2879,12 @@ const DoubanInfoSection = ({
         showTags={true}
       />
 
-      {/* 相关推荐 */}
       <MovieRecommends
         recommends={recommends}
         loading={recommendsLoading}
         maxDisplay={10}
       />
 
-      {/* 短评列表 */}
       <MovieReviews
         comments={comments}
         loading={commentsLoading}
@@ -2888,7 +2895,6 @@ const DoubanInfoSection = ({
     </div>
   );
 };
-
 // FavoriteIcon 组件
 const FavoriteIcon = ({ filled }: { filled: boolean }) => {
   if (filled) {
