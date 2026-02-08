@@ -108,7 +108,9 @@ export default function CategoryBar({
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (disabled) return;
-      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      // 仅在鼠标场景启用拖拽，避免触屏点击分类时误判为拖拽而吞掉点击
+      if (event.pointerType !== 'mouse') return;
+      if (event.button !== 0) return;
 
       const container = scrollContainerRef.current;
       if (!container) return;
@@ -118,12 +120,6 @@ export default function CategoryBar({
       dragStateRef.current.startX = event.clientX;
       dragStateRef.current.startScrollLeft = container.scrollLeft;
       setIsDragging(true);
-
-      try {
-        container.setPointerCapture(event.pointerId);
-      } catch {
-        // ignore
-      }
     },
     [disabled],
   );
@@ -144,15 +140,7 @@ export default function CategoryBar({
   );
 
   const handlePointerUp = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const container = scrollContainerRef.current;
-      if (container && container.hasPointerCapture(event.pointerId)) {
-        try {
-          container.releasePointerCapture(event.pointerId);
-        } catch {
-          // ignore
-        }
-      }
+    (_event: React.PointerEvent<HTMLDivElement>) => {
       endDrag();
     },
     [endDrag],

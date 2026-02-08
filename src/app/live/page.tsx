@@ -65,6 +65,12 @@ interface LiveSource {
 
 type LiveStreamType = 'm3u8' | 'mp4' | 'flv' | 'unknown';
 type GroupSortMode = 'default' | 'count' | 'name';
+type ChannelHealthStatus =
+  | 'unknown'
+  | 'checking'
+  | 'healthy'
+  | 'slow'
+  | 'unreachable';
 
 interface GroupSummary {
   name: string;
@@ -72,9 +78,21 @@ interface GroupSummary {
   order: number;
 }
 
+interface ChannelHealthInfo {
+  type: LiveStreamType;
+  status: ChannelHealthStatus;
+  latencyMs?: number;
+  checkedAt: number;
+  message?: string;
+}
+
 const RECENT_GROUPS_STORAGE_KEY = 'liveRecentGroups';
 const PINNED_GROUPS_STORAGE_KEY = 'livePinnedGroups';
+const AUTO_FAILOVER_STORAGE_KEY = 'liveAutoFailover';
 const MAX_RECENT_GROUPS = 8;
+const HEALTH_CHECK_CACHE_MS = 3 * 60 * 1000;
+const HEALTH_CHECK_BATCH_SIZE = 12;
+const PLAYBACK_TIMEOUT_MS = 15 * 1000;
 
 function parseStoredStringArray(raw: string | null): string[] {
   if (!raw) return [];
@@ -100,6 +118,44 @@ function detectTypeFromUrl(rawUrl: string): LiveStreamType {
   if (lowerUrl.includes('.mp4')) return 'mp4';
   if (lowerUrl.includes('.flv')) return 'flv';
   return 'unknown';
+}
+
+function deriveHealthStatus(
+  isReachable: boolean,
+  latencyMs?: number,
+): ChannelHealthStatus {
+  if (!isReachable) return 'unreachable';
+  if (typeof latencyMs === 'number' && latencyMs > 3500) return 'slow';
+  return 'healthy';
+}
+
+function getTypeBadgeStyle(type: LiveStreamType) {
+  if (type === 'm3u8') {
+    return 'bg-blue-100 dark:bg-blue-900/35 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+  }
+  if (type === 'flv') {
+    return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+  }
+  if (type === 'mp4') {
+    return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
+  }
+  return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700';
+}
+
+function getHealthBadgeStyle(status: ChannelHealthStatus) {
+  if (status === 'healthy') {
+    return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+  }
+  if (status === 'slow') {
+    return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800';
+  }
+  if (status === 'unreachable') {
+    return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800';
+  }
+  if (status === 'checking') {
+    return 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800';
+  }
+  return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700';
 }
 
 function LivePageClient() {
@@ -189,6 +245,13 @@ function LivePageClient() {
   const [groupSortMode, setGroupSortMode] = useState<GroupSortMode>('default');
   const [recentGroups, setRecentGroups] = useState<string[]>([]);
   const [pinnedGroups, setPinnedGroups] = useState<string[]>([]);
+  const [channelHealthMap, setChannelHealthMap] = useState<
+    Record<string, ChannelHealthInfo>
+  >({});
+  const [autoFailoverEnabled, setAutoFailoverEnabled] = useState(true);
+  const [autoFailoverMessage, setAutoFailoverMessage] = useState<string | null>(
+    null,
+  );
 
   // 直连模式状态
   const [isDirectConnect, setIsDirectConnect] = useState(false);
@@ -318,6 +381,10 @@ function LivePageClient() {
     ? groupedChannels[selectedGroup]?.length || 0
     : 0;
 
+  useEffect(() => {
+    channelHealthMapRef.current = channelHealthMap;
+  }, [channelHealthMap]);
+
   // EPG数据清洗函数 - 去除重叠的节目，保留时间较短的，只显示今日节目
   const cleanEpgData = (
     programs: Array<{ start: string; end: string; title: string }>,
@@ -440,10 +507,139 @@ function LivePageClient() {
 
   // 频道列表引用
   const channelListRef = useRef<HTMLDivElement>(null);
+  const channelHealthMapRef = useRef<Record<string, ChannelHealthInfo>>({});
+  const healthByUrlCacheRef = useRef<Record<string, ChannelHealthInfo>>({});
+  const healthCheckingRef = useRef<Set<string>>(new Set());
+  const autoFailoverTriedUrlRef = useRef<Set<string>>(new Set());
+  const autoFailoverRunningRef = useRef(false);
+  const playbackWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
+
+  const clearPlaybackWatchdog = () => {
+    if (playbackWatchdogRef.current) {
+      clearTimeout(playbackWatchdogRef.current);
+      playbackWatchdogRef.current = null;
+    }
+  };
+
+  const setChannelHealth = (channelId: string, info: ChannelHealthInfo) => {
+    setChannelHealthMap((prevMap) => ({
+      ...prevMap,
+      [channelId]: info,
+    }));
+  };
+
+  const checkChannelHealth = async (
+    channel: LiveChannel,
+    options?: { force?: boolean },
+  ): Promise<ChannelHealthInfo> => {
+    const sourceKey = currentSource?.key || currentSourceRef.current?.key;
+    const fallbackType = detectTypeFromUrl(channel.url);
+    const now = Date.now();
+
+    const fallbackInfo: ChannelHealthInfo = {
+      type: fallbackType,
+      status: 'unknown',
+      checkedAt: now,
+    };
+
+    if (!sourceKey) {
+      setChannelHealth(channel.id, fallbackInfo);
+      return fallbackInfo;
+    }
+
+    const cacheKey = `${sourceKey}:${channel.url}`;
+    const cachedInfo = healthByUrlCacheRef.current[cacheKey];
+    if (
+      !options?.force &&
+      cachedInfo &&
+      now - cachedInfo.checkedAt < HEALTH_CHECK_CACHE_MS
+    ) {
+      setChannelHealth(channel.id, cachedInfo);
+      return cachedInfo;
+    }
+
+    if (healthCheckingRef.current.has(cacheKey)) {
+      return (
+        channelHealthMapRef.current[channel.id] || {
+          ...fallbackInfo,
+          status: 'checking',
+        }
+      );
+    }
+
+    healthCheckingRef.current.add(cacheKey);
+    const checkingInfo: ChannelHealthInfo = {
+      type: fallbackType,
+      status: 'checking',
+      checkedAt: now,
+    };
+    setChannelHealth(channel.id, checkingInfo);
+
+    try {
+      const startedAt =
+        typeof performance !== 'undefined' ? performance.now() : 0;
+      const precheckUrl = `/api/live/precheck?url=${encodeURIComponent(
+        channel.url,
+      )}&decotv-source=${sourceKey}`;
+      const response = await fetch(precheckUrl, { cache: 'no-store' });
+      const elapsedMs =
+        typeof performance !== 'undefined'
+          ? Math.round(performance.now() - startedAt)
+          : undefined;
+
+      if (!response.ok) {
+        const unreachableInfo: ChannelHealthInfo = {
+          type: fallbackType,
+          status: 'unreachable',
+          latencyMs: elapsedMs,
+          checkedAt: Date.now(),
+          message: `HTTP ${response.status}`,
+        };
+        healthByUrlCacheRef.current[cacheKey] = unreachableInfo;
+        setChannelHealth(channel.id, unreachableInfo);
+        return unreachableInfo;
+      }
+
+      const result = await response.json();
+      const detectedType = normalizeStreamType(result?.type);
+      const finalType =
+        detectedType === 'unknown' ? fallbackType : detectedType;
+      const latencyMs =
+        typeof result?.latencyMs === 'number'
+          ? result.latencyMs
+          : elapsedMs || undefined;
+      const healthy = Boolean(result?.success);
+
+      const healthInfo: ChannelHealthInfo = {
+        type: finalType,
+        status: deriveHealthStatus(healthy, latencyMs),
+        latencyMs,
+        checkedAt: Date.now(),
+        message: healthy ? undefined : result?.error || '预检查失败',
+      };
+      healthByUrlCacheRef.current[cacheKey] = healthInfo;
+      setChannelHealth(channel.id, healthInfo);
+      return healthInfo;
+    } catch (error) {
+      const unreachableInfo: ChannelHealthInfo = {
+        type: fallbackType,
+        status: 'unreachable',
+        checkedAt: Date.now(),
+        message: error instanceof Error ? error.message : '网络异常',
+      };
+      healthByUrlCacheRef.current[cacheKey] = unreachableInfo;
+      setChannelHealth(channel.id, unreachableInfo);
+      return unreachableInfo;
+    } finally {
+      healthCheckingRef.current.delete(cacheKey);
+    }
+  };
 
   // 获取直播源列表
   const fetchLiveSources = async () => {
@@ -514,6 +710,14 @@ function LivePageClient() {
   const fetchChannels = async (source: LiveSource) => {
     try {
       setIsVideoLoading(true);
+      clearPlaybackWatchdog();
+      setAutoFailoverMessage(null);
+      setChannelHealthMap({});
+      channelHealthMapRef.current = {};
+      healthByUrlCacheRef.current = {};
+      healthCheckingRef.current.clear();
+      autoFailoverTriedUrlRef.current.clear();
+      autoFailoverRunningRef.current = false;
 
       // 从 cachedLiveChannels 获取频道信息
       const response = await fetch(`/api/live/channels?source=${source.key}`);
@@ -565,25 +769,22 @@ function LivePageClient() {
 
       // 默认选中第一个频道
       if (channels.length > 0) {
+        let initialChannel: LiveChannel = channels[0];
         if (needLoadChannel) {
           const foundChannel = channels.find(
             (c: LiveChannel) => c.id === needLoadChannel,
           );
           if (foundChannel) {
-            setCurrentChannel(foundChannel);
-            setVideoUrl(foundChannel.url);
+            initialChannel = foundChannel;
             // 延迟滚动到选中的频道
             setTimeout(() => {
               scrollToChannel(foundChannel);
             }, 200);
-          } else {
-            setCurrentChannel(channels[0]);
-            setVideoUrl(channels[0].url);
           }
-        } else {
-          setCurrentChannel(channels[0]);
-          setVideoUrl(channels[0].url);
         }
+        setCurrentChannel(initialChannel);
+        setVideoUrl(initialChannel.url);
+        autoFailoverTriedUrlRef.current.add(initialChannel.url);
       }
 
       // 按分组组织频道
@@ -632,6 +833,12 @@ function LivePageClient() {
       setCurrentChannels([]);
       setGroupedChannels({});
       setFilteredChannels([]);
+      setChannelHealthMap({});
+      channelHealthMapRef.current = {};
+      healthByUrlCacheRef.current = {};
+      healthCheckingRef.current.clear();
+      autoFailoverTriedUrlRef.current.clear();
+      autoFailoverRunningRef.current = false;
 
       // 更新直播源的频道数为 0
       setLiveSources((prevSources) =>
@@ -649,6 +856,10 @@ function LivePageClient() {
     try {
       // 设置切换状态，锁住频道切换器
       setIsSwitchingSource(true);
+      autoFailoverRunningRef.current = false;
+      autoFailoverTriedUrlRef.current.clear();
+      clearPlaybackWatchdog();
+      setAutoFailoverMessage(null);
 
       // 首先销毁当前播放器
       cleanupPlayer();
@@ -673,9 +884,14 @@ function LivePageClient() {
   };
 
   // 切换频道
-  const handleChannelChange = async (channel: LiveChannel) => {
+  const handleChannelChange = async (
+    channel: LiveChannel,
+    options?: { fromAutoFailover?: boolean },
+  ) => {
     // 如果正在切换直播源，则禁用频道切换
     if (isSwitchingSource) return;
+
+    clearPlaybackWatchdog();
 
     // 首先销毁当前播放器
     cleanupPlayer();
@@ -685,6 +901,17 @@ function LivePageClient() {
 
     setCurrentChannel(channel);
     setVideoUrl(channel.url);
+
+    if (options?.fromAutoFailover) {
+      autoFailoverTriedUrlRef.current.add(channel.url);
+    } else {
+      autoFailoverRunningRef.current = false;
+      autoFailoverTriedUrlRef.current.clear();
+      autoFailoverTriedUrlRef.current.add(channel.url);
+      setAutoFailoverMessage(null);
+    }
+
+    void checkChannelHealth(channel, { force: true });
 
     // 自动滚动到选中的频道位置
     setTimeout(() => {
@@ -755,6 +982,7 @@ function LivePageClient() {
   const cleanupPlayer = () => {
     // 重置不支持的类型状态
     setUnsupportedType(null);
+    clearPlaybackWatchdog();
 
     if (artPlayerRef.current) {
       try {
@@ -917,6 +1145,75 @@ function LivePageClient() {
     }
   };
 
+  const attemptAutoFailover = async (reason: string) => {
+    if (!autoFailoverEnabled || isSwitchingSource) return false;
+    if (autoFailoverRunningRef.current) return false;
+
+    const current = currentChannelRef.current;
+    if (!current) return false;
+
+    autoFailoverRunningRef.current = true;
+
+    try {
+      const normalizedName = current.name.trim().toLowerCase();
+      const candidates = currentChannels.filter((candidate) => {
+        if (candidate.id === current.id) return false;
+        if (autoFailoverTriedUrlRef.current.has(candidate.url)) return false;
+
+        const sameName = candidate.name.trim().toLowerCase() === normalizedName;
+        const sameTvg =
+          current.tvgId &&
+          candidate.tvgId &&
+          current.tvgId === candidate.tvgId &&
+          current.tvgId !== current.name;
+        return sameName || sameTvg;
+      });
+
+      if (candidates.length === 0) {
+        setAutoFailoverMessage(`自动切换失败: 未找到候选线路（${reason}）`);
+        return false;
+      }
+
+      const unresolvedCandidates = candidates
+        .filter((candidate) => {
+          const status = channelHealthMapRef.current[candidate.id]?.status;
+          return !status || status === 'unknown' || status === 'checking';
+        })
+        .slice(0, 3);
+      if (unresolvedCandidates.length > 0) {
+        await Promise.all(
+          unresolvedCandidates.map((candidate) =>
+            checkChannelHealth(candidate),
+          ),
+        );
+      }
+
+      const priorityScore: Record<ChannelHealthStatus, number> = {
+        healthy: 5,
+        slow: 4,
+        unknown: 3,
+        checking: 2,
+        unreachable: 1,
+      };
+
+      const rankedCandidates = [...candidates].sort((a, b) => {
+        const healthA = channelHealthMapRef.current[a.id]?.status || 'unknown';
+        const healthB = channelHealthMapRef.current[b.id]?.status || 'unknown';
+        return priorityScore[healthB] - priorityScore[healthA];
+      });
+
+      const nextChannel = rankedCandidates[0];
+      autoFailoverTriedUrlRef.current.add(nextChannel.url);
+      setAutoFailoverMessage(
+        `线路异常，已自动切换到候选线路（${reason}）: ${nextChannel.name}`,
+      );
+      await handleChannelChange(nextChannel, { fromAutoFailover: true });
+      return true;
+    } finally {
+      autoFailoverRunningRef.current = false;
+    }
+  };
+
   // 切换收藏
   const handleToggleFavorite = async () => {
     if (!currentSourceRef.current || !currentChannelRef.current) return;
@@ -977,6 +1274,11 @@ function LivePageClient() {
       setIsDirectConnect(savedDirectConnect === 'true');
     }
 
+    const savedAutoFailover = localStorage.getItem(AUTO_FAILOVER_STORAGE_KEY);
+    if (savedAutoFailover !== null) {
+      setAutoFailoverEnabled(savedAutoFailover === 'true');
+    }
+
     const savedRecentGroups = parseStoredStringArray(
       localStorage.getItem(RECENT_GROUPS_STORAGE_KEY),
     ).slice(0, MAX_RECENT_GROUPS);
@@ -1012,6 +1314,45 @@ function LivePageClient() {
     });
   }, [groups]);
 
+  useEffect(() => {
+    if (
+      !currentSource ||
+      activeTab !== 'channels' ||
+      displayChannels.length === 0
+    )
+      return;
+
+    const probeTargets = displayChannels.slice(0, HEALTH_CHECK_BATCH_SIZE);
+    let cancelled = false;
+
+    const runProbeQueue = async () => {
+      for (let i = 0; i < probeTargets.length; i++) {
+        if (cancelled) break;
+        const channel = probeTargets[i];
+        void checkChannelHealth(channel);
+        if (i < probeTargets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      }
+    };
+
+    void runProbeQueue();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    currentSource,
+    displayChannels,
+    selectedGroup,
+    normalizedChannelSearchQuery,
+  ]);
+
+  useEffect(() => {
+    if (!currentChannel) return;
+    void checkChannelHealth(currentChannel, { force: true });
+  }, [currentChannel]);
+
   // 切换直连模式
   const handleDirectConnectToggle = (value: boolean) => {
     setIsDirectConnect(value);
@@ -1019,6 +1360,13 @@ function LivePageClient() {
     // 显示提示
     setShowDirectConnectTip(true);
     setTimeout(() => setShowDirectConnectTip(false), 5000);
+  };
+
+  const handleAutoFailoverToggle = (value: boolean) => {
+    setAutoFailoverEnabled(value);
+    localStorage.setItem(AUTO_FAILOVER_STORAGE_KEY, JSON.stringify(value));
+    setAutoFailoverMessage(value ? '自动失败切换已启用' : '自动失败切换已关闭');
+    setTimeout(() => setAutoFailoverMessage(null), 3500);
   };
 
   // 检查收藏状态
@@ -1235,6 +1583,17 @@ function LivePageClient() {
     );
 
     flvPlayer.attachMediaElement(video);
+    if (flvjs.Events?.ERROR) {
+      flvPlayer.on(flvjs.Events.ERROR, (...args: any[]) => {
+        console.error('FLV 播放错误:', args);
+        void attemptAutoFailover('FLV错误');
+      });
+    } else {
+      flvPlayer.on('error', (...args: any[]) => {
+        console.error('FLV 播放错误:', args);
+        void attemptAutoFailover('FLV错误');
+      });
+    }
     flvPlayer.load();
     flvPlayer.play().catch(() => {});
     video.flv = flvPlayer;
@@ -1264,9 +1623,12 @@ function LivePageClient() {
 
       // precheck type
       let type: LiveStreamType = detectTypeFromUrl(videoUrl);
-      const sourceKey = currentSourceRef.current?.key || '';
+      const sourceKey =
+        currentSource?.key || currentSourceRef.current?.key || '';
       const encodedVideoUrl = encodeURIComponent(videoUrl);
       const precheckUrl = `/api/live/precheck?url=${encodedVideoUrl}&decotv-source=${sourceKey}`;
+      let precheckLatencyMs: number | undefined;
+      let precheckReachable = true;
 
       try {
         const precheckResponse = await fetch(precheckUrl, {
@@ -1274,21 +1636,41 @@ function LivePageClient() {
         });
         if (precheckResponse.ok) {
           const precheckResult = await precheckResponse.json();
+          if (typeof precheckResult?.latencyMs === 'number') {
+            precheckLatencyMs = precheckResult.latencyMs;
+          }
           if (precheckResult.success) {
             const precheckedType = normalizeStreamType(precheckResult.type);
             if (precheckedType !== 'unknown') {
               type = precheckedType;
             }
+          } else {
+            precheckReachable = false;
           }
         } else {
           console.warn('预检查失败:', precheckResponse.statusText);
+          precheckReachable = false;
         }
       } catch (error) {
         console.warn('预检查异常，回退到 URL 类型推断:', error);
+        precheckReachable = false;
       }
 
       if (type === 'unknown') {
         type = 'm3u8';
+      }
+
+      const currentHealthInfo: ChannelHealthInfo = {
+        type,
+        status: deriveHealthStatus(precheckReachable, precheckLatencyMs),
+        latencyMs: precheckLatencyMs,
+        checkedAt: Date.now(),
+        message: precheckReachable ? undefined : '预检查失败',
+      };
+      setChannelHealth(currentChannel.id, currentHealthInfo);
+      if (sourceKey) {
+        healthByUrlCacheRef.current[`${sourceKey}:${videoUrl}`] =
+          currentHealthInfo;
       }
 
       if (type === 'flv') {
@@ -1323,9 +1705,16 @@ function LivePageClient() {
       const targetUrl =
         type === 'm3u8'
           ? `/api/proxy/m3u8?url=${encodedVideoUrl}&decotv-source=${sourceKey}`
-          : isDirectConnect
-            ? videoUrl
-            : `/api/proxy/stream?url=${encodedVideoUrl}&decotv-source=${sourceKey}`;
+          : type === 'flv'
+            ? `/api/proxy/stream?url=${encodedVideoUrl}&decotv-source=${sourceKey}`
+            : isDirectConnect
+              ? videoUrl
+              : `/api/proxy/stream?url=${encodedVideoUrl}&decotv-source=${sourceKey}`;
+
+      if (type === 'flv' && isDirectConnect) {
+        setAutoFailoverMessage('FLV 直播为保证稳定性已自动走代理播放');
+        setTimeout(() => setAutoFailoverMessage(null), 4000);
+      }
 
       try {
         // 创建新的播放器实例
@@ -1374,30 +1763,50 @@ function LivePageClient() {
           },
         });
 
+        const startPlaybackWatchdog = () => {
+          clearPlaybackWatchdog();
+          playbackWatchdogRef.current = setTimeout(() => {
+            void attemptAutoFailover('加载超时');
+          }, PLAYBACK_TIMEOUT_MS);
+        };
+
+        const stopPlaybackWatchdog = () => {
+          clearPlaybackWatchdog();
+        };
+
         // 监听播放器事件
         artPlayerRef.current.on('ready', () => {
           setError(null);
           setIsVideoLoading(false);
+          stopPlaybackWatchdog();
         });
 
         artPlayerRef.current.on('loadstart', () => {
           setIsVideoLoading(true);
+          startPlaybackWatchdog();
         });
 
         artPlayerRef.current.on('loadeddata', () => {
           setIsVideoLoading(false);
+          stopPlaybackWatchdog();
         });
 
         artPlayerRef.current.on('canplay', () => {
           setIsVideoLoading(false);
+          stopPlaybackWatchdog();
         });
 
         artPlayerRef.current.on('waiting', () => {
           setIsVideoLoading(true);
+          if (!playbackWatchdogRef.current) {
+            startPlaybackWatchdog();
+          }
         });
 
         artPlayerRef.current.on('error', (err: any) => {
           console.error('播放器错误:', err);
+          stopPlaybackWatchdog();
+          void attemptAutoFailover('播放器报错');
         });
 
         if (artPlayerRef.current?.video && type !== 'flv') {
@@ -1409,12 +1818,14 @@ function LivePageClient() {
       } catch (err) {
         console.error('创建播放器失败:', err);
         setIsVideoLoading(false);
+        void attemptAutoFailover('播放器初始化失败');
       }
     };
     preload();
 
     return () => {
       cancelled = true;
+      clearPlaybackWatchdog();
     };
   }, [Artplayer, Hls, videoUrl, currentChannel, loading, isDirectConnect]);
 
@@ -1790,6 +2201,35 @@ function LivePageClient() {
           </div>
         )}
 
+        <div className='flex flex-wrap items-center gap-2'>
+          <button
+            onClick={() => handleAutoFailoverToggle(!autoFailoverEnabled)}
+            className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all duration-200 ${
+              autoFailoverEnabled
+                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20'
+                : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+            }`}
+            title={
+              autoFailoverEnabled ? '自动失败切换已开启' : '自动失败切换已关闭'
+            }
+          >
+            <span className='text-xs font-medium'>自动切线</span>
+            <div
+              className={`w-2 h-2 rounded-full ${
+                autoFailoverEnabled
+                  ? 'bg-emerald-500 animate-pulse'
+                  : 'bg-gray-400'
+              }`}
+            />
+          </button>
+
+          {autoFailoverMessage && (
+            <div className='px-3 py-1.5 rounded-full text-xs border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'>
+              {autoFailoverMessage}
+            </div>
+          )}
+        </div>
+
         {/* 第二行：播放器和频道列表 */}
         <div className='space-y-2'>
           {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
@@ -1996,6 +2436,24 @@ function LivePageClient() {
                         displayChannels.map((channel) => {
                           const isActive = channel.id === currentChannel?.id;
                           const isSearchResult = hasChannelSearch;
+                          const healthInfo = channelHealthMap[channel.id];
+                          const streamType =
+                            healthInfo?.type || detectTypeFromUrl(channel.url);
+                          const healthStatus = healthInfo?.status || 'unknown';
+                          const healthLabel =
+                            healthStatus === 'healthy'
+                              ? '可用'
+                              : healthStatus === 'slow'
+                                ? '较慢'
+                                : healthStatus === 'unreachable'
+                                  ? '异常'
+                                  : healthStatus === 'checking'
+                                    ? '检测中'
+                                    : '未检测';
+                          const latencyText =
+                            typeof healthInfo?.latencyMs === 'number'
+                              ? `${healthInfo.latencyMs}ms`
+                              : '';
 
                           return (
                             <button
@@ -2052,14 +2510,32 @@ function LivePageClient() {
                                       </span>
                                     )}
                                   </div>
-                                  {!isSearchResult && (
-                                    <div
-                                      className='text-xs text-gray-500 dark:text-gray-400 mt-1'
-                                      title={channel.group}
+                                  <div className='mt-1 flex items-center gap-1.5 flex-wrap'>
+                                    {!isSearchResult && (
+                                      <span
+                                        className='text-xs text-gray-500 dark:text-gray-400'
+                                        title={channel.group}
+                                      >
+                                        {channel.group}
+                                      </span>
+                                    )}
+                                    <span
+                                      className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full border ${getTypeBadgeStyle(
+                                        streamType,
+                                      )}`}
                                     >
-                                      {channel.group}
-                                    </div>
-                                  )}
+                                      {streamType.toUpperCase()}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full border ${getHealthBadgeStyle(
+                                        healthStatus,
+                                      )}`}
+                                      title={healthInfo?.message || healthLabel}
+                                    >
+                                      {healthLabel}
+                                      {latencyText ? ` ${latencyText}` : ''}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </button>
@@ -2190,6 +2666,47 @@ function LivePageClient() {
         {/* 当前频道信息 */}
         {currentChannel && (
           <div className='pt-4'>
+            {(() => {
+              const healthInfo = channelHealthMap[currentChannel.id];
+              const streamType =
+                healthInfo?.type || detectTypeFromUrl(currentChannel.url);
+              const healthStatus = healthInfo?.status || 'unknown';
+              const healthLabel =
+                healthStatus === 'healthy'
+                  ? '可用'
+                  : healthStatus === 'slow'
+                    ? '较慢'
+                    : healthStatus === 'unreachable'
+                      ? '异常'
+                      : healthStatus === 'checking'
+                        ? '检测中'
+                        : '未检测';
+              const latencyText =
+                typeof healthInfo?.latencyMs === 'number'
+                  ? `${healthInfo.latencyMs}ms`
+                  : '';
+
+              return (
+                <div className='mb-3 flex items-center gap-2 flex-wrap'>
+                  <span
+                    className={`px-2 py-1 text-xs rounded-full border ${getTypeBadgeStyle(
+                      streamType,
+                    )}`}
+                  >
+                    {streamType.toUpperCase()}
+                  </span>
+                  <span
+                    className={`px-2 py-1 text-xs rounded-full border ${getHealthBadgeStyle(
+                      healthStatus,
+                    )}`}
+                    title={healthInfo?.message || healthLabel}
+                  >
+                    健康状态: {healthLabel}
+                    {latencyText ? ` (${latencyText})` : ''}
+                  </span>
+                </div>
+              );
+            })()}
             <div className='flex flex-col lg:flex-row gap-4'>
               {/* 频道图标+名称 - 在小屏幕上占100%，大屏幕占20% */}
               <div className='w-full shrink-0'>
