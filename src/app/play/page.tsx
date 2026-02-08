@@ -473,24 +473,6 @@ function PlayPageClient() {
   };
 
   useEffect(() => {
-    if (danmuLoading) return;
-    if (!videoDoubanId && !videoTitle) return;
-
-    const scopeKey = `${videoDoubanId || videoTitle}_${videoYear || ''}_${currentEpisodeIndex + 1}`;
-    if (danmuCount === 0 && shownEmptyDanmuHintRef.current !== scopeKey) {
-      shownEmptyDanmuHintRef.current = scopeKey;
-      showToast('本集暂未加载到弹幕，可点击右上角刷新重试', 'info');
-    }
-  }, [
-    currentEpisodeIndex,
-    danmuCount,
-    danmuLoading,
-    videoDoubanId,
-    videoTitle,
-    videoYear,
-  ]);
-
-  useEffect(() => {
     const scopeKey = `${videoDoubanId || videoTitle}_${videoYear || ''}_${currentEpisodeIndex + 1}`;
     setShowDanmuMeta(false);
     autoRetryDanmuScopeRef.current = `pending:${scopeKey}`;
@@ -532,16 +514,24 @@ function PlayPageClient() {
     const scopeKey = `${videoDoubanId || videoTitle}_${videoYear || ''}_${currentEpisodeIndex + 1}`;
     if (autoRetryDanmuScopeRef.current !== `pending:${scopeKey}`) return;
 
-    autoRetryDanmuScopeRef.current = `done:${scopeKey}`;
+    autoRetryDanmuScopeRef.current = `running:${scopeKey}`;
     const timer = setTimeout(async () => {
-      if (isDanmuReloadingRef.current) return;
+      if (isDanmuReloadingRef.current) {
+        autoRetryDanmuScopeRef.current = `done:${scopeKey}`;
+        return;
+      }
       try {
         const count = await reloadDanmu();
         if (count > 0) {
           showToast(`已自动重试并加载 ${count} 条弹幕`, 'success');
+        } else if (shownEmptyDanmuHintRef.current !== scopeKey) {
+          shownEmptyDanmuHintRef.current = scopeKey;
+          showToast('本集暂未加载到弹幕，可点击右上角刷新重试', 'info');
         }
       } catch {
         // ignore auto retry errors
+      } finally {
+        autoRetryDanmuScopeRef.current = `done:${scopeKey}`;
       }
     }, 900);
 
