@@ -2,7 +2,7 @@
 import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
 
-import { getCacheTime } from '@/lib/config';
+import { getCacheTime, getConfig } from '@/lib/config';
 
 export const runtime = 'nodejs';
 
@@ -721,6 +721,217 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
+
+  // ========================================================================
+  // 检查用户是否配置了自定义弹幕服务器（LogVar danmu_api）
+  // ========================================================================
+  try {
+    const adminConfig = await getConfig();
+    const dc = adminConfig.DanmuConfig;
+    if (dc?.enabled && dc.serverUrl) {
+      const baseUrl = dc.serverUrl.replace(/\/+$/, '');
+      const tokenSegment = dc.token ? `/${dc.token}` : '';
+      const serverBase = `${baseUrl}${tokenSegment}`;
+
+      // 构建 match 请求体（弹弹play 兼容接口 POST /api/v2/match）
+      const matchBody: Record<string, unknown> = {
+        fileName: title,
+        fileHash: '',
+      };
+      // 支持 @platform 语法指定平台优先级
+      let matchTitle = title;
+      if (dc.platform) {
+        matchTitle = `${title} @${dc.platform.split(',')[0]}`;
+      }
+      matchBody.fileName = matchTitle;
+
+      // 尝试 match 自动匹配
+      let matchResult: {
+        isMatched?: boolean;
+        matches?: Array<{
+          episodeId?: number;
+          animeTitle?: string;
+          episodeTitle?: string;
+        }>;
+      } | null = null;
+
+      try {
+        const matchResp = await fetch(`${serverBase}/api/v2/match`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(matchBody),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (matchResp.ok) {
+          matchResult = await matchResp.json();
+        }
+      } catch (matchErr) {
+        console.warn('[danmu-external] Custom server match failed:', matchErr);
+      }
+
+      // 如果 match 成功且有结果，用 episodeId 去获取弹幕
+      if (
+        matchResult?.isMatched &&
+        matchResult.matches &&
+        matchResult.matches.length > 0
+      ) {
+        const bestMatch = matchResult.matches[0];
+        const episodeId = bestMatch.episodeId;
+        if (episodeId) {
+          try {
+            const format = dc.danmuOutputFormat || 'json';
+            const commentUrl = `${serverBase}/api/v2/comment/${episodeId}?format=${format}`;
+            const commentResp = await fetch(commentUrl, {
+              headers: { Accept: 'application/json' },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (commentResp.ok) {
+              const commentData = await commentResp.json();
+              // danmu_api 返回的 JSON 格式: { count, comments: [{ cid, p, m }] }
+              const comments = commentData?.comments || [];
+              const danmus: DanmuItem[] = comments.map(
+                (c: { p: string; m: string }) => {
+                  const parts = (c.p || '').split(',');
+                  const time = parseFloat(parts[0]) || 0;
+                  const modeRaw = parseInt(parts[1]) || 1;
+                  const color = parseInt(parts[2]) || 16777215;
+                  let mode: 0 | 1 | 2 = 0;
+                  if (modeRaw === 4) mode = 2;
+                  else if (modeRaw === 5) mode = 1;
+                  return {
+                    time,
+                    text: c.m || '',
+                    color: `#${color.toString(16).padStart(6, '0')}`,
+                    mode,
+                  };
+                },
+              );
+
+              const cacheTime = await getCacheTime();
+              return NextResponse.json(
+                {
+                  code: 200,
+                  message: '获取成功',
+                  danmus,
+                  count: danmus.length,
+                  source: 'custom-danmu-api',
+                  match: {
+                    animeTitle: bestMatch.animeTitle || title,
+                    episodeTitle: bestMatch.episodeTitle || `第${episode}集`,
+                    episodeId,
+                    matchLevel: 'auto',
+                  },
+                },
+                {
+                  headers: forceRefresh
+                    ? { 'Cache-Control': 'no-store, max-age=0' }
+                    : {
+                        'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+                      },
+                },
+              );
+            }
+          } catch (commentErr) {
+            console.warn(
+              '[danmu-external] Custom server comment fetch failed:',
+              commentErr,
+            );
+          }
+        }
+      }
+
+      // match 未匹配到结果时，尝试 search + bangumi fallback
+      try {
+        const searchUrl = `${serverBase}/api/v2/search/episodes?anime=${encodeURIComponent(title)}`;
+        const searchResp = await fetch(searchUrl, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (searchResp.ok) {
+          const searchData = await searchResp.json();
+          const animes = searchData?.animes || [];
+          if (animes.length > 0) {
+            // 简单取第一个anime的对应集数
+            const anime = animes[0];
+            const episodes = anime?.episodes || [];
+            const targetEp = episodes[episode - 1] || episodes[0];
+            if (targetEp?.episodeId) {
+              const format = dc.danmuOutputFormat || 'json';
+              const commentUrl = `${serverBase}/api/v2/comment/${targetEp.episodeId}?format=${format}`;
+              const commentResp = await fetch(commentUrl, {
+                headers: { Accept: 'application/json' },
+                signal: AbortSignal.timeout(15000),
+              });
+              if (commentResp.ok) {
+                const commentData = await commentResp.json();
+                const comments = commentData?.comments || [];
+                const danmus: DanmuItem[] = comments.map(
+                  (c: { p: string; m: string }) => {
+                    const parts = (c.p || '').split(',');
+                    const time = parseFloat(parts[0]) || 0;
+                    const modeRaw = parseInt(parts[1]) || 1;
+                    const color = parseInt(parts[2]) || 16777215;
+                    let mode: 0 | 1 | 2 = 0;
+                    if (modeRaw === 4) mode = 2;
+                    else if (modeRaw === 5) mode = 1;
+                    return {
+                      time,
+                      text: c.m || '',
+                      color: `#${color.toString(16).padStart(6, '0')}`,
+                      mode,
+                    };
+                  },
+                );
+
+                const cacheTime = await getCacheTime();
+                return NextResponse.json(
+                  {
+                    code: 200,
+                    message: '获取成功',
+                    danmus,
+                    count: danmus.length,
+                    source: 'custom-danmu-api',
+                    match: {
+                      animeTitle: anime.animeTitle || title,
+                      episodeTitle: targetEp.episodeTitle || `第${episode}集`,
+                      episodeId: targetEp.episodeId,
+                      matchLevel: 'search',
+                    },
+                  },
+                  {
+                    headers: forceRefresh
+                      ? { 'Cache-Control': 'no-store, max-age=0' }
+                      : {
+                          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+                        },
+                  },
+                );
+              }
+            }
+          }
+        }
+      } catch (searchErr) {
+        console.warn(
+          '[danmu-external] Custom server search fallback failed:',
+          searchErr,
+        );
+      }
+      // 自定义服务器未能获取弹幕时，回落到内置弹弹play
+      console.log(
+        '[danmu-external] Custom server returned no results, falling back to built-in dandanplay',
+      );
+    }
+  } catch (configErr) {
+    // 获取配置失败不阻断，继续使用内置弹弹play
+    console.warn('[danmu-external] Failed to read DanmuConfig:', configErr);
+  }
+
+  // ========================================================================
+  // 内置弹弹play API 路径（默认逻辑）
+  // ========================================================================
 
   const { appId, appSecret } = getDandanplayCredentials();
 

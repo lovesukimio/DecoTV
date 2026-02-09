@@ -58,6 +58,21 @@ export interface AdminConfig {
     channelNumber?: number;
     disabled?: boolean;
   }[];
+  DanmuConfig?: {
+    enabled: boolean;
+    serverUrl: string; // 弹幕 API 服务器地址，如 http://192.168.1.7:9321/87654321
+    token: string; // 弹幕 API Token
+    platform: string; // 弹幕来源平台优先级，如 'bilibili1,qq,qiyi'
+    sourceOrder: string; // 采集源排序，如 '360,vod,renren,hanjutv'
+    mergeSourcePairs: string; // 源合并配置
+    bilibiliCookie: string; // B站 cookie（选填）
+    convertTopBottomToScroll: boolean; // 顶部/底部弹幕转浮动
+    convertColor: 'default' | 'white' | 'color'; // 弹幕颜色转换
+    danmuLimit: number; // 弹幕数量限制（k）
+    blockedWords: string; // 弹幕屏蔽词
+    danmuOutputFormat: 'json' | 'xml'; // 输出格式
+    simplifiedTraditional: 'default' | 'simplified' | 'traditional'; // 简繁转换
+  };
 }
 
 export interface AdminConfigResult {
