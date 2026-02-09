@@ -3,7 +3,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { verifyApiAuth } from '@/lib/auth';
-import { getConfig, getLocalModeConfig } from '@/lib/config';
+import {
+  getConfig,
+  getLocalModeConfig,
+  invalidateConfigCache,
+} from '@/lib/config';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -74,6 +78,8 @@ export async function POST(request: NextRequest) {
     };
 
     await db.saveAdminConfig(adminConfig);
+    // 清除内存缓存，确保下次 getConfig() 读取到最新配置
+    invalidateConfigCache();
 
     return NextResponse.json(
       { ok: true },
