@@ -704,6 +704,187 @@ async function fetchDanmu(
 // Route Handler
 // ============================================================================
 
+// ============================================================================
+// 自定义弹幕服务器请求逻辑（抽取为独立函数，增强错误可见性）
+// ============================================================================
+
+/**
+ * 解析自定义弹幕服务器返回的弹幕评论数组
+ */
+function parseCustomComments(comments: Array<{ p: string; m: string }>): DanmuItem[] {
+  return comments.map((c) => {
+    const parts = (c.p || '').split(',');
+    const time = parseFloat(parts[0]) || 0;
+    const modeRaw = parseInt(parts[1]) || 1;
+    const color = parseInt(parts[2]) || 16777215;
+    let mode: 0 | 1 | 2 = 0;
+    if (modeRaw === 4) mode = 2;
+    else if (modeRaw === 5) mode = 1;
+    return {
+      time,
+      text: c.m || '',
+      color: `#${color.toString(16).padStart(6, '0')}`,
+      mode,
+    };
+  });
+}
+
+/**
+ * 通过自定义弹幕服务器获取弹幕（完整流程）
+ *
+ * 在 Serverless 环境（Vercel/Zeabur 等）下的关键设计：
+ * 1. 每个 fetch 都有明确的 AbortSignal.timeout
+ * 2. 所有错误都会被捕获并打印详细日志（不静默吞掉）
+ * 3. 返回结构化结果，明确区分"请求失败"和"无匹配结果"
+ */
+async function fetchFromCustomServer(
+  dc: NonNullable<Awaited<ReturnType<typeof getConfig>>['DanmuConfig']>,
+  title: string,
+  episode: number,
+  forceRefresh: boolean,
+): Promise<{
+  success: boolean;
+  danmus: DanmuItem[];
+  match: { animeTitle: string; episodeTitle: string; episodeId: number; matchLevel: string } | null;
+  error?: string;
+}> {
+  const emptyResult = { success: false, danmus: [], match: null };
+
+  const baseUrl = dc.serverUrl.replace(/\/+$/, '');
+  const tokenSegment = dc.token ? `/${dc.token}` : '';
+  const serverBase = `${baseUrl}${tokenSegment}`;
+  const format = dc.danmuOutputFormat || 'json';
+
+  console.log(`[danmu-custom] Attempting custom server: ${baseUrl} (enabled=${dc.enabled})`);
+
+  // --- 步骤 1: 尝试 match 自动匹配 ---
+  let matchTitle = title;
+  if (dc.platform) {
+    matchTitle = `${title} @${dc.platform.split(',')[0]}`;
+  }
+
+  try {
+    const matchResp = await fetch(`${serverBase}/api/v2/match`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ fileName: matchTitle, fileHash: '' }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (matchResp.ok) {
+      const matchResult = await matchResp.json();
+      if (
+        matchResult?.isMatched &&
+        matchResult.matches &&
+        matchResult.matches.length > 0
+      ) {
+        const bestMatch = matchResult.matches[0];
+        const episodeId = bestMatch.episodeId;
+        if (episodeId) {
+          const commentUrl = `${serverBase}/api/v2/comment/${episodeId}?format=${format}`;
+          const commentResp = await fetch(commentUrl, {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (commentResp.ok) {
+            const commentData = await commentResp.json();
+            const comments = commentData?.comments || [];
+            const danmus = parseCustomComments(comments);
+            console.log(`[danmu-custom] Match success: episodeId=${episodeId}, danmus=${danmus.length}`);
+            return {
+              success: true,
+              danmus,
+              match: {
+                animeTitle: bestMatch.animeTitle || title,
+                episodeTitle: bestMatch.episodeTitle || `第${episode}集`,
+                episodeId,
+                matchLevel: 'auto',
+              },
+            };
+          } else {
+            console.warn(`[danmu-custom] Comment fetch failed: HTTP ${commentResp.status} ${commentResp.statusText}`);
+          }
+        }
+      }
+    } else {
+      console.warn(`[danmu-custom] Match request failed: HTTP ${matchResp.status} ${matchResp.statusText}`);
+    }
+  } catch (matchErr) {
+    console.error('[danmu-custom] Match request error (will try search fallback):', matchErr instanceof Error ? matchErr.message : matchErr);
+  }
+
+  // --- 步骤 2: match 未成功，尝试 search fallback ---
+  try {
+    const searchUrl = `${serverBase}/api/v2/search/episodes?anime=${encodeURIComponent(title)}`;
+    console.log(`[danmu-custom] Trying search fallback: ${searchUrl}`);
+    const searchResp = await fetch(searchUrl, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (searchResp.ok) {
+      const searchData = await searchResp.json();
+      const animes = searchData?.animes || [];
+      if (animes.length > 0) {
+        const anime = animes[0];
+        const episodes = anime?.episodes || [];
+        const targetEp = episodes[episode - 1] || episodes[0];
+        if (targetEp?.episodeId) {
+          const commentUrl = `${serverBase}/api/v2/comment/${targetEp.episodeId}?format=${format}`;
+          const commentResp = await fetch(commentUrl, {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (commentResp.ok) {
+            const commentData = await commentResp.json();
+            const comments = commentData?.comments || [];
+            const danmus = parseCustomComments(comments);
+            console.log(`[danmu-custom] Search fallback success: episodeId=${targetEp.episodeId}, danmus=${danmus.length}`);
+            return {
+              success: true,
+              danmus,
+              match: {
+                animeTitle: anime.animeTitle || title,
+                episodeTitle: targetEp.episodeTitle || `第${episode}集`,
+                episodeId: targetEp.episodeId,
+                matchLevel: 'search',
+              },
+            };
+          } else {
+            console.warn(`[danmu-custom] Search comment fetch failed: HTTP ${commentResp.status} ${commentResp.statusText}`);
+          }
+        }
+      }
+    } else {
+      console.warn(`[danmu-custom] Search request failed: HTTP ${searchResp.status} ${searchResp.statusText}`);
+    }
+  } catch (searchErr) {
+    console.error('[danmu-custom] Search fallback error:', searchErr instanceof Error ? searchErr.message : searchErr);
+    return { ...emptyResult, error: `自定义弹幕服务器请求失败: ${searchErr instanceof Error ? searchErr.message : String(searchErr)}` };
+  }
+
+  // 所有尝试均无结果
+  console.log('[danmu-custom] All attempts returned no results.');
+  return { ...emptyResult, error: '自定义弹幕服务器未返回有效弹幕数据' };
+}
+
+// ============================================================================
+// Route Handler — 重构后的优先级逻辑
+//
+// ★★★ 核心优先级规则 ★★★
+// 第一优先级（最高）：数据库/后台 DanmuConfig
+//   - 如果 DanmuConfig.enabled === true，则 **强制使用** 自定义弹幕源
+//   - 即使环境变量 DANDANPLAY_APP_ID/SECRET 存在，也 **不会回落** 到弹弹play
+//   - 只有当自定义源返回空结果（非错误）时，才在响应中说明无弹幕
+//
+// 第二优先级（回落）：环境变量弹弹play
+//   - 只有当 DanmuConfig.enabled !== true（关闭/未配置）时才使用
+//   - 需要 DANDANPLAY_APP_ID 和 DANDANPLAY_APP_SECRET 环境变量
+// ============================================================================
+
 export async function GET(request: Request) {
   // 定期清理过期缓存
   cleanupCaches();
@@ -722,231 +903,97 @@ export async function GET(request: Request) {
     );
   }
 
-  // 追踪是否尝试过自定义弹幕服务器（用于区分503错误信息）
-  let customServerAttempted = false;
+  // ========================================================================
+  // ★ 第一步：读取数据库配置，判断用户是否启用了自定义弹幕源
+  // ========================================================================
+  let danmuConfig: Awaited<ReturnType<typeof getConfig>>['DanmuConfig'] = undefined;
+  let configReadError: string | null = null;
 
-  // ========================================================================
-  // 检查用户是否配置了自定义弹幕服务器（LogVar danmu_api）
-  // ========================================================================
   try {
     const adminConfig = await getConfig();
-    const dc = adminConfig.DanmuConfig;
-    if (dc?.enabled && dc.serverUrl) {
-      const baseUrl = dc.serverUrl.replace(/\/+$/, '');
-      const tokenSegment = dc.token ? `/${dc.token}` : '';
-      const serverBase = `${baseUrl}${tokenSegment}`;
-
-      // 构建 match 请求体（弹弹play 兼容接口 POST /api/v2/match）
-      const matchBody: Record<string, unknown> = {
-        fileName: title,
-        fileHash: '',
-      };
-      // 支持 @platform 语法指定平台优先级
-      let matchTitle = title;
-      if (dc.platform) {
-        matchTitle = `${title} @${dc.platform.split(',')[0]}`;
-      }
-      matchBody.fileName = matchTitle;
-
-      // 尝试 match 自动匹配
-      let matchResult: {
-        isMatched?: boolean;
-        matches?: Array<{
-          episodeId?: number;
-          animeTitle?: string;
-          episodeTitle?: string;
-        }>;
-      } | null = null;
-
-      try {
-        const matchResp = await fetch(`${serverBase}/api/v2/match`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify(matchBody),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (matchResp.ok) {
-          matchResult = await matchResp.json();
-        }
-      } catch (matchErr) {
-        console.warn('[danmu-external] Custom server match failed:', matchErr);
-      }
-
-      // 如果 match 成功且有结果，用 episodeId 去获取弹幕
-      if (
-        matchResult?.isMatched &&
-        matchResult.matches &&
-        matchResult.matches.length > 0
-      ) {
-        const bestMatch = matchResult.matches[0];
-        const episodeId = bestMatch.episodeId;
-        if (episodeId) {
-          try {
-            const format = dc.danmuOutputFormat || 'json';
-            const commentUrl = `${serverBase}/api/v2/comment/${episodeId}?format=${format}`;
-            const commentResp = await fetch(commentUrl, {
-              headers: { Accept: 'application/json' },
-              signal: AbortSignal.timeout(15000),
-            });
-            if (commentResp.ok) {
-              const commentData = await commentResp.json();
-              // danmu_api 返回的 JSON 格式: { count, comments: [{ cid, p, m }] }
-              const comments = commentData?.comments || [];
-              const danmus: DanmuItem[] = comments.map(
-                (c: { p: string; m: string }) => {
-                  const parts = (c.p || '').split(',');
-                  const time = parseFloat(parts[0]) || 0;
-                  const modeRaw = parseInt(parts[1]) || 1;
-                  const color = parseInt(parts[2]) || 16777215;
-                  let mode: 0 | 1 | 2 = 0;
-                  if (modeRaw === 4) mode = 2;
-                  else if (modeRaw === 5) mode = 1;
-                  return {
-                    time,
-                    text: c.m || '',
-                    color: `#${color.toString(16).padStart(6, '0')}`,
-                    mode,
-                  };
-                },
-              );
-
-              const cacheTime = await getCacheTime();
-              return NextResponse.json(
-                {
-                  code: 200,
-                  message: '获取成功',
-                  danmus,
-                  count: danmus.length,
-                  source: 'custom-danmu-api',
-                  match: {
-                    animeTitle: bestMatch.animeTitle || title,
-                    episodeTitle: bestMatch.episodeTitle || `第${episode}集`,
-                    episodeId,
-                    matchLevel: 'auto',
-                  },
-                },
-                {
-                  headers: forceRefresh
-                    ? { 'Cache-Control': 'no-store, max-age=0' }
-                    : {
-                        'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-                      },
-                },
-              );
-            }
-          } catch (commentErr) {
-            console.warn(
-              '[danmu-external] Custom server comment fetch failed:',
-              commentErr,
-            );
-          }
-        }
-      }
-
-      // match 未匹配到结果时，尝试 search + bangumi fallback
-      try {
-        const searchUrl = `${serverBase}/api/v2/search/episodes?anime=${encodeURIComponent(title)}`;
-        const searchResp = await fetch(searchUrl, {
-          headers: { Accept: 'application/json' },
-          signal: AbortSignal.timeout(15000),
-        });
-        if (searchResp.ok) {
-          const searchData = await searchResp.json();
-          const animes = searchData?.animes || [];
-          if (animes.length > 0) {
-            // 简单取第一个anime的对应集数
-            const anime = animes[0];
-            const episodes = anime?.episodes || [];
-            const targetEp = episodes[episode - 1] || episodes[0];
-            if (targetEp?.episodeId) {
-              const format = dc.danmuOutputFormat || 'json';
-              const commentUrl = `${serverBase}/api/v2/comment/${targetEp.episodeId}?format=${format}`;
-              const commentResp = await fetch(commentUrl, {
-                headers: { Accept: 'application/json' },
-                signal: AbortSignal.timeout(15000),
-              });
-              if (commentResp.ok) {
-                const commentData = await commentResp.json();
-                const comments = commentData?.comments || [];
-                const danmus: DanmuItem[] = comments.map(
-                  (c: { p: string; m: string }) => {
-                    const parts = (c.p || '').split(',');
-                    const time = parseFloat(parts[0]) || 0;
-                    const modeRaw = parseInt(parts[1]) || 1;
-                    const color = parseInt(parts[2]) || 16777215;
-                    let mode: 0 | 1 | 2 = 0;
-                    if (modeRaw === 4) mode = 2;
-                    else if (modeRaw === 5) mode = 1;
-                    return {
-                      time,
-                      text: c.m || '',
-                      color: `#${color.toString(16).padStart(6, '0')}`,
-                      mode,
-                    };
-                  },
-                );
-
-                const cacheTime = await getCacheTime();
-                return NextResponse.json(
-                  {
-                    code: 200,
-                    message: '获取成功',
-                    danmus,
-                    count: danmus.length,
-                    source: 'custom-danmu-api',
-                    match: {
-                      animeTitle: anime.animeTitle || title,
-                      episodeTitle: targetEp.episodeTitle || `第${episode}集`,
-                      episodeId: targetEp.episodeId,
-                      matchLevel: 'search',
-                    },
-                  },
-                  {
-                    headers: forceRefresh
-                      ? { 'Cache-Control': 'no-store, max-age=0' }
-                      : {
-                          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-                        },
-                  },
-                );
-              }
-            }
-          }
-        }
-      } catch (searchErr) {
-        console.warn(
-          '[danmu-external] Custom server search fallback failed:',
-          searchErr,
-        );
-      }
-      // 自定义服务器未能获取弹幕时，回落到内置弹弹play
-      customServerAttempted = true;
-      console.log(
-        '[danmu-external] Custom server returned no results, falling back to built-in dandanplay',
-      );
-    }
+    danmuConfig = adminConfig.DanmuConfig;
   } catch (configErr) {
-    // 获取配置失败不阻断，继续使用内置弹弹play
-    console.warn('[danmu-external] Failed to read DanmuConfig:', configErr);
+    configReadError = configErr instanceof Error ? configErr.message : String(configErr);
+    console.error('[danmu-external] Failed to read DanmuConfig:', configReadError);
   }
 
   // ========================================================================
-  // 内置弹弹play API 路径（默认逻辑）
+  // ★ 核心决策点：DanmuConfig.enabled 是唯一的源选择开关
   // ========================================================================
+  const customEnabled = danmuConfig?.enabled === true && !!danmuConfig?.serverUrl;
+
+  if (customEnabled) {
+    // ==================================================================
+    // 路径 A：用户在后台开启了"自定义弹幕" → 强制使用自定义源
+    //         无论环境变量是否存在，都不回落到弹弹play
+    // ==================================================================
+    console.log('[danmu-external] ★ Custom danmu ENABLED by admin config — ignoring env vars');
+
+    const customResult = await fetchFromCustomServer(
+      danmuConfig!,
+      title,
+      episode,
+      forceRefresh,
+    );
+
+    const cacheTime = await getCacheTime();
+    const cacheHeaders = forceRefresh
+      ? { 'Cache-Control': 'no-store, max-age=0' }
+      : { 'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}` };
+
+    if (customResult.success && customResult.danmus.length > 0) {
+      // 自定义源成功返回弹幕
+      let finalDanmus = deduplicateDanmu(customResult.danmus);
+      finalDanmus.sort((a, b) => a.time - b.time);
+
+      return NextResponse.json(
+        {
+          code: 200,
+          message: '获取成功',
+          danmus: finalDanmus,
+          count: finalDanmus.length,
+          source: 'custom-danmu-api',
+          match: customResult.match,
+        },
+        { headers: cacheHeaders },
+      );
+    }
+
+    // 自定义源未能返回弹幕（可能是无匹配/无弹幕/请求失败）
+    // ★★★ 关键变化：不回落到弹弹play，直接返回空结果+详细错误信息 ★★★
+    const errorDetail = customResult.error || '自定义弹幕服务器未返回弹幕数据';
+    console.warn(`[danmu-external] Custom source returned no danmus: ${errorDetail}`);
+
+    return NextResponse.json(
+      {
+        code: 200,
+        message: `自定义弹幕源无结果: ${errorDetail}`,
+        danmus: [],
+        count: 0,
+        source: 'custom-danmu-api',
+        match: customResult.match,
+        customError: errorDetail,
+      },
+      { headers: cacheHeaders },
+    );
+  }
+
+  // ==================================================================
+  // 路径 B：用户未启用自定义弹幕（或配置读取失败）→ 使用弹弹play
+  // ==================================================================
+  if (configReadError) {
+    console.warn(`[danmu-external] Config read failed (${configReadError}), falling through to dandanplay`);
+  } else {
+    console.log('[danmu-external] Custom danmu not enabled, using dandanplay');
+  }
 
   const { appId, appSecret } = getDandanplayCredentials();
 
   if (!appId || !appSecret) {
-    const message = customServerAttempted
-      ? '自定义弹幕服务器未返回有效结果，回落的弹弹Play API 凭证也未配置（缺少 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET 环境变量）。'
-      : '弹弹Play API 凭证未配置（缺少 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET 环境变量）。如使用官方 Docker 镜像，请确保镜像版本正确。';
     return NextResponse.json(
       {
         code: 503,
-        message,
+        message: '弹弹Play API 凭证未配置（缺少 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET 环境变量）。如使用官方 Docker 镜像，请确保镜像版本正确。',
         danmus: [],
         count: 0,
       },
