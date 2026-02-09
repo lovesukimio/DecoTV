@@ -722,6 +722,9 @@ export async function GET(request: Request) {
     );
   }
 
+  // 追踪是否尝试过自定义弹幕服务器（用于区分503错误信息）
+  let customServerAttempted = false;
+
   // ========================================================================
   // 检查用户是否配置了自定义弹幕服务器（LogVar danmu_api）
   // ========================================================================
@@ -920,6 +923,7 @@ export async function GET(request: Request) {
         );
       }
       // 自定义服务器未能获取弹幕时，回落到内置弹弹play
+      customServerAttempted = true;
       console.log(
         '[danmu-external] Custom server returned no results, falling back to built-in dandanplay',
       );
@@ -936,11 +940,13 @@ export async function GET(request: Request) {
   const { appId, appSecret } = getDandanplayCredentials();
 
   if (!appId || !appSecret) {
+    const message = customServerAttempted
+      ? '自定义弹幕服务器未返回有效结果，回落的弹弹Play API 凭证也未配置（缺少 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET 环境变量）。'
+      : '弹弹Play API 凭证未配置（缺少 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET 环境变量）。如使用官方 Docker 镜像，请确保镜像版本正确。';
     return NextResponse.json(
       {
         code: 503,
-        message:
-          '弹幕服务暂不可用。如使用官方 Docker 镜像，请确保镜像版本正确。',
+        message,
         danmus: [],
         count: 0,
       },

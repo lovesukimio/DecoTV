@@ -7283,6 +7283,46 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
         </div>
       )}
 
+      {/* 保存按钮 - 当弹幕服务关闭时也需要保存 */}
+      {!danmuSettings.enabled && (
+        <div className='flex items-center justify-end gap-3 pt-2'>
+          <button
+            onClick={handleSave}
+            disabled={isLoading('saveDanmuConfig')}
+            className={`px-6 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+              isLoading('saveDanmuConfig')
+                ? buttonStyles.disabled
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md'
+            }`}
+          >
+            {isLoading('saveDanmuConfig') ? (
+              <svg
+                className='w-4 h-4 animate-spin'
+                viewBox='0 0 24 24'
+                fill='none'
+              >
+                <circle
+                  className='opacity-25'
+                  cx='12'
+                  cy='12'
+                  r='10'
+                  stroke='currentColor'
+                  strokeWidth='4'
+                />
+                <path
+                  className='opacity-75'
+                  fill='currentColor'
+                  d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z'
+                />
+              </svg>
+            ) : (
+              <Check className='w-4 h-4' />
+            )}
+            {isLoading('saveDanmuConfig') ? '保存中...' : '保存配置'}
+          </button>
+        </div>
+      )}
+
       <AlertModal
         isOpen={alertModal.isOpen}
         onClose={hideAlert}
