@@ -105,7 +105,7 @@ function DoubanPageClient() {
     isLoadingCategories,
     setCurrentSource,
     getFilteredCategories,
-  } = useSourceFilter();
+  } = useSourceFilter({ syncWithGlobal: false });
 
   // 【核心修复】存储当前源的过滤后分类列表（用于渲染）
   const [filteredSourceCategories, setFilteredSourceCategories] = useState<

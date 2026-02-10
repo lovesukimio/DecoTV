@@ -44,6 +44,10 @@ export interface UseSourceFilterReturn {
   ) => SourceCategory[];
 }
 
+export interface UseSourceFilterOptions {
+  syncWithGlobal?: boolean;
+}
+
 // 内容类型到分类关键词的映射（扩展关键词以提高匹配率）
 const CONTENT_TYPE_KEYWORDS: Record<string, string[]> = {
   movie: ['电影', '影片', '大片', '院线', '4K', '蓝光', '片'],
@@ -66,10 +70,13 @@ const CONTENT_TYPE_KEYWORDS: Record<string, string[]> = {
  * 数据源筛选 Hook
  * 用于获取可用源列表、源分类，实现数据源优先的筛选逻辑
  */
-export function useSourceFilter(): UseSourceFilterReturn {
+export function useSourceFilter(
+  options: UseSourceFilterOptions = {},
+): UseSourceFilterReturn {
+  const { syncWithGlobal = true } = options;
   const [sources, setSources] = useState<ApiSite[]>([]);
   const [currentSource, setCurrentSourceState] = useState<string>(() =>
-    getStoredSourceBrowserValue(),
+    syncWithGlobal ? getStoredSourceBrowserValue() : 'auto',
   );
   const [sourceCategories, setSourceCategories] = useState<SourceCategory[]>(
     [],
@@ -148,11 +155,16 @@ export function useSourceFilter(): UseSourceFilterReturn {
   );
 
   // 切换当前源
-  const setCurrentSource = useCallback((sourceKey: string) => {
-    const nextSource = sourceKey || 'auto';
-    setCurrentSourceState(nextSource);
-    setStoredSourceBrowserValue(nextSource);
-  }, []);
+  const setCurrentSource = useCallback(
+    (sourceKey: string) => {
+      const nextSource = sourceKey || 'auto';
+      setCurrentSourceState(nextSource);
+      if (syncWithGlobal) {
+        setStoredSourceBrowserValue(nextSource);
+      }
+    },
+    [syncWithGlobal],
+  );
 
   // 根据内容类型过滤分类（带智能兜底）
   const getFilteredCategories = useCallback(
@@ -201,6 +213,8 @@ export function useSourceFilter(): UseSourceFilterReturn {
 
   // 同步其他页面更新的数据源（源浏览器 -> 豆瓣页）
   useEffect(() => {
+    if (!syncWithGlobal) return;
+
     const handleSourceChange = (event: Event) => {
       const detail = (event as CustomEvent<{ sourceKey?: string }>).detail;
       const nextSource = detail?.sourceKey || getStoredSourceBrowserValue();
@@ -234,7 +248,7 @@ export function useSourceFilter(): UseSourceFilterReturn {
         handleStorageChange as EventListener,
       );
     };
-  }, []);
+  }, [syncWithGlobal]);
 
   // 当前源变化后自动拉取分类（用于源浏览器统一控制）
   useEffect(() => {
