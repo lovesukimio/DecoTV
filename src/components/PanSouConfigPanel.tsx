@@ -2,6 +2,7 @@
 
 import { ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { AdminConfig } from '@/lib/admin.types';
 import { DEFAULT_PANSOU_SERVER_URL, MAX_PANSOU_NODE_COUNT } from '@/lib/pansou';
@@ -99,6 +100,7 @@ export default function PanSouConfigPanel({
   config,
   refreshConfig,
 }: PanSouConfigPanelProps) {
+  const [mounted, setMounted] = useState(false);
   const [nodes, setNodes] = useState<PanSouNodeForm[]>([createDefaultNode()]);
   const [activeNodeId, setActiveNodeId] = useState('pansou_default_node');
   const [isSaving, setIsSaving] = useState(false);
@@ -114,6 +116,28 @@ export default function PanSouConfigPanel({
   const [draftNode, setDraftNode] =
     useState<PanSouNodeForm>(createDefaultNode());
   const [deleteNodeId, setDeleteNodeId] = useState('');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+
+    const hasGlobalModal = isNodeModalOpen || Boolean(deleteNodeId);
+    if (!hasGlobalModal) {
+      return;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [mounted, isNodeModalOpen, deleteNodeId]);
 
   useEffect(() => {
     const incomingNodes = Array.isArray(config?.PanSouConfig?.nodes)
@@ -547,178 +571,187 @@ export default function PanSouConfigPanel({
         </button>
       </div>
 
-      {isNodeModalOpen && (
-        <div className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'>
-          <div className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full'>
-            <div className='p-6 space-y-4'>
-              <div className='flex items-center justify-between'>
-                <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                  {nodeModalMode === 'create' ? '新增节点' : '编辑节点'}
-                </h3>
-                <button
-                  type='button'
-                  onClick={closeNodeModal}
-                  className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
-                >
-                  <svg
-                    className='w-5 h-5'
-                    fill='none'
-                    stroke='currentColor'
-                    viewBox='0 0 24 24'
-                  >
-                    <path
-                      strokeLinecap='round'
-                      strokeLinejoin='round'
-                      strokeWidth={2}
-                      d='M6 18L18 6M6 6l12 12'
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
-                  节点名称
-                </label>
-                <input
-                  type='text'
-                  value={draftNode.name}
-                  onChange={(event) =>
-                    setDraftNode((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                  placeholder='例如：主节点'
-                  className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
-                />
-              </div>
-
-              <div>
-                <div className='flex items-center justify-between mb-1.5'>
-                  <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
-                    服务地址 (URL)
-                  </label>
+      {mounted &&
+        isNodeModalOpen &&
+        createPortal(
+          <div
+            className='fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4'
+            onClick={closeNodeModal}
+          >
+            <div
+              className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto'
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className='p-6 space-y-4'>
+                <div className='flex items-center justify-between'>
+                  <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
+                    {nodeModalMode === 'create' ? '新增节点' : '编辑节点'}
+                  </h3>
                   <button
                     type='button'
-                    onClick={() =>
-                      setDraftNode((prev) => ({
-                        ...prev,
-                        serverUrl: normalizeServerUrl(
-                          DEFAULT_PANSOU_SERVER_URL,
-                        ),
-                      }))
-                    }
-                    className='text-xs text-cyan-700 dark:text-cyan-300 hover:underline'
+                    onClick={closeNodeModal}
+                    className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
                   >
-                    使用演示地址
+                    <svg
+                      className='w-5 h-5'
+                      fill='none'
+                      stroke='currentColor'
+                      viewBox='0 0 24 24'
+                    >
+                      <path
+                        strokeLinecap='round'
+                        strokeLinejoin='round'
+                        strokeWidth={2}
+                        d='M6 18L18 6M6 6l12 12'
+                      />
+                    </svg>
                   </button>
                 </div>
-                <input
-                  type='text'
-                  value={draftNode.serverUrl}
-                  onChange={(event) =>
-                    setDraftNode((prev) => ({
-                      ...prev,
-                      serverUrl: event.target.value,
-                    }))
-                  }
-                  placeholder='例如: https://pansou.example.com'
-                  className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
-                />
-              </div>
 
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
-                  API Token / 鉴权密钥
-                  <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
-                    选填
-                  </span>
-                </label>
-                <input
-                  type='text'
-                  value={draftNode.token}
-                  onChange={(event) =>
-                    setDraftNode((prev) => ({
-                      ...prev,
-                      token: event.target.value,
-                    }))
-                  }
-                  placeholder='不填则不注入 Bearer Token'
-                  className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
-                />
-              </div>
-
-              <div className='grid gap-3 sm:grid-cols-2'>
                 <div>
                   <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
-                    用户名 (Username)
+                    节点名称
+                  </label>
+                  <input
+                    type='text'
+                    value={draftNode.name}
+                    onChange={(event) =>
+                      setDraftNode((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder='例如：主节点'
+                    className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
+                  />
+                </div>
+
+                <div>
+                  <div className='flex items-center justify-between mb-1.5'>
+                    <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                      服务地址 (URL)
+                    </label>
+                    <button
+                      type='button'
+                      onClick={() =>
+                        setDraftNode((prev) => ({
+                          ...prev,
+                          serverUrl: normalizeServerUrl(
+                            DEFAULT_PANSOU_SERVER_URL,
+                          ),
+                        }))
+                      }
+                      className='text-xs text-cyan-700 dark:text-cyan-300 hover:underline'
+                    >
+                      使用演示地址
+                    </button>
+                  </div>
+                  <input
+                    type='text'
+                    value={draftNode.serverUrl}
+                    onChange={(event) =>
+                      setDraftNode((prev) => ({
+                        ...prev,
+                        serverUrl: event.target.value,
+                      }))
+                    }
+                    placeholder='例如: https://pansou.example.com'
+                    className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
+                  />
+                </div>
+
+                <div>
+                  <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+                    API Token / 鉴权密钥
                     <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
                       选填
                     </span>
                   </label>
                   <input
                     type='text'
-                    value={draftNode.username}
+                    value={draftNode.token}
                     onChange={(event) =>
                       setDraftNode((prev) => ({
                         ...prev,
-                        username: event.target.value,
+                        token: event.target.value,
                       }))
                     }
-                    placeholder='Basic Auth 用户名'
+                    placeholder='不填则不注入 Bearer Token'
                     className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
                   />
                 </div>
-                <div>
-                  <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
-                    密码 (Password)
-                    <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
-                      选填
-                    </span>
-                  </label>
-                  <input
-                    type='password'
-                    value={draftNode.password}
-                    onChange={(event) =>
-                      setDraftNode((prev) => ({
-                        ...prev,
-                        password: event.target.value,
-                      }))
-                    }
-                    placeholder='Basic Auth 密码'
-                    className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
-                  />
+
+                <div className='grid gap-3 sm:grid-cols-2'>
+                  <div>
+                    <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+                      用户名 (Username)
+                      <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
+                        选填
+                      </span>
+                    </label>
+                    <input
+                      type='text'
+                      value={draftNode.username}
+                      onChange={(event) =>
+                        setDraftNode((prev) => ({
+                          ...prev,
+                          username: event.target.value,
+                        }))
+                      }
+                      placeholder='Basic Auth 用户名'
+                      className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
+                    />
+                  </div>
+                  <div>
+                    <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+                      密码 (Password)
+                      <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
+                        选填
+                      </span>
+                    </label>
+                    <input
+                      type='password'
+                      value={draftNode.password}
+                      onChange={(event) =>
+                        setDraftNode((prev) => ({
+                          ...prev,
+                          password: event.target.value,
+                        }))
+                      }
+                      placeholder='Basic Auth 密码'
+                      className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className='rounded-lg border border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-900/30 p-3'>
-                <p className='text-xs text-gray-600 dark:text-gray-400'>
-                  如填写用户名和密码，请求会自动注入 HTTP Basic
-                  Auth（Authorization: Basic ...）。
-                </p>
-              </div>
+                <div className='rounded-lg border border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-900/30 p-3'>
+                  <p className='text-xs text-gray-600 dark:text-gray-400'>
+                    如填写用户名和密码，请求会自动注入 HTTP Basic
+                    Auth（Authorization: Basic ...）。
+                  </p>
+                </div>
 
-              <div className='flex justify-end gap-2 pt-2'>
-                <button
-                  type='button'
-                  onClick={closeNodeModal}
-                  className='px-3 py-1.5 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors'
-                >
-                  取消
-                </button>
-                <button
-                  type='button'
-                  onClick={handleConfirmNode}
-                  className='px-3 py-1.5 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors'
-                >
-                  {nodeModalMode === 'create' ? '添加节点' : '保存节点'}
-                </button>
+                <div className='flex justify-end gap-2 pt-2'>
+                  <button
+                    type='button'
+                    onClick={closeNodeModal}
+                    className='px-3 py-1.5 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors'
+                  >
+                    取消
+                  </button>
+                  <button
+                    type='button'
+                    onClick={handleConfirmNode}
+                    className='px-3 py-1.5 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors'
+                  >
+                    {nodeModalMode === 'create' ? '添加节点' : '保存节点'}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
 
       {deleteNodeId && (
         <div className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'>
