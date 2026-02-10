@@ -34,6 +34,7 @@ import {
   FileText,
   FolderOpen,
   MessageSquareText,
+  Package,
   Settings,
   Tv,
   Upload,
@@ -6389,14 +6390,16 @@ interface DanmuConfigProps {
   refreshConfig: () => Promise<void>;
 }
 
-const DEMO_DANMU_SERVERS = [
-  { name: 'LogVar 官方演示站', url: 'https://api.danmu.icu' },
-  { name: 'lyz05 演示站', url: 'https://fc.lyz05.cn' },
-  { name: 'HLS.one 演示站', url: 'https://dmku.hls.one' },
-  { name: '678.ooo 演示站', url: 'https://se.678.ooo' },
-  { name: '56uxi 演示站', url: 'https://danmu.56uxi.com' },
-  { name: 'lxlad 演示站', url: 'https://dm.lxlad.com' },
-];
+const RECOMMENDED_DANMU_SERVER = {
+  name: '官方推荐/稳定节点',
+  url: 'https://danmu.katelya.eu.org',
+  token: 'decotv',
+  badge: '官方推荐',
+};
+
+const DEPLOYMENT_GUIDE_URL = 'https://github.com/huangxd-/danmu_api';
+
+const DEMO_DANMU_SERVERS = [RECOMMENDED_DANMU_SERVER];
 
 const SOURCE_OPTIONS = [
   { value: '360', label: '360搜索' },
@@ -6444,8 +6447,8 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
 
   const [danmuSettings, setDanmuSettings] = useState({
     enabled: false,
-    serverUrl: '',
-    token: '',
+    serverUrl: RECOMMENDED_DANMU_SERVER.url,
+    token: RECOMMENDED_DANMU_SERVER.token,
     platform: '',
     sourceOrder: '',
     mergeSourcePairs: '',
@@ -6548,8 +6551,12 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
     });
   };
 
-  const handleSelectDemoServer = (url: string) => {
-    setDanmuSettings((prev) => ({ ...prev, serverUrl: url }));
+  const handleSelectDemoServer = (server: { url: string; token?: string }) => {
+    setDanmuSettings((prev) => ({
+      ...prev,
+      serverUrl: server.url,
+      token: server.token ?? prev.token,
+    }));
     setTestResult(null);
   };
 
@@ -6662,6 +6669,30 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
       {/* 服务器配置区域 */}
       {danmuSettings.enabled && (
         <div className='space-y-6'>
+          {/* 自定义弹幕提示 */}
+          <div className='rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/15 p-4'>
+            <div className='flex items-start gap-2'>
+              <AlertTriangle className='w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5' />
+              <div className='space-y-1'>
+                <p className='text-sm font-medium text-amber-900 dark:text-amber-200'>
+                  内置演示站仅供测试，极其不稳定，强烈建议用户自行部署。
+                </p>
+                <p className='text-xs text-amber-700 dark:text-amber-300 flex flex-wrap items-center gap-1.5'>
+                  自部署教程:
+                  <a
+                    href={DEPLOYMENT_GUIDE_URL}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='inline-flex items-center gap-1 font-medium underline hover:text-amber-900 dark:hover:text-amber-100'
+                  >
+                    huangxd-/danmu_api
+                    <ExternalLink className='w-3 h-3' />
+                  </a>
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* 服务器地址 & Token */}
           <div className='bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'>
             <div className='p-4 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50'>
@@ -6748,7 +6779,7 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
                 <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
                   API Token
                   <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
-                    默认 87654321，留空则不携带 token
+                    官方稳定节点默认 decotv，留空则不携带 token
                   </span>
                 </label>
                 <input
@@ -6760,7 +6791,7 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
                       token: e.target.value,
                     }))
                   }
-                  placeholder='87654321'
+                  placeholder='decotv'
                   className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono placeholder-gray-400 dark:placeholder-gray-500'
                 />
               </div>
@@ -6821,15 +6852,15 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
             </div>
           </div>
 
-          {/* 演示站快速选择 */}
+          {/* 推荐节点快速选择 */}
           <div className='bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'>
             <div className='p-4 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50'>
               <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2'>
                 <span className='w-1 h-4 bg-purple-500 rounded-full'></span>
-                公共演示站
+                推荐节点（含稳定源）
               </h4>
               <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                社区维护的公共弹幕服务器，可直接选用或自行部署
+                已内置官方推荐稳定节点；历史演示站通常不稳定，建议优先使用自建服务。
               </p>
             </div>
             <div className='p-4'>
@@ -6839,7 +6870,7 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
                   return (
                     <button
                       key={server.url}
-                      onClick={() => handleSelectDemoServer(server.url)}
+                      onClick={() => handleSelectDemoServer(server)}
                       className={`text-left p-3 rounded-lg border-2 transition-all ${
                         isSelected
                           ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
@@ -6855,9 +6886,22 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
                       >
                         {server.name}
                       </p>
+                      {server.badge && (
+                        <div className='mt-1'>
+                          <span className='inline-flex rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-[11px] font-medium'>
+                            {server.badge}
+                          </span>
+                        </div>
+                      )}
                       <p className='text-xs font-mono text-gray-500 dark:text-gray-400 mt-0.5 truncate'>
                         {server.url}
                       </p>
+                      {server.token && (
+                        <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                          Token:{' '}
+                          <span className='font-mono'>{server.token}</span>
+                        </p>
+                      )}
                       {isSelected && (
                         <div className='flex items-center gap-1 mt-1'>
                           <Check className='w-3 h-3 text-purple-500' />
@@ -7868,7 +7912,10 @@ function AdminPageClient() {
             <CollapsibleTab
               title='TVbox配置'
               icon={
-                <Tv size={20} className='text-gray-600 dark:text-gray-400' />
+                <Package
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
               }
               isExpanded={expandedTabs.tvboxConfig}
               onToggle={() => toggleTab('tvboxConfig')}
@@ -8387,21 +8434,6 @@ function AdminPageClient() {
               </div>
             </CollapsibleTab>
 
-            {/* 分类配置标签 */}
-            <CollapsibleTab
-              title='分类配置'
-              icon={
-                <FolderOpen
-                  size={20}
-                  className='text-gray-600 dark:text-gray-400'
-                />
-              }
-              isExpanded={expandedTabs.categoryConfig}
-              onToggle={() => toggleTab('categoryConfig')}
-            >
-              <CategoryConfig config={config} refreshConfig={fetchConfig} />
-            </CollapsibleTab>
-
             {/* 弹幕配置标签 */}
             <CollapsibleTab
               title='弹幕配置'
@@ -8418,6 +8450,21 @@ function AdminPageClient() {
                 config={config}
                 refreshConfig={fetchConfig}
               />
+            </CollapsibleTab>
+
+            {/* 分类配置标签 */}
+            <CollapsibleTab
+              title='分类配置'
+              icon={
+                <FolderOpen
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.categoryConfig}
+              onToggle={() => toggleTab('categoryConfig')}
+            >
+              <CategoryConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 数据迁移标签 - 仅站长可见 */}
