@@ -102,7 +102,6 @@ function DoubanPageClient() {
   const {
     sources,
     currentSource,
-    isLoadingSources,
     isLoadingCategories,
     setCurrentSource,
     getFilteredCategories,
@@ -1139,7 +1138,6 @@ function DoubanPageClient() {
                 onMultiLevelChange={handleMultiLevelChange}
                 onWeekdayChange={handleWeekdayChange}
                 // 数据源相关 props
-                sources={sources}
                 currentSource={currentSource}
                 // 【核心修复】使用 filteredSourceCategories state 而非 getFilteredCategories
                 // 这样确保渲染的分类与 handleSourceChange 处理的分类一致
@@ -1150,9 +1148,7 @@ function DoubanPageClient() {
                         type as 'movie' | 'tv' | 'anime' | 'show',
                       )
                 }
-                isLoadingSources={isLoadingSources}
                 isLoadingCategories={isLoadingCategories}
-                onSourceChange={handleSourceChange}
                 onSourceCategoryChange={handleSourceCategoryChange}
                 selectedSourceCategory={selectedSourceCategory}
                 hideSourceSelector

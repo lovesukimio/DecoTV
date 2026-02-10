@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+
 import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -6,6 +8,10 @@ import { getPanSouCache, setPanSouCache } from '@/lib/pansou-cache';
 
 export const runtime = 'nodejs';
 export const fetchCache = 'force-no-store';
+
+const DEFAULT_PANSOU_TIMEOUT_MS = 15000;
+const DEFAULT_PANSOU_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 DecoTV-PanSouProxy/1.0';
 
 type SortMode = 'relevance' | 'newest' | 'oldest';
 type FileTypeFilter =
@@ -61,6 +67,23 @@ function safeJsonStringify(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function corsHeaders(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+}
+
+function withCorsHeaders(headers?: Record<string, string>): Headers {
+  const combined = new Headers(headers ?? {});
+  const cors = corsHeaders();
+  Object.entries(cors).forEach(([key, value]) => {
+    combined.set(key, value);
+  });
+  return combined;
 }
 
 function parseListParam(raw: string | null): string[] {
@@ -181,15 +204,28 @@ function buildItemId(input: string): string {
   return createHash('sha1').update(input).digest('hex');
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: withCorsHeaders(),
+  });
+}
+
 export async function GET(request: NextRequest) {
   const authResult = verifyApiAuth(request);
   if (!authResult.isValid) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401, headers: withCorsHeaders() },
+    );
   }
 
   const query = request.nextUrl.searchParams.get('q')?.trim() || '';
   if (!query) {
-    return NextResponse.json({ error: 'Missing query' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Missing query' },
+      { status: 400, headers: withCorsHeaders() },
+    );
   }
 
   const cloudTypes = parseListParam(
@@ -228,10 +264,13 @@ export async function GET(request: NextRequest) {
   if (!forceRefresh) {
     const cached = await getPanSouCache<unknown>(cacheKey);
     if (cached) {
-      return NextResponse.json({
-        ...(cached.value as object),
-        cache: `hit:${cached.layer}`,
-      });
+      return NextResponse.json(
+        {
+          ...(cached.value as object),
+          cache: `hit:${cached.layer}`,
+        },
+        { headers: withCorsHeaders() },
+      );
     }
   }
 
@@ -249,41 +288,129 @@ export async function GET(request: NextRequest) {
   if (plugins.length > 0 && sourceType !== 'tg') requestBody.plugins = plugins;
   if (forceRefresh) requestBody.refresh = true;
 
+  const timeoutMsRaw = Number.parseInt(
+    process.env.PANSOU_UPSTREAM_TIMEOUT_MS || '',
+    10,
+  );
+  const timeoutMs =
+    Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
+      ? timeoutMsRaw
+      : DEFAULT_PANSOU_TIMEOUT_MS;
+  const upstreamUa = process.env.PANSOU_UPSTREAM_UA || DEFAULT_PANSOU_UA;
+  let upstreamOrigin = '';
+  try {
+    upstreamOrigin = new URL(baseUrl).origin;
+  } catch {
+    upstreamOrigin = '';
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'User-Agent': upstreamUa,
+    'X-Requested-With': 'XMLHttpRequest',
   };
+  if (upstreamOrigin) {
+    headers.Origin = upstreamOrigin;
+    headers.Referer = `${upstreamOrigin}/`;
+  }
   if (process.env.PANSOU_API_TOKEN) {
     headers.Authorization = `Bearer ${process.env.PANSOU_API_TOKEN}`;
   }
 
+  const upstreamUrl = `${baseUrl}/api/search`;
+  const startedAt = Date.now();
   let payload: PanSouUpstreamResponse | null = null;
   try {
-    const response = await fetch(`${baseUrl}/api/search`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-      cache: 'no-store',
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(upstreamUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    const contentType = response.headers.get('content-type') || '';
+    const rawBody = await response.text();
+    const bodySnippet = rawBody.slice(0, 600);
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
+      const upstreamKind =
+        response.status === 403 || response.status === 401
+          ? 'forbidden'
+          : response.status === 429
+            ? 'rate_limited'
+            : 'http_error';
+      console.error('[PanSou] upstream error', {
+        url: upstreamUrl,
+        status: response.status,
+        statusText: response.statusText,
+        kind: upstreamKind,
+        elapsedMs,
+        requestBody,
+        responseSnippet: bodySnippet,
+      });
       return NextResponse.json(
         {
-          error: 'PanSou upstream error',
+          error: `PanSou upstream ${upstreamKind}`,
           status: response.status,
-          details: errorText.slice(0, 300),
+          details: bodySnippet || response.statusText,
+          elapsed_ms: elapsedMs,
         },
-        { status: 502 },
+        { status: 502, headers: withCorsHeaders() },
       );
     }
-    payload = (await response.json()) as PanSouUpstreamResponse;
+
+    try {
+      payload = JSON.parse(rawBody) as PanSouUpstreamResponse;
+    } catch (parseError) {
+      console.error('[PanSou] parse error', {
+        url: upstreamUrl,
+        elapsedMs,
+        contentType,
+        parseError:
+          parseError instanceof Error ? parseError.message : String(parseError),
+        responseSnippet: bodySnippet,
+      });
+      return NextResponse.json(
+        {
+          error: 'PanSou upstream parse error',
+          details: bodySnippet || 'Upstream did not return valid JSON',
+          content_type: contentType,
+          elapsed_ms: elapsedMs,
+        },
+        { status: 502, headers: withCorsHeaders() },
+      );
+    }
   } catch (error) {
+    const elapsedMs = Date.now() - startedAt;
+    const isAbort =
+      error instanceof Error &&
+      (error.name === 'AbortError' || error.message.includes('aborted'));
+    const reason = isAbort ? 'timeout' : 'network_error';
+    console.error('[PanSou] request failed', {
+      url: upstreamUrl,
+      reason,
+      elapsedMs,
+      error: error instanceof Error ? error.message : String(error),
+      requestBody,
+    });
     return NextResponse.json(
       {
-        error: 'PanSou request failed',
+        error: `PanSou request failed (${reason})`,
         details: error instanceof Error ? error.message : String(error),
+        elapsed_ms: elapsedMs,
       },
-      { status: 502 },
+      { status: 502, headers: withCorsHeaders() },
     );
   }
 
@@ -380,5 +507,7 @@ export async function GET(request: NextRequest) {
     Number.isFinite(ttlMs) ? ttlMs : 120000,
   );
 
-  return NextResponse.json(normalizedResponse);
+  return NextResponse.json(normalizedResponse, {
+    headers: withCorsHeaders(),
+  });
 }
