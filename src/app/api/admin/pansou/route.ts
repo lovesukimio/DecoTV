@@ -6,30 +6,21 @@ import type { AdminConfig } from '@/lib/admin.types';
 import { verifyApiAuth } from '@/lib/auth';
 import { getConfig, invalidateConfigCache } from '@/lib/config';
 import { db } from '@/lib/db';
-import {
-  getDefaultPanSouConfig,
-  normalizePanSouServerUrl,
-  normalizePanSouToken,
-} from '@/lib/pansou';
+import { normalizePanSouConfig } from '@/lib/pansou';
 
 export const runtime = 'nodejs';
 
-interface PanSouConfigPayload {
+type PanSouConfigPayload = Partial<NonNullable<AdminConfig['PanSouConfig']>> & {
   serverUrl?: string;
   token?: string;
-}
+  username?: string;
+  password?: string;
+};
 
 type PanSouConfig = NonNullable<AdminConfig['PanSouConfig']>;
 
 function buildPanSouConfig(payload: PanSouConfigPayload): PanSouConfig {
-  const defaults = getDefaultPanSouConfig();
-  const serverUrl =
-    normalizePanSouServerUrl(payload.serverUrl) || defaults.serverUrl;
-
-  return {
-    serverUrl,
-    token: normalizePanSouToken(payload.token),
-  };
+  return normalizePanSouConfig(payload);
 }
 
 export async function POST(request: NextRequest) {

@@ -3,11 +3,7 @@
 import { db } from '@/lib/db';
 
 import { AdminConfig } from './admin.types';
-import {
-  getDefaultPanSouConfig,
-  normalizePanSouServerUrl,
-  normalizePanSouToken,
-} from './pansou';
+import { getDefaultPanSouConfig, normalizePanSouConfig } from './pansou';
 
 export interface ApiSite {
   key: string;
@@ -404,17 +400,7 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   if (!adminConfig.LiveConfig || !Array.isArray(adminConfig.LiveConfig)) {
     adminConfig.LiveConfig = [];
   }
-  if (!adminConfig.PanSouConfig) {
-    adminConfig.PanSouConfig = getDefaultPanSouConfig();
-  } else {
-    const fallback = getDefaultPanSouConfig();
-    adminConfig.PanSouConfig.serverUrl =
-      normalizePanSouServerUrl(adminConfig.PanSouConfig.serverUrl) ||
-      fallback.serverUrl;
-    adminConfig.PanSouConfig.token = normalizePanSouToken(
-      adminConfig.PanSouConfig.token,
-    );
-  }
+  adminConfig.PanSouConfig = normalizePanSouConfig(adminConfig.PanSouConfig);
 
   // 站长变更自检
   const ownerUser = process.env.USERNAME;

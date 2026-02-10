@@ -5,9 +5,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiAuth } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import {
+  buildPanSouAuthorizationHeader,
   getDefaultPanSouConfig,
-  normalizePanSouServerUrl,
-  normalizePanSouToken,
+  isPluginSource,
+  normalizePanSouConfig,
+  normalizePluginSources,
+  type PanSouRuntimeConfig,
+  parsePluginNames,
+  resolveActivePanSouNode,
   resolvePanSouSearchUrl,
 } from '@/lib/pansou';
 
@@ -38,6 +43,41 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function parseSource(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim().toLowerCase();
+}
+
+function resolveSourceAndPlugins(args: {
+  sourceRaw: string;
+  pluginCandidates: string[];
+}): {
+  source: 'all' | 'tg' | 'plugin';
+  plugins: string[];
+} {
+  const pluginCandidates = normalizePluginSources(args.pluginCandidates);
+  const sourceRaw = parseSource(args.sourceRaw);
+
+  let source: 'all' | 'tg' | 'plugin' = 'all';
+  const plugins = [...pluginCandidates];
+
+  if (sourceRaw === 'all' || sourceRaw === 'tg' || sourceRaw === 'plugin') {
+    source = sourceRaw;
+  } else if (isPluginSource(sourceRaw)) {
+    source = 'plugin';
+    plugins.push(sourceRaw);
+  } else if (pluginCandidates.length > 0) {
+    source = 'plugin';
+  }
+
+  return {
+    source,
+    plugins: normalizePluginSources(plugins),
+  };
+}
+
 function normalizeSearchParams(input: URLSearchParams): URLSearchParams {
   const params = new URLSearchParams(input);
   const kw =
@@ -55,13 +95,39 @@ function normalizeSearchParams(input: URLSearchParams): URLSearchParams {
     params.set('res', 'merge');
   }
 
+  const sourceRaw =
+    params.get('src') || params.get('type') || params.get('source') || '';
+  const pluginCandidates = [
+    ...parsePluginNames(params.get('plugins')),
+    ...parsePluginNames(params.get('plugin')),
+    ...parsePluginNames(params.get('plugin_source')),
+  ];
+  const { source, plugins } = resolveSourceAndPlugins({
+    sourceRaw,
+    pluginCandidates,
+  });
+
+  params.set('src', source);
+  if (source === 'tg') {
+    params.delete('plugins');
+  } else if (plugins.length > 0) {
+    params.set('plugins', plugins.join(','));
+  } else {
+    params.delete('plugins');
+  }
+
+  params.delete('type');
+  params.delete('source');
+  params.delete('plugin');
+  params.delete('plugin_source');
+
   return params;
 }
 
 function normalizeSearchBody(
   body: Record<string, unknown>,
 ): Record<string, unknown> {
-  const normalized = { ...body };
+  const normalized: Record<string, unknown> = { ...body };
   const kwCandidate = [normalized.kw, normalized.keyword, normalized.q].find(
     (value) => typeof value === 'string' && value.trim(),
   ) as string | undefined;
@@ -76,25 +142,66 @@ function normalizeSearchBody(
     normalized.res = 'merge';
   }
 
+  const sourceRaw = parseSource(
+    normalized.src || normalized.type || normalized.source,
+  );
+  const pluginCandidates = [
+    ...parsePluginNames(normalized.plugins),
+    ...parsePluginNames(normalized.plugin),
+    ...parsePluginNames(normalized.plugin_source),
+  ];
+  const { source, plugins } = resolveSourceAndPlugins({
+    sourceRaw,
+    pluginCandidates,
+  });
+
+  normalized.src = source;
+  if (source === 'tg') {
+    delete normalized.plugins;
+  } else if (plugins.length > 0) {
+    normalized.plugins = plugins;
+  } else {
+    delete normalized.plugins;
+  }
+
+  delete normalized.type;
+  delete normalized.source;
+  delete normalized.plugin;
+  delete normalized.plugin_source;
+
   return normalized;
 }
 
-async function getPanSouRuntimeConfig() {
+async function getPanSouRuntimeConfig(): Promise<PanSouRuntimeConfig> {
   const defaults = getDefaultPanSouConfig();
   try {
     const config = await getConfig();
+    const normalizedConfig = normalizePanSouConfig(
+      config.PanSouConfig || defaults,
+    );
+    const node = resolveActivePanSouNode(normalizedConfig);
     return {
-      serverUrl:
-        normalizePanSouServerUrl(config.PanSouConfig?.serverUrl) ||
-        defaults.serverUrl,
-      token: normalizePanSouToken(config.PanSouConfig?.token),
+      nodeId: node.id,
+      nodeName: node.name,
+      serverUrl: node.serverUrl,
+      token: node.token,
+      username: node.username,
+      password: node.password,
     };
   } catch (error) {
+    const fallbackNode = resolveActivePanSouNode(defaults);
     console.warn(
       '[PanSou Proxy] 使用默认配置，读取后台配置失败:',
       error instanceof Error ? error.message : String(error),
     );
-    return defaults;
+    return {
+      nodeId: fallbackNode.id,
+      nodeName: fallbackNode.name,
+      serverUrl: fallbackNode.serverUrl,
+      token: fallbackNode.token,
+      username: fallbackNode.username,
+      password: fallbackNode.password,
+    };
   }
 }
 
@@ -102,7 +209,7 @@ async function forwardToPanSou(args: {
   request: NextRequest;
   upstreamUrl: string;
   method: 'GET' | 'POST';
-  token: string;
+  runtimeConfig: PanSouRuntimeConfig;
   body?: string;
 }) {
   const timeoutMsRaw = Number.parseInt(
@@ -122,10 +229,12 @@ async function forwardToPanSou(args: {
     headers.set('Content-Type', 'application/json');
   }
 
-  const authorization =
-    args.token || ''
-      ? `Bearer ${args.token}`
-      : args.request.headers.get('authorization');
+  const authorization = buildPanSouAuthorizationHeader({
+    username: args.runtimeConfig.username,
+    password: args.runtimeConfig.password,
+    token: args.runtimeConfig.token,
+    fallbackAuthorization: args.request.headers.get('authorization'),
+  });
   if (authorization) {
     headers.set('Authorization', authorization);
   }
@@ -226,7 +335,7 @@ export async function GET(request: NextRequest) {
     request,
     upstreamUrl: upstreamUrl.toString(),
     method: 'GET',
-    token: runtimeConfig.token,
+    runtimeConfig,
   });
 }
 
@@ -272,7 +381,7 @@ export async function POST(request: NextRequest) {
     request,
     upstreamUrl: upstreamSearchUrl,
     method: 'POST',
-    token: runtimeConfig.token,
+    runtimeConfig,
     body: JSON.stringify(normalizedBody),
   });
 }

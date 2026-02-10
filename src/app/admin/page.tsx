@@ -53,6 +53,7 @@ import { DEFAULT_PANSOU_SERVER_URL } from '@/lib/pansou';
 import DataMigration from '@/components/DataMigration';
 import ImportExportModal from '@/components/ImportExportModal';
 import PageLayout from '@/components/PageLayout';
+import PanSouConfigPanel from '@/components/PanSouConfigPanel';
 
 // 统一按钮样式系统
 const buttonStyles = {
@@ -7987,6 +7988,7 @@ interface PanSouSettingsState {
   token: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, unused-imports/no-unused-vars
 const PanSouConfigComponent = ({
   config,
   refreshConfig,
@@ -8011,14 +8013,25 @@ const PanSouConfigComponent = ({
     error?: string;
   } | null>(null);
 
+  const activePanSouNode = useMemo(() => {
+    const nodes = config?.PanSouConfig?.nodes || [];
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return null;
+    }
+    return (
+      nodes.find((node) => node.id === config?.PanSouConfig?.activeNodeId) ||
+      nodes[0]
+    );
+  }, [config]);
+
   useEffect(() => {
     setSettings({
       serverUrl:
-        normalizeServerUrl(config?.PanSouConfig?.serverUrl || '') ||
+        normalizeServerUrl(activePanSouNode?.serverUrl || '') ||
         normalizeServerUrl(DEFAULT_PANSOU_SERVER_URL),
-      token: config?.PanSouConfig?.token || '',
+      token: activePanSouNode?.token || '',
     });
-  }, [config, normalizeServerUrl]);
+  }, [activePanSouNode, normalizeServerUrl]);
 
   const handleSave = async () => {
     const serverUrl = normalizeServerUrl(settings.serverUrl);
@@ -9344,10 +9357,7 @@ function AdminPageClient() {
               isExpanded={expandedTabs.pansouConfig}
               onToggle={() => toggleTab('pansouConfig')}
             >
-              <PanSouConfigComponent
-                config={config}
-                refreshConfig={fetchConfig}
-              />
+              <PanSouConfigPanel config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 分类配置标签 */}

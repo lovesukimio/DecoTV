@@ -23,7 +23,7 @@ type FileTypeFilter =
   | 'image'
   | 'other';
 type TimeRangeFilter = 'all' | '24h' | '7d' | '30d' | '90d' | '1y';
-type SourceType = 'all' | 'plugin' | 'tg';
+type SourceType = 'all' | 'plugin' | 'tg' | 'qqpd' | 'gying' | 'weibo';
 
 interface PanSouSearchItem {
   id: string;
@@ -71,7 +71,30 @@ const SOURCE_OPTIONS: Array<{ value: SourceType; label: string }> = [
   { value: 'all', label: '全源' },
   { value: 'plugin', label: '插件源' },
   { value: 'tg', label: 'TG 源' },
+  { value: 'qqpd', label: 'QQ频道 (QQPD)' },
+  { value: 'gying', label: 'Gying影视' },
+  { value: 'weibo', label: '微博 (Weibo)' },
 ];
+
+function resolveSourceQuery(sourceType: SourceType): {
+  src: 'all' | 'plugin' | 'tg';
+  plugins?: string;
+} {
+  if (
+    sourceType === 'qqpd' ||
+    sourceType === 'gying' ||
+    sourceType === 'weibo'
+  ) {
+    return {
+      src: 'plugin',
+      plugins: sourceType,
+    };
+  }
+
+  return {
+    src: sourceType,
+  };
+}
 
 function detectFileType(input: string): FileTypeFilter {
   const text = input.toLowerCase();
@@ -210,11 +233,15 @@ function NetdiskPageClient() {
     setLoading(true);
     setError('');
     try {
+      const sourceQuery = resolveSourceQuery(sourceType);
       const params = new URLSearchParams({
         kw: keyword,
-        src: sourceType,
+        src: sourceQuery.src,
         res: 'merge',
       });
+      if (sourceQuery.plugins) {
+        params.set('plugins', sourceQuery.plugins);
+      }
       if (cloudTypesParam) {
         params.set('cloud_types', cloudTypesParam);
       }
