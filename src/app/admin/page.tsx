@@ -28,6 +28,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronUp,
+  Cloud,
   Database,
   Download,
   ExternalLink,
@@ -47,6 +48,7 @@ import { createPortal } from 'react-dom';
 
 import { AdminConfig, DanmuCustomNode } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { DEFAULT_PANSOU_SERVER_URL } from '@/lib/pansou';
 
 import DataMigration from '@/components/DataMigration';
 import ImportExportModal from '@/components/ImportExportModal';
@@ -7975,6 +7977,292 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
   );
 };
 
+interface PanSouConfigProps {
+  config: AdminConfig | null;
+  refreshConfig: () => Promise<void>;
+}
+
+interface PanSouSettingsState {
+  serverUrl: string;
+  token: string;
+}
+
+const PanSouConfigComponent = ({
+  config,
+  refreshConfig,
+}: PanSouConfigProps) => {
+  const { alertModal, showAlert, hideAlert } = useAlertModal();
+  const { isLoading, withLoading } = useLoadingState();
+
+  const normalizeServerUrl = useCallback((value: string) => {
+    return value.trim().replace(/\/+$/, '');
+  }, []);
+
+  const [settings, setSettings] = useState<PanSouSettingsState>({
+    serverUrl: normalizeServerUrl(DEFAULT_PANSOU_SERVER_URL),
+    token: '',
+  });
+  const [testResult, setTestResult] = useState<{
+    success?: boolean;
+    latency?: number;
+    healthStatus?: number;
+    searchStatus?: number;
+    searchResultCount?: number;
+    error?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setSettings({
+      serverUrl:
+        normalizeServerUrl(config?.PanSouConfig?.serverUrl || '') ||
+        normalizeServerUrl(DEFAULT_PANSOU_SERVER_URL),
+      token: config?.PanSouConfig?.token || '',
+    });
+  }, [config, normalizeServerUrl]);
+
+  const handleSave = async () => {
+    const serverUrl = normalizeServerUrl(settings.serverUrl);
+    if (!serverUrl) {
+      showError('请先填写 PanSou 服务地址', showAlert);
+      return;
+    }
+
+    await withLoading('savePanSouConfig', async () => {
+      try {
+        const response = await fetch('/api/admin/pansou', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serverUrl,
+            token: settings.token.trim(),
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || '保存失败');
+        }
+        await refreshConfig();
+        showSuccess('PanSou 配置保存成功', showAlert);
+      } catch (error) {
+        showError(
+          `保存 PanSou 配置失败: ${error instanceof Error ? error.message : '未知错误'}`,
+          showAlert,
+        );
+      }
+    });
+  };
+
+  const handleTest = async () => {
+    const serverUrl = normalizeServerUrl(settings.serverUrl);
+    if (!serverUrl) {
+      showError('请先填写 PanSou 服务地址', showAlert);
+      return;
+    }
+
+    setTestResult(null);
+    await withLoading('testPanSouServer', async () => {
+      try {
+        const response = await fetch('/api/admin/pansou/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serverUrl,
+            token: settings.token.trim(),
+          }),
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          success?: boolean;
+          latency?: number;
+          healthStatus?: number;
+          searchStatus?: number;
+          searchResultCount?: number;
+          error?: string;
+        };
+        setTestResult(data);
+      } catch (error) {
+        setTestResult({
+          success: false,
+          error: error instanceof Error ? error.message : '网络请求失败',
+        });
+      }
+    });
+  };
+
+  const handleUseDemoServer = () => {
+    setSettings((prev) => ({
+      ...prev,
+      serverUrl: normalizeServerUrl(DEFAULT_PANSOU_SERVER_URL),
+    }));
+    setTestResult(null);
+  };
+
+  const currentServerUrl = normalizeServerUrl(settings.serverUrl);
+  const isDemoSelected =
+    currentServerUrl === normalizeServerUrl(DEFAULT_PANSOU_SERVER_URL);
+
+  return (
+    <div className='space-y-6'>
+      <div className='rounded-lg border border-cyan-200 dark:border-cyan-900/60 bg-cyan-50 dark:bg-cyan-900/10 p-4'>
+        <div className='flex items-center justify-between gap-3'>
+          <div className='space-y-1'>
+            <p className='text-sm font-semibold text-cyan-900 dark:text-cyan-200'>
+              当前 PanSou 节点
+            </p>
+            <p className='text-xs text-cyan-700 dark:text-cyan-300 break-all'>
+              {currentServerUrl || '未配置'}
+            </p>
+            <p className='text-xs text-cyan-700/90 dark:text-cyan-300/90'>
+              支持对接第三方 PanSou 服务
+            </p>
+          </div>
+          <button
+            type='button'
+            onClick={handleUseDemoServer}
+            className={buttonStyles.secondarySmall}
+          >
+            使用演示节点
+          </button>
+        </div>
+      </div>
+
+      <div className='bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'>
+        <div className='p-4 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50'>
+          <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2'>
+            <span className='w-1 h-4 bg-cyan-500 rounded-full'></span>
+            服务连接
+          </h4>
+          <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+            DecoTV 会将 /api/pansou/search 请求转发到此服务节点
+          </p>
+        </div>
+
+        <div className='p-4 space-y-4'>
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+              服务地址（URL）
+            </label>
+            <div className='flex gap-2'>
+              <input
+                type='text'
+                value={settings.serverUrl}
+                onChange={(event) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    serverUrl: event.target.value,
+                  }))
+                }
+                placeholder='例如: https://pansou.example.com'
+                className='flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all placeholder-gray-400 dark:placeholder-gray-500'
+              />
+              <button
+                type='button'
+                onClick={handleTest}
+                disabled={isLoading('testPanSouServer') || !currentServerUrl}
+                className={`shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                  isLoading('testPanSouServer') || !currentServerUrl
+                    ? buttonStyles.disabled
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow-md'
+                }`}
+              >
+                {isLoading('testPanSouServer') ? '测试中...' : '连通性测试'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+              API Token / 鉴权密钥
+              <span className='text-xs text-gray-400 dark:text-gray-500 font-normal ml-2'>
+                选填
+              </span>
+            </label>
+            <input
+              type='text'
+              value={settings.token}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  token: event.target.value,
+                }))
+              }
+              placeholder='留空表示不携带 Authorization'
+              className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all font-mono placeholder-gray-400 dark:placeholder-gray-500'
+            />
+          </div>
+
+          {testResult && (
+            <div
+              className={`rounded-lg border p-3 ${
+                testResult.success
+                  ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800'
+                  : 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800'
+              }`}
+            >
+              <p
+                className={`text-sm font-medium ${
+                  testResult.success
+                    ? 'text-emerald-800 dark:text-emerald-300'
+                    : 'text-red-800 dark:text-red-300'
+                }`}
+              >
+                {testResult.success ? '节点连接成功' : '节点连接失败'}
+              </p>
+              {testResult.success ? (
+                <div className='mt-1 text-xs text-emerald-700 dark:text-emerald-400 space-y-0.5'>
+                  <p>延迟: {testResult.latency}ms</p>
+                  <p>健康检查状态: {testResult.healthStatus}</p>
+                  <p>搜索接口状态: {testResult.searchStatus}</p>
+                  <p>测试返回结果数: {testResult.searchResultCount ?? 0}</p>
+                </div>
+              ) : (
+                <p className='mt-1 text-xs text-red-700 dark:text-red-400'>
+                  {testResult.error || '连接异常，请检查地址与鉴权配置'}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className='rounded-lg border border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-900/30 p-3'>
+            <p className='text-xs text-gray-600 dark:text-gray-400'>
+              默认演示地址：{normalizeServerUrl(DEFAULT_PANSOU_SERVER_URL)}
+            </p>
+            {isDemoSelected && (
+              <p className='text-xs text-cyan-600 dark:text-cyan-400 mt-1'>
+                当前已选中演示节点
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className='flex justify-end'>
+        <button
+          type='button'
+          onClick={handleSave}
+          disabled={isLoading('savePanSouConfig')}
+          className={`px-4 py-2 rounded-lg transition-colors ${
+            isLoading('savePanSouConfig')
+              ? buttonStyles.disabled
+              : buttonStyles.success
+          }`}
+        >
+          {isLoading('savePanSouConfig') ? '保存中...' : '保存配置'}
+        </button>
+      </div>
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={hideAlert}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        timer={alertModal.timer}
+        showConfirm={alertModal.showConfirm}
+      />
+    </div>
+  );
+};
+
 function AdminPageClient() {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
@@ -7993,6 +8281,7 @@ function AdminPageClient() {
     categoryConfig: false,
     configFile: false,
     danmuConfig: false,
+    pansouConfig: false,
     dataMigration: false,
   });
 
@@ -9042,6 +9331,20 @@ function AdminPageClient() {
               onToggle={() => toggleTab('danmuConfig')}
             >
               <DanmuConfigComponent
+                config={config}
+                refreshConfig={fetchConfig}
+              />
+            </CollapsibleTab>
+
+            <CollapsibleTab
+              title='PanSou 配置'
+              icon={
+                <Cloud size={20} className='text-gray-600 dark:text-gray-400' />
+              }
+              isExpanded={expandedTabs.pansouConfig}
+              onToggle={() => toggleTab('pansouConfig')}
+            >
+              <PanSouConfigComponent
                 config={config}
                 refreshConfig={fetchConfig}
               />

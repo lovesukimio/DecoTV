@@ -166,6 +166,7 @@ function shouldSkipAuth(pathname: string): boolean {
       '/api/admin/site',
       '/api/admin/source',
       '/api/admin/category',
+      '/api/admin/pansou',
       '/api/admin/live',
       '/api/admin/user',
       '/api/admin/config_file',

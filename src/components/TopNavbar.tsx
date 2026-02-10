@@ -75,7 +75,7 @@ const NAV_ITEMS = [
     href: '/netdisk',
     icon: Cloud,
     label: '网盘',
-    chip: 'chip-search',
+    chip: 'chip-netdisk',
     type: 'exact',
     openInNewTab: true,
   },

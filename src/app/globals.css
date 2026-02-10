@@ -514,6 +514,24 @@ body {
   );
 }
 
+/* 网盘 */
+.chip-netdisk {
+  background: linear-gradient(
+    90deg,
+    rgba(14, 165, 233, 0.35),
+    rgba(13, 148, 136, 0.35)
+  );
+  border-color: rgba(14, 165, 233, 0.48);
+}
+.chip-netdisk::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(34, 211, 238, 0.42),
+    rgba(13, 148, 136, 0.42) 60%,
+    transparent 85%
+  );
+}
+
 /* 源浏览器：青绿流光 */
 .chip-source-browser {
   background: linear-gradient(

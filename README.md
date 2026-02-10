@@ -421,6 +421,17 @@ DecoTV 集成了 [弹弹play开放平台](https://www.dandanplay.com/) 提供的
 
 > 感谢 [弹弹play](https://www.dandanplay.com/) 为 DecoTV 提供弹幕服务支持！
 
+### 网盘搜索（PanSou）配置
+
+DecoTV 的网盘搜索采用远程 PanSou 节点转发模式。推荐先部署 [fish2018/pansou](https://github.com/fish2018/pansou)，确认服务可访问后，在后台 `PanSou 配置` 中填入服务地址（可选填写 Token）。
+
+快速示例：
+
+1. 部署 PanSou 服务并确保 `https://your-pansou-domain/api/health` 可访问。
+2. 进入 DecoTV 后台 `PanSou 配置` 页面。
+3. 填写服务地址（例如 `https://your-pansou-domain`），按需填写 `API Token / 鉴权密钥`。
+4. 先执行连通性测试，再保存配置即可生效。
+
 ## ⬇️ 下载功能使用指南
 
 ### 1) 下载当前集（浏览器分片下载）

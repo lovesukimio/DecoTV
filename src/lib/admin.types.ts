@@ -82,6 +82,10 @@ export interface AdminConfig {
     simplifiedTraditional: 'default' | 'simplified' | 'traditional';
     customNodes?: DanmuCustomNode[];
   };
+  PanSouConfig?: {
+    serverUrl: string;
+    token: string;
+  };
 }
 
 export interface AdminConfigResult {

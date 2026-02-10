@@ -85,9 +85,9 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       icon: Cloud,
       label: '网盘',
       href: '/netdisk',
-      activeGradient: 'bg-linear-to-r from-cyan-500 to-blue-500',
+      activeGradient: 'bg-linear-to-r from-sky-500 to-teal-500',
       activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-cyan-500/20',
+      hoverBg: 'hover:bg-sky-500/20',
     },
     {
       icon: Film,

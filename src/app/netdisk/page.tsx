@@ -37,6 +37,25 @@ interface PanSouSearchItem {
   images: string[];
 }
 
+interface PanSouMergedLink {
+  url?: string;
+  password?: string;
+  note?: string;
+  datetime?: string;
+  source?: string;
+  images?: string[];
+}
+
+interface PanSouSearchResponse {
+  total?: number;
+  data?: {
+    total?: number;
+    merged_by_type?: Record<string, PanSouMergedLink[]>;
+  };
+  merged_by_type?: Record<string, PanSouMergedLink[]>;
+  error?: string;
+}
+
 const CLOUD_TYPES = [
   'baidu',
   'aliyun',
@@ -54,6 +73,109 @@ const SOURCE_OPTIONS: Array<{ value: SourceType; label: string }> = [
   { value: 'tg', label: 'TG 源' },
 ];
 
+function detectFileType(input: string): FileTypeFilter {
+  const text = input.toLowerCase();
+  if (/\.(mp4|mkv|mov|avi|rmvb|ts|m4v|flv|wmv)(\b|$)/.test(text)) {
+    return 'video';
+  }
+  if (/\.(srt|ass|ssa|vtt|sub)(\b|$)/.test(text)) {
+    return 'subtitle';
+  }
+  if (/\.(pdf|doc|docx|ppt|pptx|xls|xlsx|txt|epub|mobi)(\b|$)/.test(text)) {
+    return 'document';
+  }
+  if (/\.(zip|rar|7z|tar|gz|bz2|iso)(\b|$)/.test(text)) {
+    return 'archive';
+  }
+  if (/\.(mp3|wav|flac|aac|m4a)(\b|$)/.test(text)) {
+    return 'audio';
+  }
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|heic)(\b|$)/.test(text)) {
+    return 'image';
+  }
+  return 'other';
+}
+
+function toTimestamp(value: string | null): number {
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function inTimeRange(timestamp: number, filter: TimeRangeFilter): boolean {
+  if (filter === 'all' || timestamp <= 0) return true;
+
+  const elapsed = Date.now() - timestamp;
+  const ranges: Record<Exclude<TimeRangeFilter, 'all'>, number> = {
+    '24h': 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    '30d': 30 * 24 * 60 * 60 * 1000,
+    '90d': 90 * 24 * 60 * 60 * 1000,
+    '1y': 365 * 24 * 60 * 60 * 1000,
+  };
+
+  return elapsed <= ranges[filter];
+}
+
+function relevanceScore(item: PanSouSearchItem, query: string): number {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+
+  const title = item.title.toLowerCase();
+  const url = item.url.toLowerCase();
+  let score = 0;
+
+  if (title === q) score += 120;
+  if (title.includes(q)) score += 80;
+  if (url.includes(q)) score += 20;
+
+  return score;
+}
+
+function normalizeItems(payload: PanSouSearchResponse): PanSouSearchItem[] {
+  const mergedByType = payload.data?.merged_by_type || payload.merged_by_type;
+  if (!mergedByType || typeof mergedByType !== 'object') {
+    return [];
+  }
+
+  const dedup = new Map<string, PanSouSearchItem>();
+  Object.entries(mergedByType).forEach(([cloudType, links]) => {
+    if (!Array.isArray(links)) return;
+
+    links.forEach((link, index) => {
+      const url = typeof link.url === 'string' ? link.url.trim() : '';
+      if (!url) return;
+
+      const title =
+        (typeof link.note === 'string' ? link.note.trim() : '') || '未命名资源';
+      const source =
+        (typeof link.source === 'string' ? link.source.trim() : '') ||
+        'unknown';
+      const datetime =
+        typeof link.datetime === 'string' && link.datetime.trim()
+          ? link.datetime.trim()
+          : null;
+      const id = `${cloudType}|${url}|${index}`;
+
+      dedup.set(id, {
+        id,
+        title,
+        url,
+        password: typeof link.password === 'string' ? link.password.trim() : '',
+        cloudType,
+        source,
+        datetime,
+        fileType: detectFileType(`${title} ${url}`),
+        images: Array.isArray(link.images)
+          ? link.images.filter((item) => typeof item === 'string')
+          : [],
+      });
+    });
+  });
+
+  return Array.from(dedup.values());
+}
+
 function NetdiskPageClient() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -66,7 +188,6 @@ function NetdiskPageClient() {
   const [sourceType, setSourceType] = useState<SourceType>('all');
   const [selectedCloudTypes, setSelectedCloudTypes] = useState<string[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
-  const [cacheState, setCacheState] = useState<'hit' | 'miss' | ''>('');
 
   const cloudTypesParam = useMemo(
     () => selectedCloudTypes.join(','),
@@ -90,36 +211,51 @@ function NetdiskPageClient() {
     setError('');
     try {
       const params = new URLSearchParams({
-        q: keyword,
-        source: sourceType,
-        sort,
-        file_type: fileType,
-        time_range: timeRange,
-        limit: '120',
+        kw: keyword,
+        src: sourceType,
+        res: 'merge',
       });
       if (cloudTypesParam) {
         params.set('cloud_types', cloudTypesParam);
       }
       if (forceRefresh) {
-        params.set('refresh', '1');
+        params.set('refresh', 'true');
       }
 
-      const response = await fetch(`/api/pansou?${params.toString()}`, {
+      const response = await fetch(`/api/pansou/search?${params.toString()}`, {
         cache: 'no-store',
       });
-      const data = await response.json();
+      const data = (await response.json()) as PanSouSearchResponse;
       if (!response.ok) {
         throw new Error(data?.error || '网盘搜索失败');
       }
 
-      setItems(Array.isArray(data.items) ? data.items : []);
-      setTotal(typeof data.total === 'number' ? data.total : 0);
-      setLastUpdatedAt(data.updated_at || '');
-      setCacheState(
-        typeof data.cache === 'string' && data.cache.startsWith('hit')
-          ? 'hit'
-          : 'miss',
+      let normalizedItems = normalizeItems(data);
+
+      if (fileType !== 'all') {
+        normalizedItems = normalizedItems.filter(
+          (item) => item.fileType === fileType,
+        );
+      }
+
+      normalizedItems = normalizedItems.filter((item) =>
+        inTimeRange(toTimestamp(item.datetime), timeRange),
       );
+
+      if (sort === 'newest' || sort === 'oldest') {
+        const factor = sort === 'newest' ? -1 : 1;
+        normalizedItems.sort((a, b) => {
+          return (toTimestamp(a.datetime) - toTimestamp(b.datetime)) * factor;
+        });
+      } else {
+        normalizedItems.sort(
+          (a, b) => relevanceScore(b, keyword) - relevanceScore(a, keyword),
+        );
+      }
+
+      setItems(normalizedItems);
+      setTotal(normalizedItems.length);
+      setLastUpdatedAt(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : '网盘搜索失败');
       setItems([]);
@@ -162,7 +298,7 @@ function NetdiskPageClient() {
                       void handleSearch();
                     }
                   }}
-                  placeholder='输入资源关键词，例如：哈利波特 合集'
+                  placeholder='输入资源关键词，例如：哈利波特合集'
                   className='h-11 w-full rounded-xl border border-slate-600/70 bg-slate-900/55 pl-10 pr-3 text-sm text-slate-100 outline-none transition-colors focus:border-cyan-400/70'
                 />
               </div>
@@ -193,7 +329,7 @@ function NetdiskPageClient() {
             <div className='mt-3 flex items-center gap-2'>
               <span className='inline-flex items-center gap-1 text-xs text-slate-300'>
                 <Database className='h-3.5 w-3.5 text-cyan-300' />
-                搜索源
+                搜索来源
               </span>
               <div className='flex flex-wrap items-center gap-2'>
                 {SOURCE_OPTIONS.map((option) => {
@@ -293,17 +429,6 @@ function NetdiskPageClient() {
                   {total} 条
                 </span>
               </h2>
-              {cacheState && (
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    cacheState === 'hit'
-                      ? 'bg-emerald-500/20 text-emerald-200'
-                      : 'bg-cyan-500/20 text-cyan-200'
-                  }`}
-                >
-                  缓存: {cacheState}
-                </span>
-              )}
             </div>
 
             {error && (
@@ -315,11 +440,14 @@ function NetdiskPageClient() {
             {loading ? (
               <div className='flex h-28 items-center justify-center text-sm text-slate-300'>
                 <RefreshCw className='mr-2 h-4 w-4 animate-spin' />
-                正在聚合检索...
+                正在请求远程 PanSou 节点...
               </div>
             ) : items.length === 0 ? (
-              <div className='py-10 text-center text-sm text-slate-300'>
-                暂无结果，试试调整关键词或筛选条件
+              <div className='py-10 text-center text-sm text-slate-300 space-y-2'>
+                <p>暂无结果，试试调整关键词或筛选条件</p>
+                <p className='text-xs text-slate-400'>
+                  搜索服务由配置的远程节点提供
+                </p>
               </div>
             ) : (
               <div className='space-y-3'>
@@ -379,6 +507,10 @@ function NetdiskPageClient() {
               </div>
             )}
           </section>
+
+          <p className='text-center text-xs text-slate-400'>
+            搜索服务由配置的远程节点提供
+          </p>
         </div>
       </div>
     </PageLayout>

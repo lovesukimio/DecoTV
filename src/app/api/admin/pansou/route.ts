@@ -1,0 +1,82 @@
+/* eslint-disable no-console */
+
+import { NextRequest, NextResponse } from 'next/server';
+
+import type { AdminConfig } from '@/lib/admin.types';
+import { verifyApiAuth } from '@/lib/auth';
+import { getConfig, invalidateConfigCache } from '@/lib/config';
+import { db } from '@/lib/db';
+import {
+  getDefaultPanSouConfig,
+  normalizePanSouServerUrl,
+  normalizePanSouToken,
+} from '@/lib/pansou';
+
+export const runtime = 'nodejs';
+
+interface PanSouConfigPayload {
+  serverUrl?: string;
+  token?: string;
+}
+
+type PanSouConfig = NonNullable<AdminConfig['PanSouConfig']>;
+
+function buildPanSouConfig(payload: PanSouConfigPayload): PanSouConfig {
+  const defaults = getDefaultPanSouConfig();
+  const serverUrl =
+    normalizePanSouServerUrl(payload.serverUrl) || defaults.serverUrl;
+
+  return {
+    serverUrl,
+    token: normalizePanSouToken(payload.token),
+  };
+}
+
+export async function POST(request: NextRequest) {
+  const authResult = verifyApiAuth(request);
+
+  if (!authResult.isLocalMode && !authResult.isValid) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = (await request.json()) as PanSouConfigPayload;
+    const nextPanSouConfig = buildPanSouConfig(body);
+
+    const adminConfig = await getConfig();
+
+    if (!authResult.isLocalMode) {
+      const username = authResult.username;
+
+      if (username !== process.env.USERNAME) {
+        const user = adminConfig.UserConfig.Users.find(
+          (item) => item.username === username,
+        );
+        if (!user || user.role !== 'admin' || user.banned) {
+          return NextResponse.json({ error: '权限不足' }, { status: 401 });
+        }
+      }
+    }
+
+    adminConfig.PanSouConfig = nextPanSouConfig;
+    await db.saveAdminConfig(adminConfig);
+    invalidateConfigCache();
+
+    return NextResponse.json(
+      {
+        ok: true,
+        storageMode: authResult.isLocalMode ? 'local' : 'cloud',
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (error) {
+    console.error('更新 PanSou 配置失败:', error);
+    return NextResponse.json(
+      {
+        error: '更新 PanSou 配置失败',
+        details: (error as Error).message,
+      },
+      { status: 500 },
+    );
+  }
+}

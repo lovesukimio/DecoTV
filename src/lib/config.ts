@@ -3,6 +3,11 @@
 import { db } from '@/lib/db';
 
 import { AdminConfig } from './admin.types';
+import {
+  getDefaultPanSouConfig,
+  normalizePanSouServerUrl,
+  normalizePanSouToken,
+} from './pansou';
 
 export interface ApiSite {
   key: string;
@@ -235,6 +240,7 @@ async function getInitConfig(
     SourceConfig: [],
     CustomCategories: [],
     LiveConfig: [],
+    PanSouConfig: getDefaultPanSouConfig(),
   };
 
   // 补充用户信息
@@ -345,6 +351,7 @@ export function getLocalModeConfig(): AdminConfig {
     SourceConfig: [],
     CustomCategories: [],
     LiveConfig: [],
+    PanSouConfig: getDefaultPanSouConfig(),
   };
   return adminConfig;
 }
@@ -396,6 +403,17 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   }
   if (!adminConfig.LiveConfig || !Array.isArray(adminConfig.LiveConfig)) {
     adminConfig.LiveConfig = [];
+  }
+  if (!adminConfig.PanSouConfig) {
+    adminConfig.PanSouConfig = getDefaultPanSouConfig();
+  } else {
+    const fallback = getDefaultPanSouConfig();
+    adminConfig.PanSouConfig.serverUrl =
+      normalizePanSouServerUrl(adminConfig.PanSouConfig.serverUrl) ||
+      fallback.serverUrl;
+    adminConfig.PanSouConfig.token = normalizePanSouToken(
+      adminConfig.PanSouConfig.token,
+    );
   }
 
   // 站长变更自检
