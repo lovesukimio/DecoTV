@@ -2,6 +2,7 @@
 
 import {
   Copy,
+  Database,
   ExternalLink,
   RefreshCw,
   Search,
@@ -22,6 +23,7 @@ type FileTypeFilter =
   | 'image'
   | 'other';
 type TimeRangeFilter = 'all' | '24h' | '7d' | '30d' | '90d' | '1y';
+type SourceType = 'all' | 'plugin' | 'tg';
 
 interface PanSouSearchItem {
   id: string;
@@ -46,6 +48,12 @@ const CLOUD_TYPES = [
   '123',
 ];
 
+const SOURCE_OPTIONS: Array<{ value: SourceType; label: string }> = [
+  { value: 'all', label: '全源' },
+  { value: 'plugin', label: '插件源' },
+  { value: 'tg', label: 'TG 源' },
+];
+
 function NetdiskPageClient() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -55,6 +63,7 @@ function NetdiskPageClient() {
   const [sort, setSort] = useState<SortMode>('relevance');
   const [fileType, setFileType] = useState<FileTypeFilter>('all');
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('all');
+  const [sourceType, setSourceType] = useState<SourceType>('all');
   const [selectedCloudTypes, setSelectedCloudTypes] = useState<string[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [cacheState, setCacheState] = useState<'hit' | 'miss' | ''>('');
@@ -82,6 +91,7 @@ function NetdiskPageClient() {
     try {
       const params = new URLSearchParams({
         q: keyword,
+        source: sourceType,
         sort,
         file_type: fileType,
         time_range: timeRange,
@@ -94,7 +104,7 @@ function NetdiskPageClient() {
         params.set('refresh', '1');
       }
 
-      const response = await fetch(`/api/pansou/search?${params.toString()}`, {
+      const response = await fetch(`/api/pansou?${params.toString()}`, {
         cache: 'no-store',
       });
       const data = await response.json();
@@ -105,7 +115,11 @@ function NetdiskPageClient() {
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(typeof data.total === 'number' ? data.total : 0);
       setLastUpdatedAt(data.updated_at || '');
-      setCacheState(data.cache === 'hit' ? 'hit' : 'miss');
+      setCacheState(
+        typeof data.cache === 'string' && data.cache.startsWith('hit')
+          ? 'hit'
+          : 'miss',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : '网盘搜索失败');
       setItems([]);
@@ -116,7 +130,7 @@ function NetdiskPageClient() {
   };
 
   return (
-    <PageLayout activePath='/search'>
+    <PageLayout activePath='/netdisk'>
       <div className='px-4 sm:px-10 py-4 sm:py-8'>
         <div className='mx-auto w-full max-w-6xl space-y-6'>
           <section className='rounded-2xl border border-cyan-400/20 bg-linear-to-r from-slate-900/90 to-cyan-950/55 p-5 shadow-[0_18px_48px_-28px_rgba(6,182,212,0.8)] backdrop-blur-xl'>
@@ -174,6 +188,32 @@ function NetdiskPageClient() {
                 <RefreshCw className='h-4 w-4' />
                 强制刷新
               </button>
+            </div>
+
+            <div className='mt-3 flex items-center gap-2'>
+              <span className='inline-flex items-center gap-1 text-xs text-slate-300'>
+                <Database className='h-3.5 w-3.5 text-cyan-300' />
+                搜索源
+              </span>
+              <div className='flex flex-wrap items-center gap-2'>
+                {SOURCE_OPTIONS.map((option) => {
+                  const active = sourceType === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type='button'
+                      onClick={() => setSourceType(option.value)}
+                      className={`rounded-lg border px-2.5 py-1 text-xs transition ${
+                        active
+                          ? 'border-cyan-300/60 bg-cyan-500/20 text-cyan-100'
+                          : 'border-slate-600/80 bg-slate-800/60 text-slate-200 hover:border-cyan-400/55'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </section>
 

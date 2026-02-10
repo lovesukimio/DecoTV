@@ -5,6 +5,7 @@
 import {
   Check,
   ChevronDown,
+  Cloud,
   Download,
   ExternalLink,
   KeyRound,
@@ -329,6 +330,11 @@ export const UserMenu: React.FC = () => {
     openManager();
   };
 
+  const handleNetdisk = () => {
+    setIsOpen(false);
+    router.push('/netdisk');
+  };
+
   const handleChangePassword = () => {
     setIsOpen(false);
     setIsChangePasswordOpen(true);
@@ -598,6 +604,14 @@ export const UserMenu: React.FC = () => {
           >
             <Download className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>下载管理</span>
+          </button>
+
+          <button
+            onClick={handleNetdisk}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          >
+            <Cloud className='w-4 h-4 text-slate-500 dark:text-gray-400' />
+            <span className='font-medium'>网盘搜索</span>
           </button>
 
           {/* 管理面板按钮 */}

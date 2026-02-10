@@ -11,11 +11,13 @@ import { promisify } from 'util';
 const execFileAsync = promisify(execFile);
 
 const JOBS_SYMBOL = Symbol.for('decotv.ffmpeg.jobs');
+const FFMPEG_SUPPORT_SYMBOL = Symbol.for('decotv.ffmpeg.support');
 
 const MIN_PROGRESS = 0;
 const MAX_PROGRESS = 100;
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_CONCURRENT = 2;
+const FFMPEG_SUPPORT_CACHE_TTL_MS = 30_000;
 
 export type FfmpegJobStatus =
   | 'queued'
@@ -56,6 +58,16 @@ interface FfmpegOutputFile {
   fileName: string;
 }
 
+export interface FfmpegRuntimeSupport {
+  supported: boolean;
+  reason?: string;
+}
+
+interface FfmpegRuntimeSupportCache {
+  checkedAt: number;
+  value: FfmpegRuntimeSupport;
+}
+
 function getJobsMap(): Map<string, InternalFfmpegJob> {
   const globalStore = globalThis as typeof globalThis & {
     [JOBS_SYMBOL]?: Map<string, InternalFfmpegJob>;
@@ -66,6 +78,25 @@ function getJobsMap(): Map<string, InternalFfmpegJob> {
   }
 
   return globalStore[JOBS_SYMBOL];
+}
+
+function getSupportCache(): FfmpegRuntimeSupportCache | undefined {
+  const globalStore = globalThis as typeof globalThis & {
+    [FFMPEG_SUPPORT_SYMBOL]?: FfmpegRuntimeSupportCache;
+  };
+
+  return globalStore[FFMPEG_SUPPORT_SYMBOL];
+}
+
+function setSupportCache(value: FfmpegRuntimeSupport): void {
+  const globalStore = globalThis as typeof globalThis & {
+    [FFMPEG_SUPPORT_SYMBOL]?: FfmpegRuntimeSupportCache;
+  };
+
+  globalStore[FFMPEG_SUPPORT_SYMBOL] = {
+    checkedAt: Date.now(),
+    value,
+  };
 }
 
 function getRetentionMs(): number {
@@ -94,6 +125,31 @@ function getFfprobePath(): string {
   return process.env.FFPROBE_PATH || 'ffprobe';
 }
 
+function canRunFfmpegInServerless(): boolean {
+  const forceEnable = process.env.FFMPEG_ALLOW_SERVERLESS?.trim();
+  return forceEnable === '1' || forceEnable?.toLowerCase() === 'true';
+}
+
+function isLikelyServerless(): boolean {
+  if (process.env.VERCEL === '1') return true;
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME) return true;
+  if (process.env.NETLIFY === 'true') return true;
+  return false;
+}
+
+function getDefaultOutputDir(): string {
+  const configured = process.env.FFMPEG_DOWNLOAD_DIR?.trim();
+  if (configured) {
+    return path.resolve(configured);
+  }
+
+  if (process.env.VERCEL === '1') {
+    return path.resolve('/tmp', 'decotv-ffmpeg-downloads');
+  }
+
+  return path.resolve(process.cwd(), '.cache', 'ffmpeg-downloads');
+}
+
 function clampProgress(value: number): number {
   if (!Number.isFinite(value)) return MIN_PROGRESS;
   return Math.min(MAX_PROGRESS, Math.max(MIN_PROGRESS, value));
@@ -108,12 +164,51 @@ function sanitizeFileName(input: string): string {
 }
 
 async function getOutputDir(): Promise<string> {
-  const configured = process.env.FFMPEG_DOWNLOAD_DIR?.trim();
-  const outputDir = configured
-    ? path.resolve(configured)
-    : path.resolve(process.cwd(), '.cache', 'ffmpeg-downloads');
+  const outputDir = getDefaultOutputDir();
   await fs.mkdir(outputDir, { recursive: true });
   return outputDir;
+}
+
+export async function getFfmpegRuntimeSupport(
+  forceRefresh = false,
+): Promise<FfmpegRuntimeSupport> {
+  if (!forceRefresh) {
+    const cached = getSupportCache();
+    if (cached && Date.now() - cached.checkedAt < FFMPEG_SUPPORT_CACHE_TTL_MS) {
+      return cached.value;
+    }
+  }
+
+  if (isLikelyServerless() && !canRunFfmpegInServerless()) {
+    const unsupported: FfmpegRuntimeSupport = {
+      supported: false,
+      reason:
+        '该功能仅支持 Docker/VPS 部署，当前环境不支持 FFmpeg 二进制运行。',
+    };
+    setSupportCache(unsupported);
+    return unsupported;
+  }
+
+  try {
+    await execFileAsync(getFfmpegPath(), ['-version'], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 256,
+    });
+    const supported: FfmpegRuntimeSupport = { supported: true };
+    setSupportCache(supported);
+    return supported;
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : 'ffmpeg binary unavailable';
+    const unsupported: FfmpegRuntimeSupport = {
+      supported: false,
+      reason: `FFmpeg 不可用: ${message}`,
+    };
+    setSupportCache(unsupported);
+    return unsupported;
+  }
 }
 
 function parseProgressKV(line: string): [string, string] | null {
@@ -354,6 +449,13 @@ export async function startFfmpegDownload(
   input: StartFfmpegDownloadInput,
 ): Promise<FfmpegJobSnapshot> {
   cleanupExpiredJobs();
+  const runtimeSupport = await getFfmpegRuntimeSupport();
+  if (!runtimeSupport.supported) {
+    throw new Error(
+      runtimeSupport.reason ||
+        '该功能仅支持 Docker/VPS 部署，当前环境不支持 FFmpeg 二进制运行。',
+    );
+  }
 
   const safeTitle = sanitizeFileName(
     input.fileNameHint || input.title || 'video',

@@ -32,6 +32,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "pansou-ref-20260210"],
+  "exclude": ["node_modules"],
   "moduleResolution": ["node_modules", ".next", "node"]
 }

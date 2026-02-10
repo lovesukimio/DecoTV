@@ -2,7 +2,17 @@
 
 'use client';
 
-import { Cat, Clover, Film, Home, Radio, Search, Star, Tv } from 'lucide-react';
+import {
+  Cat,
+  Cloud,
+  Clover,
+  Film,
+  Home,
+  Radio,
+  Search,
+  Star,
+  Tv,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
@@ -70,6 +80,14 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       activeGradient: 'bg-linear-to-r from-emerald-500 to-teal-500',
       activeTextColor: 'text-white',
       hoverBg: 'hover:bg-emerald-500/20',
+    },
+    {
+      icon: Cloud,
+      label: '网盘',
+      href: '/netdisk',
+      activeGradient: 'bg-linear-to-r from-cyan-500 to-blue-500',
+      activeTextColor: 'text-white',
+      hoverBg: 'hover:bg-cyan-500/20',
     },
     {
       icon: Film,
@@ -150,6 +168,10 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
       // 搜索页特殊处理
       if (href === '/search' && decodedActive.startsWith('/search'))
+        return true;
+
+      // 网盘页特殊处理
+      if (href === '/netdisk' && decodedActive.startsWith('/netdisk'))
         return true;
 
       // 直播页特殊处理

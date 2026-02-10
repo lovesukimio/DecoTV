@@ -61,6 +61,13 @@ interface FfmpegJobPayload {
   downloadUrl?: string | null;
 }
 
+interface ProxyFetchOptions {
+  referer?: string;
+  origin?: string;
+  ua?: string;
+  playlist?: boolean;
+}
+
 interface DownloadManagerContextValue {
   tasks: DownloadTask[];
   isManagerOpen: boolean;
@@ -101,8 +108,28 @@ function isM3U8Url(sourceUrl: string): boolean {
   return /\.m3u8($|\?)/i.test(sourceUrl);
 }
 
-function buildProxyUrl(targetUrl: string): string {
-  return `/api/download/proxy?url=${encodeURIComponent(targetUrl)}`;
+function buildProxyUrl(
+  targetUrl: string,
+  options: ProxyFetchOptions = {},
+): string {
+  const params = new URLSearchParams({
+    url: targetUrl,
+  });
+
+  if (options.referer) {
+    params.set('referer', options.referer);
+  }
+  if (options.origin) {
+    params.set('origin', options.origin);
+  }
+  if (options.ua) {
+    params.set('ua', options.ua);
+  }
+  if (options.playlist) {
+    params.set('playlist', '1');
+  }
+
+  return `/api/download/proxy?${params.toString()}`;
 }
 
 function buildFfmpegApiUrl(jobId?: string): string {
@@ -118,6 +145,34 @@ function mapFfmpegStatusToTaskStatus(
   if (status === 'completed') return 'completed';
   if (status === 'error') return 'error';
   return 'queued';
+}
+
+async function readApiErrorMessage(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const payload = (await response.json()) as {
+      error?: string;
+      details?: string;
+      recommendation?: string;
+    };
+
+    if (payload.error && payload.recommendation) {
+      return `${payload.error} ${payload.recommendation}`;
+    }
+    if (payload.error) {
+      return payload.error;
+    }
+    if (payload.details) {
+      return payload.details;
+    }
+  } catch {
+    // fallback to plain text
+  }
+
+  const text = await response.text().catch(() => '');
+  return text || fallback;
 }
 
 async function requestFfmpegAction(
@@ -143,10 +198,11 @@ async function requestFfmpegAction(
   });
 
   if (!response.ok) {
-    const errorMessage = await response.text().catch(() => '');
-    throw new Error(
-      errorMessage || `FFmpeg API request failed (${response.status})`,
+    const errorMessage = await readApiErrorMessage(
+      response,
+      `FFmpeg API request failed (${response.status})`,
     );
+    throw new Error(errorMessage);
   }
 
   const data = (await response.json()) as {
@@ -164,10 +220,11 @@ async function fetchFfmpegJob(jobId: string): Promise<FfmpegJobPayload | null> {
   if (response.status === 404) return null;
 
   if (!response.ok) {
-    const errorMessage = await response.text().catch(() => '');
-    throw new Error(
-      errorMessage || `Failed to query FFmpeg job (${response.status})`,
+    const errorMessage = await readApiErrorMessage(
+      response,
+      `Failed to query FFmpeg job (${response.status})`,
     );
+    throw new Error(errorMessage);
   }
 
   const data = (await response.json()) as {
@@ -177,12 +234,25 @@ async function fetchFfmpegJob(jobId: string): Promise<FfmpegJobPayload | null> {
   return data.job || null;
 }
 
-async function fetchTextByProxy(targetUrl: string): Promise<string> {
-  const response = await fetch(buildProxyUrl(targetUrl), {
-    cache: 'no-store',
-  });
+async function fetchTextByProxy(
+  targetUrl: string,
+  referer?: string,
+): Promise<string> {
+  const response = await fetch(
+    buildProxyUrl(targetUrl, {
+      referer,
+      playlist: true,
+    }),
+    {
+      cache: 'no-store',
+    },
+  );
   if (!response.ok) {
-    throw new Error(`拉取播放列表失败 (${response.status})`);
+    const details = await readApiErrorMessage(
+      response,
+      `拉取播放列表失败 (${response.status})`,
+    );
+    throw new Error(details);
   }
   return response.text();
 }
@@ -202,12 +272,13 @@ function parseDuration(line: string): number {
 async function parseM3U8Playlist(
   playlistUrl: string,
   depth = 0,
+  referer?: string,
 ): Promise<ParsedM3U8Result> {
   if (depth > 4) {
     throw new Error('M3U8 嵌套层级过深');
   }
 
-  const text = await fetchTextByProxy(playlistUrl);
+  const text = await fetchTextByProxy(playlistUrl, referer);
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -255,11 +326,11 @@ async function parseM3U8Playlist(
 
   if (variants.length > 0) {
     variants.sort((a, b) => b.bandwidth - a.bandwidth);
-    return parseM3U8Playlist(variants[0].url, depth + 1);
+    return parseM3U8Playlist(variants[0].url, depth + 1, playlistUrl);
   }
 
   if (segmentUrls.length === 0 && nestedPlaylists.length > 0) {
-    return parseM3U8Playlist(nestedPlaylists[0], depth + 1);
+    return parseM3U8Playlist(nestedPlaylists[0], depth + 1, playlistUrl);
   }
 
   return {
@@ -574,14 +645,21 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
             const controller = new AbortController();
             runtime.controllers.add(controller);
             try {
-              const response = await fetch(buildProxyUrl(segmentUrl), {
-                cache: 'no-store',
-                signal: controller.signal,
-              });
+              const response = await fetch(
+                buildProxyUrl(segmentUrl, {
+                  referer: task.playlistUrl || task.sourceUrl,
+                }),
+                {
+                  cache: 'no-store',
+                  signal: controller.signal,
+                },
+              );
               if (!response.ok) {
-                throw new Error(
+                const details = await readApiErrorMessage(
+                  response,
                   `分片下载失败 (${nextIndex + 1}/${task.totalSegments})`,
                 );
+                throw new Error(details);
               }
               const blob = await response.blob();
               await saveSegmentBlobToDB(taskId, nextIndex, blob);
@@ -659,7 +737,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
           signal: controller.signal,
         });
         if (!response.ok) {
-          throw new Error(`文件下载失败 (${response.status})`);
+          const details = await readApiErrorMessage(
+            response,
+            `文件下载失败 (${response.status})`,
+          );
+          throw new Error(details);
         }
 
         const totalBytes = Number(response.headers.get('content-length') || 0);

@@ -20,7 +20,16 @@
 
 /// <reference lib="dom" />
 
-import { Cat, Clover, Film, Home, Radio, Search, Tv } from 'lucide-react';
+import {
+  Cat,
+  Cloud,
+  Clover,
+  Film,
+  Home,
+  Radio,
+  Search,
+  Tv,
+} from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   memo,
@@ -62,6 +71,15 @@ const NAV_ITEMS = [
     openInNewTab: false, // 搜索不需要新标签页
   },
   {
+    key: 'netdisk',
+    href: '/netdisk',
+    icon: Cloud,
+    label: '网盘',
+    chip: 'chip-search',
+    type: 'exact',
+    openInNewTab: false,
+  },
+  {
     key: 'source-browser',
     href: '/source-browser',
     icon: SourceBrowserIcon,
@@ -78,7 +96,7 @@ const NAV_ITEMS = [
     chip: 'chip-movie',
     type: 'douban',
     doubanType: 'movie',
-    openInNewTab: true, // PC端新标签页打开，解决卡顿
+    openInNewTab: false,
   },
   {
     key: 'tv',
@@ -88,7 +106,7 @@ const NAV_ITEMS = [
     chip: 'chip-tv',
     type: 'douban',
     doubanType: 'tv',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'anime',
@@ -98,7 +116,7 @@ const NAV_ITEMS = [
     chip: 'chip-anime',
     type: 'douban',
     doubanType: 'anime',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'show',
@@ -108,7 +126,7 @@ const NAV_ITEMS = [
     chip: 'chip-show',
     type: 'douban',
     doubanType: 'show',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'live',
@@ -117,7 +135,7 @@ const NAV_ITEMS = [
     label: '直播',
     chip: 'chip-live',
     type: 'exact',
-    openInNewTab: true,
+    openInNewTab: false,
   },
 ] as const;
 
@@ -137,6 +155,8 @@ function computeActiveKey(pathname: string, type: string | null): string {
       return 'home';
     case '/search':
       return 'search';
+    case '/netdisk':
+      return 'netdisk';
     case '/source-browser':
       return 'source-browser';
     case '/live':
@@ -255,27 +275,7 @@ function TopNavbar() {
                     ? 'ring-2 ring-emerald-400/70'
                     : 'ring-2 ring-purple-400/60';
 
-                // PC端分类页面（电影、剧集等）在新标签页打开，彻底避免状态同步卡顿
-                if (item.openInNewTab) {
-                  return (
-                    <a
-                      key={item.key}
-                      href={item.href}
-                      target='_blank'
-                      rel='noopener noreferrer'
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme ${item.chip} ${
-                        active ? activeRingClass : ''
-                      }`}
-                      style={{ touchAction: 'manipulation' }}
-                    >
-                      <Icon className='h-4 w-4' />
-                      <span>{item.label}</span>
-                    </a>
-                  );
-                }
-
                 return (
-                  // 首页、搜索等不需要新标签页的，保持原有行为
                   <FastLink
                     key={item.key}
                     href={item.href}

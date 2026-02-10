@@ -14,8 +14,195 @@ const DEFAULT_HEADERS: Record<string, string> = {
   Pragma: 'no-cache',
 };
 
-function buildError(status: number, message: string) {
-  return NextResponse.json({ error: message }, { status });
+interface HeaderVariant {
+  referer?: string;
+  origin?: string;
+}
+
+interface FetchAttemptError {
+  status: number;
+  details: string;
+}
+
+function buildError(status: number, message: string, details?: string) {
+  return NextResponse.json(
+    {
+      error: message,
+      ...(details ? { details } : {}),
+    },
+    { status },
+  );
+}
+
+function safeDecodeURIComponent(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function normalizeOptional(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  return trimmed || undefined;
+}
+
+function normalizeOrigin(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  try {
+    return new URL(input).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function toAbsoluteReferer(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  try {
+    const parsed = new URL(input);
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function buildHeaderVariants(
+  targetUrl: string,
+  explicitReferer?: string,
+  explicitOrigin?: string,
+): HeaderVariant[] {
+  const targetOrigin = normalizeOrigin(targetUrl);
+  const referer = toAbsoluteReferer(explicitReferer);
+  const refererOrigin = normalizeOrigin(referer);
+  const origin = normalizeOrigin(explicitOrigin);
+
+  const variants: HeaderVariant[] = [];
+  const seen = new Set<string>();
+
+  const push = (variant: HeaderVariant) => {
+    const key = `${variant.referer || ''}|${variant.origin || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    variants.push(variant);
+  };
+
+  if (referer || origin) {
+    push({
+      referer: referer || (origin ? `${origin}/` : undefined),
+      origin: origin || refererOrigin,
+    });
+  }
+
+  if (targetOrigin) {
+    push({
+      referer: `${targetOrigin}/`,
+      origin: targetOrigin,
+    });
+  }
+
+  if (referer && refererOrigin && refererOrigin !== targetOrigin) {
+    push({
+      referer,
+      origin: refererOrigin,
+    });
+  }
+
+  push({});
+  return variants;
+}
+
+function buildRequestHeaders(
+  request: NextRequest,
+  options: {
+    userAgent?: string;
+    playlist?: boolean;
+    variant: HeaderVariant;
+  },
+): Headers {
+  const headers = new Headers(DEFAULT_HEADERS);
+  const range = request.headers.get('range');
+  if (range) {
+    headers.set('Range', range);
+  }
+
+  const userAgent = options.userAgent?.trim();
+  if (userAgent) {
+    headers.set('User-Agent', userAgent);
+  }
+
+  if (options.playlist) {
+    headers.set(
+      'Accept',
+      'application/vnd.apple.mpegurl,application/x-mpegURL,text/plain,*/*',
+    );
+  }
+
+  if (options.variant.referer) {
+    headers.set('Referer', options.variant.referer);
+  } else {
+    headers.delete('Referer');
+  }
+
+  if (options.variant.origin) {
+    headers.set('Origin', options.variant.origin);
+  } else {
+    headers.delete('Origin');
+  }
+
+  return headers;
+}
+
+async function fetchUpstreamWithFallback(
+  request: NextRequest,
+  targetUrl: string,
+  options: {
+    userAgent?: string;
+    playlist?: boolean;
+    variants: HeaderVariant[];
+  },
+): Promise<{ response: Response | null; error: FetchAttemptError | null }> {
+  let lastError: FetchAttemptError | null = null;
+
+  for (const variant of options.variants) {
+    const headers = buildRequestHeaders(request, {
+      userAgent: options.userAgent,
+      playlist: options.playlist,
+      variant,
+    });
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers,
+        redirect: 'follow',
+        cache: 'no-store',
+      });
+
+      if (response.ok) {
+        return {
+          response,
+          error: null,
+        };
+      }
+
+      const details = (await response.text().catch(() => '')).slice(0, 260);
+      lastError = {
+        status: response.status,
+        details,
+      };
+    } catch (error) {
+      lastError = {
+        status: 0,
+        details: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  return {
+    response: null,
+    error: lastError,
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -29,90 +216,92 @@ export async function GET(request: NextRequest) {
     return buildError(400, 'Missing url');
   }
 
-  let targetUrl = '';
+  const targetUrl = safeDecodeURIComponent(targetRaw);
+  let parsedTarget: URL;
   try {
-    targetUrl = decodeURIComponent(targetRaw);
-    const parsed = new URL(targetUrl);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
+    parsedTarget = new URL(targetUrl);
+    if (!['http:', 'https:'].includes(parsedTarget.protocol)) {
       return buildError(400, 'Unsupported protocol');
     }
   } catch {
     return buildError(400, 'Invalid url');
   }
 
-  const requestHeaders = new Headers(DEFAULT_HEADERS);
-  const range = request.headers.get('range');
-  if (range) {
-    requestHeaders.set('Range', range);
-  }
+  const referer = normalizeOptional(
+    safeDecodeURIComponent(request.nextUrl.searchParams.get('referer') || ''),
+  );
+  const origin = normalizeOptional(
+    safeDecodeURIComponent(request.nextUrl.searchParams.get('origin') || ''),
+  );
+  const userAgent = normalizeOptional(
+    request.nextUrl.searchParams.get('ua') ||
+      request.headers.get('user-agent') ||
+      '',
+  );
+  const playlist = request.nextUrl.searchParams.get('playlist') === '1';
 
-  try {
-    const origin = new URL(targetUrl).origin;
-    requestHeaders.set('Referer', `${origin}/`);
-    requestHeaders.set('Origin', origin);
-  } catch {
-    // ignore invalid origin
-  }
+  const variants = buildHeaderVariants(
+    parsedTarget.toString(),
+    referer,
+    origin,
+  );
+  const { response, error } = await fetchUpstreamWithFallback(
+    request,
+    parsedTarget.toString(),
+    {
+      userAgent,
+      playlist,
+      variants,
+    },
+  );
 
-  try {
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      headers: requestHeaders,
-      redirect: 'follow',
-      cache: 'no-store',
-    });
-
-    if (!response.ok) {
-      return buildError(
-        502,
-        `Failed to fetch upstream resource (${response.status})`,
-      );
-    }
-
-    const headers = new Headers();
-    headers.set(
-      'Content-Type',
-      response.headers.get('content-type') || 'application/octet-stream',
-    );
-    headers.set('Cache-Control', 'no-store');
-    headers.set('Access-Control-Allow-Origin', '*');
-    headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    headers.set(
-      'Access-Control-Allow-Headers',
-      'Content-Type, Range, Accept, Origin',
-    );
-    headers.set(
-      'Access-Control-Expose-Headers',
-      'Content-Length, Content-Range, Accept-Ranges',
-    );
-
-    const contentLength = response.headers.get('content-length');
-    if (contentLength) {
-      headers.set('Content-Length', contentLength);
-    }
-
-    const contentRange = response.headers.get('content-range');
-    if (contentRange) {
-      headers.set('Content-Range', contentRange);
-    }
-
-    const acceptRanges = response.headers.get('accept-ranges');
-    if (acceptRanges) {
-      headers.set('Accept-Ranges', acceptRanges);
-    } else {
-      headers.set('Accept-Ranges', 'bytes');
-    }
-
-    return new Response(response.body, {
-      status: response.status,
-      headers,
-    });
-  } catch (error) {
+  if (!response) {
+    const upstreamStatus = error?.status && error.status > 0 ? error.status : 0;
     return buildError(
       502,
-      error instanceof Error ? error.message : 'Proxy request failed',
+      `Failed to fetch upstream resource (${upstreamStatus})`,
+      error?.details,
     );
   }
+
+  const headers = new Headers();
+  headers.set(
+    'Content-Type',
+    response.headers.get('content-type') || 'application/octet-stream',
+  );
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  headers.set(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Range, Accept, Origin, Referer, User-Agent',
+  );
+  headers.set(
+    'Access-Control-Expose-Headers',
+    'Content-Length, Content-Range, Accept-Ranges, Content-Type',
+  );
+
+  const contentLength = response.headers.get('content-length');
+  if (contentLength) {
+    headers.set('Content-Length', contentLength);
+  }
+
+  const contentRange = response.headers.get('content-range');
+  if (contentRange) {
+    headers.set('Content-Range', contentRange);
+  }
+
+  const acceptRanges = response.headers.get('accept-ranges');
+  if (acceptRanges) {
+    headers.set('Accept-Ranges', acceptRanges);
+  } else {
+    headers.set('Accept-Ranges', 'bytes');
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
 }
 
 export async function OPTIONS() {
@@ -121,7 +310,8 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Range, Accept, Origin',
+      'Access-Control-Allow-Headers':
+        'Content-Type, Range, Accept, Origin, Referer, User-Agent',
       'Access-Control-Max-Age': '86400',
     },
   });

@@ -4,6 +4,7 @@ import { verifyApiAuth } from '@/lib/auth';
 import {
   type FfmpegJobSnapshot,
   getFfmpegJob,
+  getFfmpegRuntimeSupport,
   listFfmpegJobs,
   pauseFfmpegJob,
   removeFfmpegJob,
@@ -101,11 +102,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing title' }, { status: 400 });
     }
 
-    const job = await startFfmpegDownload({
-      sourceUrl,
-      title: payload.title.trim(),
-      fileNameHint: payload.fileNameHint?.trim(),
-    });
+    const runtimeSupport = await getFfmpegRuntimeSupport();
+    if (!runtimeSupport.supported) {
+      return NextResponse.json(
+        {
+          error:
+            runtimeSupport.reason ||
+            '该功能仅支持 Docker/VPS 部署，当前环境不支持 FFmpeg 二进制运行。',
+          recommendation:
+            '请使用“下载当前集”浏览器下载，或切换到 Docker/VPS 部署。',
+        },
+        { status: 501 },
+      );
+    }
+
+    let job: FfmpegJobSnapshot;
+    try {
+      job = await startFfmpegDownload({
+        sourceUrl,
+        title: payload.title.trim(),
+        fileNameHint: payload.fileNameHint?.trim(),
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: 'FFmpeg 任务启动失败',
+          details: error instanceof Error ? error.message : String(error),
+          recommendation:
+            '请使用“下载当前集”浏览器下载，或切换到 Docker/VPS 部署。',
+        },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json(
       {
@@ -129,6 +157,20 @@ export async function POST(request: NextRequest) {
   }
 
   if (payload.action === 'resume') {
+    const runtimeSupport = await getFfmpegRuntimeSupport();
+    if (!runtimeSupport.supported) {
+      return NextResponse.json(
+        {
+          error:
+            runtimeSupport.reason ||
+            '该功能仅支持 Docker/VPS 部署，当前环境不支持 FFmpeg 二进制运行。',
+          recommendation:
+            '请使用“下载当前集”浏览器下载，或切换到 Docker/VPS 部署。',
+        },
+        { status: 501 },
+      );
+    }
+
     const job = await resumeFfmpegJob(id);
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
