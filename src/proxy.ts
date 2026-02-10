@@ -4,10 +4,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 🔓 处理成人内容模式路径重写
+  // 处理成人内容模式路径重写
   // 如果路径以 /adult/ 开头，重写到实际 API 路径并添加 adult 标记
   if (pathname.startsWith('/adult/')) {
     const actualPath = pathname.replace('/adult/', '/');
@@ -50,7 +50,7 @@ export async function middleware(request: NextRequest) {
     return handleAuthFailure(request, pathname);
   }
 
-  // localstorage模式：在middleware中完成验证
+  // localstorage模式：在proxy中完成验证
   if (storageType === 'localstorage') {
     if (!authInfo.password || authInfo.password !== process.env.PASSWORD) {
       return handleAuthFailure(request, pathname);
@@ -153,7 +153,7 @@ function shouldSkipAuth(pathname: string): boolean {
     '/register', // 允许访问注册页面
   ];
 
-  // 🔐 本地模式 (无数据库) 下，允许跳过 admin API 鉴权
+  // 本地模式 (无数据库) 下，允许跳过 admin API 鉴权
   // 这是为了解决"鸡生蛋"问题：用户需要先配置系统才能登录，但登录又需要先有配置
   // 安全性说明：仅当 STORAGE_TYPE=localstorage 且没有设置数据库连接时才生效
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
@@ -181,7 +181,7 @@ function shouldSkipAuth(pathname: string): boolean {
   return skipPaths.some((path) => pathname.startsWith(path));
 }
 
-// 配置middleware匹配规则
+// 配置 proxy 匹配规则
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|login|warning|api/login|api/register|api/logout|api/cron|api/server-config|api/version|VERSION.txt).*)',
