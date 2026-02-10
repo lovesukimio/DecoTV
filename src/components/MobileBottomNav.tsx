@@ -5,7 +5,9 @@
 import { Cat, Clover, Film, Home, Radio, Search, Star, Tv } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
+
+import SourceBrowserIcon from './icons/SourceBrowserIcon';
 
 // 简单的 className 合并函数
 function cn(...classes: (string | boolean | undefined | null)[]): string {
@@ -13,7 +15,7 @@ function cn(...classes: (string | boolean | undefined | null)[]): string {
 }
 
 interface NavItem {
-  icon: typeof Home;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   href: string;
   // 选中状态的渐变色配置
@@ -60,6 +62,14 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       activeGradient: 'bg-linear-to-r from-blue-500 to-cyan-500',
       activeTextColor: 'text-white',
       hoverBg: 'hover:bg-blue-500/20',
+    },
+    {
+      icon: SourceBrowserIcon,
+      label: '源浏览器',
+      href: '/source-browser',
+      activeGradient: 'bg-linear-to-r from-emerald-500 to-teal-500',
+      activeTextColor: 'text-white',
+      hoverBg: 'hover:bg-emerald-500/20',
     },
     {
       icon: Film,

@@ -32,6 +32,7 @@ import {
 } from 'react';
 
 import FastLink from './FastLink';
+import SourceBrowserIcon from './icons/SourceBrowserIcon';
 import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
@@ -59,6 +60,15 @@ const NAV_ITEMS = [
     chip: 'chip-search',
     type: 'exact',
     openInNewTab: false, // 搜索不需要新标签页
+  },
+  {
+    key: 'source-browser',
+    href: '/source-browser',
+    icon: SourceBrowserIcon,
+    label: '源浏览器',
+    chip: 'chip-source-browser',
+    type: 'exact',
+    openInNewTab: false,
   },
   {
     key: 'movie',
@@ -127,6 +137,8 @@ function computeActiveKey(pathname: string, type: string | null): string {
       return 'home';
     case '/search':
       return 'search';
+    case '/source-browser':
+      return 'source-browser';
     case '/live':
       return 'live';
     default:
@@ -238,6 +250,10 @@ function TopNavbar() {
                 // 【关键】使用本地状态判断激活，而非 URL
                 // 这是"乐观 UI"的核心：点击即变色，不等 URL
                 const active = activeTabKey === item.key;
+                const activeRingClass =
+                  item.key === 'source-browser'
+                    ? 'ring-2 ring-emerald-400/70'
+                    : 'ring-2 ring-purple-400/60';
 
                 // PC端分类页面（电影、剧集等）在新标签页打开，彻底避免状态同步卡顿
                 if (item.openInNewTab) {
@@ -248,7 +264,7 @@ function TopNavbar() {
                       target='_blank'
                       rel='noopener noreferrer'
                       className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme ${item.chip} ${
-                        active ? 'ring-2 ring-purple-400/60' : ''
+                        active ? activeRingClass : ''
                       }`}
                       style={{ touchAction: 'manipulation' }}
                     >
@@ -267,7 +283,7 @@ function TopNavbar() {
                     useTransitionNav
                     onClick={handleTabClick(item.key)}
                     className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme ${item.chip} ${
-                      active ? 'ring-2 ring-purple-400/60' : ''
+                      active ? activeRingClass : ''
                     }`}
                   >
                     <Icon className='h-4 w-4' />

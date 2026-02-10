@@ -45,7 +45,7 @@ import { GripVertical } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { AdminConfig } from '@/lib/admin.types';
+import { AdminConfig, DanmuCustomNode } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
 import DataMigration from '@/components/DataMigration';
@@ -6390,6 +6390,38 @@ interface DanmuConfigProps {
   refreshConfig: () => Promise<void>;
 }
 
+interface DanmuNodeFormState {
+  name: string;
+  url: string;
+  token: string;
+}
+
+interface DanmuNodeHealthState {
+  status: 'idle' | 'testing' | 'ok' | 'error';
+  latency?: number;
+  error?: string;
+}
+
+interface DanmuSettingsState {
+  enabled: boolean;
+  serverUrl: string;
+  token: string;
+  platform: string;
+  sourceOrder: string;
+  mergeSourcePairs: string;
+  bilibiliCookie: string;
+  convertTopBottomToScroll: boolean;
+  convertColor: 'default' | 'white' | 'color';
+  danmuLimit: number;
+  blockedWords: string;
+  danmuOutputFormat: 'json' | 'xml';
+  simplifiedTraditional: 'default' | 'simplified' | 'traditional';
+  customNodes: DanmuCustomNode[];
+}
+
+const DANMU_CUSTOM_NODE_STORAGE_KEY = 'decotv:danmu:custom-nodes';
+const MAX_CUSTOM_DANMU_NODE_COUNT = 64;
+
 const RECOMMENDED_DANMU_SERVER = {
   name: '官方推荐/稳定节点',
   url: 'https://danmu.katelya.eu.org',
@@ -6445,7 +6477,7 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
 
-  const [danmuSettings, setDanmuSettings] = useState({
+  const [danmuSettings, setDanmuSettings] = useState<DanmuSettingsState>({
     enabled: false,
     serverUrl: RECOMMENDED_DANMU_SERVER.url,
     token: RECOMMENDED_DANMU_SERVER.token,
@@ -6462,6 +6494,7 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
       | 'default'
       | 'simplified'
       | 'traditional',
+    customNodes: [],
   });
 
   const [testResult, setTestResult] = useState<{
@@ -6473,12 +6506,122 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
   } | null>(null);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isNodeModalOpen, setIsNodeModalOpen] = useState(false);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [nodeForm, setNodeForm] = useState<DanmuNodeFormState>({
+    name: '',
+    url: '',
+    token: '',
+  });
+  const [nodeHealthMap, setNodeHealthMap] = useState<
+    Record<string, DanmuNodeHealthState>
+  >({});
+
+  const normalizeServerUrl = useCallback((value: string) => {
+    return value.trim().replace(/\/+$/, '');
+  }, []);
+
+  const createNodeId = useCallback(() => {
+    if (
+      typeof crypto !== 'undefined' &&
+      typeof crypto.randomUUID === 'function'
+    ) {
+      return crypto.randomUUID();
+    }
+    return `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+  }, []);
+
+  // 统一过滤与规范化节点数据，避免脏数据写入配置。
+  const sanitizeCustomNodes = useCallback(
+    (value: unknown): DanmuCustomNode[] => {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+
+      const now = Date.now();
+      const nodes: DanmuCustomNode[] = [];
+      for (const item of value) {
+        if (!item || typeof item !== 'object') {
+          continue;
+        }
+
+        const raw = item as Partial<DanmuCustomNode>;
+        const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+        const url =
+          typeof raw.url === 'string' ? normalizeServerUrl(raw.url) : '';
+        if (!name || !url) {
+          continue;
+        }
+
+        const token = typeof raw.token === 'string' ? raw.token.trim() : '';
+        const createdAt =
+          typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt)
+            ? raw.createdAt
+            : now;
+        const updatedAt =
+          typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
+            ? raw.updatedAt
+            : now;
+        const id =
+          typeof raw.id === 'string' && raw.id.trim()
+            ? raw.id.trim()
+            : `node_${createdAt}_${nodes.length}`;
+
+        nodes.push({ id, name, url, token, createdAt, updatedAt });
+        if (nodes.length >= MAX_CUSTOM_DANMU_NODE_COUNT) {
+          break;
+        }
+      }
+
+      return nodes;
+    },
+    [normalizeServerUrl],
+  );
+
+  const loadCustomNodesFromStorage = useCallback((): DanmuCustomNode[] => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    try {
+      const raw = window.localStorage.getItem(DANMU_CUSTOM_NODE_STORAGE_KEY);
+      if (!raw) {
+        return [];
+      }
+      return sanitizeCustomNodes(JSON.parse(raw));
+    } catch {
+      return [];
+    }
+  }, [sanitizeCustomNodes]);
+
+  const persistCustomNodesToStorage = useCallback(
+    (nodes: DanmuCustomNode[]) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      try {
+        window.localStorage.setItem(
+          DANMU_CUSTOM_NODE_STORAGE_KEY,
+          JSON.stringify(nodes),
+        );
+      } catch {
+        // localStorage 异常不影响主流程。
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (config?.DanmuConfig) {
+      const configCustomNodes = sanitizeCustomNodes(
+        config.DanmuConfig.customNodes,
+      );
+      const customNodes =
+        configCustomNodes.length > 0
+          ? configCustomNodes
+          : loadCustomNodesFromStorage();
       setDanmuSettings({
         enabled: config.DanmuConfig.enabled ?? false,
-        serverUrl: config.DanmuConfig.serverUrl ?? '',
+        serverUrl: normalizeServerUrl(config.DanmuConfig.serverUrl ?? ''),
         token: config.DanmuConfig.token ?? '',
         platform: config.DanmuConfig.platform ?? '',
         sourceOrder: config.DanmuConfig.sourceOrder ?? '',
@@ -6492,34 +6635,67 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
         danmuOutputFormat: config.DanmuConfig.danmuOutputFormat ?? 'json',
         simplifiedTraditional:
           config.DanmuConfig.simplifiedTraditional ?? 'default',
+        customNodes,
       });
+      return;
     }
-  }, [config]);
+    const fallbackNodes = loadCustomNodesFromStorage();
+    if (fallbackNodes.length > 0) {
+      setDanmuSettings((prev) => ({
+        ...prev,
+        customNodes: fallbackNodes,
+      }));
+    }
+  }, [
+    config,
+    loadCustomNodesFromStorage,
+    normalizeServerUrl,
+    sanitizeCustomNodes,
+  ]);
+
+  useEffect(() => {
+    persistCustomNodesToStorage(danmuSettings.customNodes);
+  }, [danmuSettings.customNodes, persistCustomNodesToStorage]);
 
   // 构建实际 API 地址（baseUrl + token 拼接）
-  const getFullServerUrl = () => {
-    if (!danmuSettings.serverUrl) return '';
-    const base = danmuSettings.serverUrl.replace(/\/+$/, '');
-    if (danmuSettings.token) {
-      return `${base}/${danmuSettings.token}`;
+  const getFullServerUrl = (
+    serverUrl = danmuSettings.serverUrl,
+    token = danmuSettings.token,
+  ) => {
+    const base = normalizeServerUrl(serverUrl);
+    if (!base) return '';
+    const safeToken = token.trim();
+    if (safeToken) {
+      return `${base}/${safeToken}`;
     }
     return base;
   };
 
+  const persistDanmuSettings = useCallback(
+    async (nextSettings: DanmuSettingsState, successMessage: string) => {
+      const resp = await fetch('/api/admin/danmu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextSettings),
+      });
+      if (!resp.ok) {
+        const data = (await resp.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error || '保存失败');
+      }
+      persistCustomNodesToStorage(nextSettings.customNodes);
+      await refreshConfig();
+      setDanmuSettings(nextSettings);
+      showSuccess(successMessage, showAlert);
+    },
+    [persistCustomNodesToStorage, refreshConfig, showAlert],
+  );
+
   const handleSave = async () => {
     await withLoading('saveDanmuConfig', async () => {
       try {
-        const resp = await fetch('/api/admin/danmu', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(danmuSettings),
-        });
-        if (!resp.ok) {
-          const data = await resp.json().catch(() => ({}));
-          throw new Error(data.error || '保存失败');
-        }
-        await refreshConfig();
-        showSuccess('弹幕配置保存成功', showAlert);
+        await persistDanmuSettings(danmuSettings, '弹幕配置保存成功');
       } catch (err) {
         showError(`保存弹幕配置失败: ${(err as Error).message}`, showAlert);
       }
@@ -6554,10 +6730,195 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
   const handleSelectDemoServer = (server: { url: string; token?: string }) => {
     setDanmuSettings((prev) => ({
       ...prev,
-      serverUrl: server.url,
+      serverUrl: normalizeServerUrl(server.url),
       token: server.token ?? prev.token,
     }));
     setTestResult(null);
+  };
+
+  const isNodeSelected = (node: DanmuCustomNode) => {
+    return (
+      normalizeServerUrl(danmuSettings.serverUrl) ===
+        normalizeServerUrl(node.url) &&
+      danmuSettings.token.trim() === node.token.trim()
+    );
+  };
+
+  const openAddNodeModal = () => {
+    setEditingNodeId(null);
+    setNodeForm({ name: '', url: '', token: '' });
+    setIsNodeModalOpen(true);
+  };
+
+  const openEditNodeModal = (node: DanmuCustomNode) => {
+    setEditingNodeId(node.id);
+    setNodeForm({
+      name: node.name,
+      url: node.url,
+      token: node.token,
+    });
+    setIsNodeModalOpen(true);
+  };
+
+  const closeNodeModal = () => {
+    setIsNodeModalOpen(false);
+    setEditingNodeId(null);
+    setNodeForm({ name: '', url: '', token: '' });
+  };
+
+  const handleSubmitNode = () => {
+    const name = nodeForm.name.trim();
+    const url = normalizeServerUrl(nodeForm.url);
+    const token = nodeForm.token.trim();
+
+    if (!name || !url) {
+      showError('节点名称和服务地址不能为空', showAlert);
+      return;
+    }
+
+    if (
+      !editingNodeId &&
+      danmuSettings.customNodes.length >= MAX_CUSTOM_DANMU_NODE_COUNT
+    ) {
+      showError(
+        `最多仅支持 ${MAX_CUSTOM_DANMU_NODE_COUNT} 个自定义节点`,
+        showAlert,
+      );
+      return;
+    }
+
+    const now = Date.now();
+    setDanmuSettings((prev) => {
+      if (editingNodeId) {
+        return {
+          ...prev,
+          customNodes: prev.customNodes.map((item) =>
+            item.id === editingNodeId
+              ? { ...item, name, url, token, updatedAt: now }
+              : item,
+          ),
+        };
+      }
+
+      const nextNode: DanmuCustomNode = {
+        id: createNodeId(),
+        name,
+        url,
+        token,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return {
+        ...prev,
+        customNodes: [nextNode, ...prev.customNodes],
+      };
+    });
+
+    if (editingNodeId) {
+      setNodeHealthMap((prev) => {
+        const next = { ...prev };
+        delete next[editingNodeId];
+        return next;
+      });
+    }
+
+    setTestResult(null);
+    closeNodeModal();
+    showSuccess(editingNodeId ? '节点更新成功' : '节点添加成功', showAlert);
+  };
+
+  const handleDeleteNode = (node: DanmuCustomNode) => {
+    if (!window.confirm(`确认删除节点「${node.name}」吗？`)) {
+      return;
+    }
+
+    setDanmuSettings((prev) => ({
+      ...prev,
+      customNodes: prev.customNodes.filter((item) => item.id !== node.id),
+    }));
+    setNodeHealthMap((prev) => {
+      const next = { ...prev };
+      delete next[node.id];
+      return next;
+    });
+    showSuccess('节点已删除', showAlert);
+  };
+
+  const handleApplyNode = async (node: DanmuCustomNode) => {
+    const nextSettings: DanmuSettingsState = {
+      ...danmuSettings,
+      enabled: true,
+      serverUrl: node.url,
+      token: node.token,
+    };
+
+    await withLoading(`applyDanmuNode_${node.id}`, async () => {
+      try {
+        await persistDanmuSettings(nextSettings, `已应用节点：${node.name}`);
+        setTestResult(null);
+      } catch (err) {
+        showError(`应用节点失败: ${(err as Error).message}`, showAlert);
+      }
+    });
+  };
+
+  const handleTestNode = async (node: DanmuCustomNode) => {
+    const fullUrl = getFullServerUrl(node.url, node.token);
+    if (!fullUrl) {
+      showError('节点地址不合法', showAlert);
+      return;
+    }
+
+    setNodeHealthMap((prev) => ({
+      ...prev,
+      [node.id]: { status: 'testing' },
+    }));
+
+    await withLoading(`testDanmuNode_${node.id}`, async () => {
+      try {
+        const resp = await fetch('/api/admin/danmu/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serverUrl: fullUrl }),
+        });
+        const data = (await resp.json()) as {
+          success?: boolean;
+          latency?: number;
+          error?: string;
+        };
+
+        if (data.success) {
+          setNodeHealthMap((prev) => ({
+            ...prev,
+            [node.id]: {
+              status: 'ok',
+              latency:
+                typeof data.latency === 'number' &&
+                Number.isFinite(data.latency)
+                  ? data.latency
+                  : undefined,
+            },
+          }));
+          return;
+        }
+
+        setNodeHealthMap((prev) => ({
+          ...prev,
+          [node.id]: {
+            status: 'error',
+            error: data.error || '连接失败',
+          },
+        }));
+      } catch (err) {
+        setNodeHealthMap((prev) => ({
+          ...prev,
+          [node.id]: {
+            status: 'error',
+            error: (err as Error).message || '连接失败',
+          },
+        }));
+      }
+    });
   };
 
   const toggleSourceOrder = (source: string) => {
@@ -6608,6 +6969,40 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
         .map((s) => s.trim())
         .filter(Boolean)
     : [];
+  const customNodes = danmuSettings.customNodes;
+
+  const getNodeHealthView = (nodeId: string) => {
+    const health = nodeHealthMap[nodeId];
+    if (!health || health.status === 'idle') {
+      return (
+        <span className='inline-flex rounded-full bg-gray-100 dark:bg-gray-700/40 text-gray-600 dark:text-gray-300 px-2 py-0.5 text-[11px]'>
+          未测试
+        </span>
+      );
+    }
+    if (health.status === 'testing') {
+      return (
+        <span className='inline-flex rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 text-[11px]'>
+          测试中...
+        </span>
+      );
+    }
+    if (health.status === 'ok') {
+      return (
+        <span className='inline-flex rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[11px]'>
+          {typeof health.latency === 'number' ? `${health.latency}ms` : '可用'}
+        </span>
+      );
+    }
+    return (
+      <span
+        className='inline-flex rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-2 py-0.5 text-[11px]'
+        title={health.error || '连接失败'}
+      >
+        不可用
+      </span>
+    );
+  };
 
   return (
     <div className='space-y-6'>
@@ -6914,6 +7309,121 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          <div className='bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'>
+            <div className='p-4 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50 flex items-center justify-between gap-3'>
+              <div>
+                <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2'>
+                  <span className='w-1 h-4 bg-emerald-500 rounded-full'></span>
+                  自定义节点库
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  管理多个弹幕节点，支持添加、编辑、删除、延迟测试和一键应用
+                </p>
+              </div>
+              <button
+                type='button'
+                onClick={openAddNodeModal}
+                className={buttonStyles.primarySmall}
+              >
+                添加节点
+              </button>
+            </div>
+            <div className='p-4'>
+              {customNodes.length === 0 ? (
+                <div className='rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center text-sm text-gray-500 dark:text-gray-400'>
+                  暂无自定义节点，点击右上角“添加节点”
+                </div>
+              ) : (
+                <div className='space-y-2'>
+                  {customNodes.map((node) => {
+                    const selected = isNodeSelected(node);
+                    const testLoadingKey = `testDanmuNode_${node.id}`;
+                    const applyLoadingKey = `applyDanmuNode_${node.id}`;
+                    return (
+                      <div
+                        key={node.id}
+                        className={`rounded-lg border p-3 transition-all ${
+                          selected
+                            ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/60 dark:bg-emerald-900/20'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/20'
+                        }`}
+                      >
+                        <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
+                          <div className='min-w-0 flex-1'>
+                            <div className='flex items-center gap-2'>
+                              <p className='text-sm font-medium text-gray-800 dark:text-gray-100 truncate'>
+                                {node.name}
+                              </p>
+                              {selected && (
+                                <span className='inline-flex rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[11px]'>
+                                  当前使用
+                                </span>
+                              )}
+                            </div>
+                            <p className='mt-1 text-xs font-mono text-gray-500 dark:text-gray-400 break-all'>
+                              {node.url}
+                            </p>
+                            {node.token && (
+                              <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                                Token:{' '}
+                                <span className='font-mono'>{node.token}</span>
+                              </p>
+                            )}
+                          </div>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            {getNodeHealthView(node.id)}
+                            <button
+                              type='button'
+                              onClick={() => handleTestNode(node)}
+                              disabled={isLoading(testLoadingKey)}
+                              className={`px-2 py-1 text-xs rounded-md ${
+                                isLoading(testLoadingKey)
+                                  ? buttonStyles.disabledSmall
+                                  : buttonStyles.secondarySmall
+                              }`}
+                            >
+                              {isLoading(testLoadingKey)
+                                ? '测试中...'
+                                : '测试延迟'}
+                            </button>
+                            <button
+                              type='button'
+                              onClick={() => handleApplyNode(node)}
+                              disabled={isLoading(applyLoadingKey)}
+                              className={`px-2 py-1 text-xs rounded-md ${
+                                isLoading(applyLoadingKey)
+                                  ? buttonStyles.disabledSmall
+                                  : buttonStyles.successSmall
+                              }`}
+                            >
+                              {isLoading(applyLoadingKey)
+                                ? '应用中...'
+                                : '使用此节点'}
+                            </button>
+                            <button
+                              type='button'
+                              onClick={() => openEditNodeModal(node)}
+                              className={buttonStyles.primarySmall}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type='button'
+                              onClick={() => handleDeleteNode(node)}
+                              className={buttonStyles.dangerSmall}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -7364,6 +7874,91 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
             )}
             {isLoading('saveDanmuConfig') ? '保存中...' : '保存配置'}
           </button>
+        </div>
+      )}
+
+      {isNodeModalOpen && (
+        <div
+          className='fixed inset-0 z-[1002] flex items-center justify-center bg-black/60 p-4'
+          onClick={closeNodeModal}
+        >
+          <div
+            className='w-full max-w-lg rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className='flex items-center justify-between border-b border-gray-100 dark:border-gray-700 px-5 py-4'>
+              <h5 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+                {editingNodeId ? '编辑自定义节点' : '添加自定义节点'}
+              </h5>
+              <button
+                type='button'
+                onClick={closeNodeModal}
+                className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              >
+                关闭
+              </button>
+            </div>
+            <div className='space-y-4 px-5 py-4'>
+              <div>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+                  节点名称
+                </label>
+                <input
+                  type='text'
+                  value={nodeForm.name}
+                  onChange={(e) =>
+                    setNodeForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  placeholder='例如：家庭节点 / 海外节点'
+                  className='w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+                />
+              </div>
+              <div>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+                  服务地址
+                </label>
+                <input
+                  type='text'
+                  value={nodeForm.url}
+                  onChange={(e) =>
+                    setNodeForm((prev) => ({ ...prev, url: e.target.value }))
+                  }
+                  placeholder='https://danmu.example.com'
+                  className='w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+                />
+              </div>
+              <div>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'>
+                  API Token
+                </label>
+                <input
+                  type='text'
+                  value={nodeForm.token}
+                  onChange={(e) =>
+                    setNodeForm((prev) => ({ ...prev, token: e.target.value }))
+                  }
+                  placeholder='可留空'
+                  className='w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+                />
+              </div>
+            </div>
+            <div className='flex items-center justify-end gap-2 border-t border-gray-100 dark:border-gray-700 px-5 py-4'>
+              <button
+                type='button'
+                onClick={closeNodeModal}
+                className={buttonStyles.secondarySmall}
+              >
+                取消
+              </button>
+              <button
+                type='button'
+                onClick={handleSubmitNode}
+                className={buttonStyles.primarySmall}
+              >
+                {editingNodeId ? '保存修改' : '添加节点'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

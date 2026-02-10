@@ -907,8 +907,8 @@ function DoubanPageClient() {
 
   // 处理数据源切换 - 实现链式自动选中逻辑
   const handleSourceChange = useCallback(
-    async (sourceKey: string) => {
-      if (sourceKey === currentSource) return;
+    async (sourceKey: string, force = false) => {
+      if (!force && sourceKey === currentSource) return;
 
       // === Step 1: 立即重置所有状态，防止状态污染 ===
       setLoading(true);
@@ -922,7 +922,9 @@ function DoubanPageClient() {
       setIsLoadingSourceData(false);
 
       // === Step 2: 切换源状态 ===
-      setCurrentSource(sourceKey);
+      if (sourceKey !== currentSource) {
+        setCurrentSource(sourceKey);
+      }
 
       // === Step 3: 根据源类型执行不同逻辑 ===
       if (sourceKey === 'auto') {
@@ -1055,6 +1057,15 @@ function DoubanPageClient() {
     [currentSource, setCurrentSource, type, sources, fetchSourceCategoryData],
   );
 
+  // 监听全局源变更（由“源浏览器”页面触发），并自动刷新当前页状态
+  const lastAppliedSourceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sources.length === 0) return;
+    if (lastAppliedSourceRef.current === currentSource) return;
+    lastAppliedSourceRef.current = currentSource;
+    void handleSourceChange(currentSource, true);
+  }, [currentSource, sources.length, handleSourceChange]);
+
   // 处理源分类切换
   const handleSourceCategoryChange = useCallback(
     (category: SourceCategory) => {
@@ -1144,6 +1155,7 @@ function DoubanPageClient() {
                 onSourceChange={handleSourceChange}
                 onSourceCategoryChange={handleSourceCategoryChange}
                 selectedSourceCategory={selectedSourceCategory}
+                hideSourceSelector
               />
             </div>
           ) : (

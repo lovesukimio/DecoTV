@@ -4,6 +4,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ApiSite } from '@/lib/config';
+import {
+  getStoredSourceBrowserValue,
+  setStoredSourceBrowserValue,
+  SOURCE_BROWSER_CHANGE_EVENT,
+  SOURCE_BROWSER_STORAGE_KEY,
+} from '@/lib/source-browser';
 
 // 源分类项
 export interface SourceCategory {
@@ -62,7 +68,9 @@ const CONTENT_TYPE_KEYWORDS: Record<string, string[]> = {
  */
 export function useSourceFilter(): UseSourceFilterReturn {
   const [sources, setSources] = useState<ApiSite[]>([]);
-  const [currentSource, setCurrentSourceState] = useState<string>('auto');
+  const [currentSource, setCurrentSourceState] = useState<string>(() =>
+    getStoredSourceBrowserValue(),
+  );
   const [sourceCategories, setSourceCategories] = useState<SourceCategory[]>(
     [],
   );
@@ -110,14 +118,13 @@ export function useSourceFilter(): UseSourceFilterReturn {
         }
 
         // 构建分类 API URL - 资源站通用格式
-        const apiUrl = source.api.endsWith('/')
+        const originalApiUrl = source.api.endsWith('/')
           ? `${source.api}?ac=class`
           : `${source.api}/?ac=class`;
+        const apiUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
 
         const response = await fetch(apiUrl, {
           headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             Accept: 'application/json',
           },
         });
@@ -141,17 +148,11 @@ export function useSourceFilter(): UseSourceFilterReturn {
   );
 
   // 切换当前源
-  const setCurrentSource = useCallback(
-    (sourceKey: string) => {
-      setCurrentSourceState(sourceKey);
-      if (sourceKey !== 'auto') {
-        fetchSourceCategories(sourceKey);
-      } else {
-        setSourceCategories([]);
-      }
-    },
-    [fetchSourceCategories],
-  );
+  const setCurrentSource = useCallback((sourceKey: string) => {
+    const nextSource = sourceKey || 'auto';
+    setCurrentSourceState(nextSource);
+    setStoredSourceBrowserValue(nextSource);
+  }, []);
 
   // 根据内容类型过滤分类（带智能兜底）
   const getFilteredCategories = useCallback(
@@ -197,6 +198,53 @@ export function useSourceFilter(): UseSourceFilterReturn {
   useEffect(() => {
     fetchSources();
   }, [fetchSources]);
+
+  // 同步其他页面更新的数据源（源浏览器 -> 豆瓣页）
+  useEffect(() => {
+    const handleSourceChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ sourceKey?: string }>).detail;
+      const nextSource = detail?.sourceKey || getStoredSourceBrowserValue();
+      setCurrentSourceState((prev) =>
+        prev === nextSource ? prev : nextSource,
+      );
+    };
+
+    const handleStorageChange = (
+      event: Event & { key?: string | null; newValue?: string | null },
+    ) => {
+      if (event.key !== SOURCE_BROWSER_STORAGE_KEY) return;
+      const nextSource = event.newValue || 'auto';
+      setCurrentSourceState((prev) =>
+        prev === nextSource ? prev : nextSource,
+      );
+    };
+
+    window.addEventListener(
+      SOURCE_BROWSER_CHANGE_EVENT,
+      handleSourceChange as EventListener,
+    );
+    window.addEventListener('storage', handleStorageChange as EventListener);
+    return () => {
+      window.removeEventListener(
+        SOURCE_BROWSER_CHANGE_EVENT,
+        handleSourceChange as EventListener,
+      );
+      window.removeEventListener(
+        'storage',
+        handleStorageChange as EventListener,
+      );
+    };
+  }, []);
+
+  // 当前源变化后自动拉取分类（用于源浏览器统一控制）
+  useEffect(() => {
+    if (currentSource === 'auto') {
+      setSourceCategories([]);
+      return;
+    }
+    if (sources.length === 0) return;
+    fetchSourceCategories(currentSource);
+  }, [currentSource, sources.length, fetchSourceCategories]);
 
   return {
     sources,

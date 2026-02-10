@@ -1,7 +1,8 @@
-/* eslint-disable no-console */
+﻿/* eslint-disable no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import type { AdminConfig, DanmuCustomNode } from '@/lib/admin.types';
 import { verifyApiAuth } from '@/lib/auth';
 import {
   getConfig,
@@ -12,37 +13,132 @@ import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
+interface DanmuConfigPayload {
+  enabled?: boolean;
+  serverUrl?: string;
+  token?: string;
+  platform?: string;
+  sourceOrder?: string;
+  mergeSourcePairs?: string;
+  bilibiliCookie?: string;
+  convertTopBottomToScroll?: boolean;
+  convertColor?: 'default' | 'white' | 'color';
+  danmuLimit?: number;
+  blockedWords?: string;
+  danmuOutputFormat?: 'json' | 'xml';
+  simplifiedTraditional?: 'default' | 'simplified' | 'traditional';
+  customNodes?: unknown;
+}
+
+const MAX_CUSTOM_NODE_COUNT = 64;
+
+type DanmuConfig = NonNullable<AdminConfig['DanmuConfig']>;
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeNodeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function normalizeDanmuCustomNodes(value: unknown): DanmuCustomNode[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const nodes: DanmuCustomNode[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const raw = item as Partial<DanmuCustomNode>;
+    const name = asString(raw.name);
+    const url = normalizeNodeUrl(asString(raw.url));
+    if (!name || !url) {
+      continue;
+    }
+
+    nodes.push({
+      id: asString(raw.id) || `node_${Date.now()}_${nodes.length}`,
+      name,
+      url,
+      token: asString(raw.token),
+      createdAt:
+        typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt)
+          ? raw.createdAt
+          : Date.now(),
+      updatedAt:
+        typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
+          ? raw.updatedAt
+          : Date.now(),
+    });
+
+    if (nodes.length >= MAX_CUSTOM_NODE_COUNT) {
+      break;
+    }
+  }
+
+  return nodes;
+}
+
+function buildDanmuConfig(payload: DanmuConfigPayload): DanmuConfig {
+  const danmuLimitRaw = Number(payload.danmuLimit ?? 0);
+  const danmuLimit =
+    Number.isFinite(danmuLimitRaw) && danmuLimitRaw > 0
+      ? Math.floor(danmuLimitRaw)
+      : 0;
+
+  const convertColor: DanmuConfig['convertColor'] =
+    payload.convertColor === 'white' || payload.convertColor === 'color'
+      ? payload.convertColor
+      : 'default';
+
+  const danmuOutputFormat: DanmuConfig['danmuOutputFormat'] =
+    payload.danmuOutputFormat === 'xml' ? 'xml' : 'json';
+
+  const simplifiedTraditional: DanmuConfig['simplifiedTraditional'] =
+    payload.simplifiedTraditional === 'simplified' ||
+    payload.simplifiedTraditional === 'traditional'
+      ? payload.simplifiedTraditional
+      : 'default';
+
+  return {
+    enabled: payload.enabled ?? false,
+    serverUrl: normalizeNodeUrl(asString(payload.serverUrl)),
+    token: asString(payload.token),
+    platform: asString(payload.platform),
+    sourceOrder: asString(payload.sourceOrder),
+    mergeSourcePairs: asString(payload.mergeSourcePairs),
+    bilibiliCookie: asString(payload.bilibiliCookie),
+    convertTopBottomToScroll: payload.convertTopBottomToScroll ?? false,
+    convertColor,
+    danmuLimit,
+    blockedWords: asString(payload.blockedWords),
+    danmuOutputFormat,
+    simplifiedTraditional,
+    customNodes: normalizeDanmuCustomNodes(payload.customNodes),
+  };
+}
+
 export async function POST(request: NextRequest) {
   const authResult = verifyApiAuth(request);
 
   try {
-    const body = await request.json();
+    const body = (await request.json()) as DanmuConfigPayload;
+    const nextDanmuConfig = buildDanmuConfig(body);
 
-    // 本地模式（无数据库）：跳过认证
+    // 本地模式（无数据库）下，写入本地配置对象。
     if (authResult.isLocalMode) {
       const localConfig = getLocalModeConfig();
-      localConfig.DanmuConfig = {
-        enabled: body.enabled ?? false,
-        serverUrl: body.serverUrl ?? '',
-        token: body.token ?? '',
-        platform: body.platform ?? '',
-        sourceOrder: body.sourceOrder ?? '',
-        mergeSourcePairs: body.mergeSourcePairs ?? '',
-        bilibiliCookie: body.bilibiliCookie ?? '',
-        convertTopBottomToScroll: body.convertTopBottomToScroll ?? false,
-        convertColor: body.convertColor ?? 'default',
-        danmuLimit: body.danmuLimit ?? 0,
-        blockedWords: body.blockedWords ?? '',
-        danmuOutputFormat: body.danmuOutputFormat ?? 'json',
-        simplifiedTraditional: body.simplifiedTraditional ?? 'default',
-      };
+      localConfig.DanmuConfig = nextDanmuConfig;
       return NextResponse.json({
         message: '弹幕配置更新成功（本地模式）',
         storageMode: 'local',
       });
     }
 
-    // 认证失败
     if (!authResult.isValid) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -50,35 +146,18 @@ export async function POST(request: NextRequest) {
     const username = authResult.username;
     const adminConfig = await getConfig();
 
-    // 权限校验
     if (username !== process.env.USERNAME) {
       const user = adminConfig.UserConfig.Users.find(
-        (u) => u.username === username,
+        (item) => item.username === username,
       );
       if (!user || user.role !== 'admin' || user.banned) {
         return NextResponse.json({ error: '权限不足' }, { status: 401 });
       }
     }
 
-    // 更新弹幕配置
-    adminConfig.DanmuConfig = {
-      enabled: body.enabled ?? false,
-      serverUrl: body.serverUrl ?? '',
-      token: body.token ?? '',
-      platform: body.platform ?? '',
-      sourceOrder: body.sourceOrder ?? '',
-      mergeSourcePairs: body.mergeSourcePairs ?? '',
-      bilibiliCookie: body.bilibiliCookie ?? '',
-      convertTopBottomToScroll: body.convertTopBottomToScroll ?? false,
-      convertColor: body.convertColor ?? 'default',
-      danmuLimit: body.danmuLimit ?? 0,
-      blockedWords: body.blockedWords ?? '',
-      danmuOutputFormat: body.danmuOutputFormat ?? 'json',
-      simplifiedTraditional: body.simplifiedTraditional ?? 'default',
-    };
+    adminConfig.DanmuConfig = nextDanmuConfig;
 
     await db.saveAdminConfig(adminConfig);
-    // 清除内存缓存，确保下次 getConfig() 读取到最新配置
     invalidateConfigCache();
 
     return NextResponse.json(

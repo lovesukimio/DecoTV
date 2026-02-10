@@ -6,7 +6,7 @@
 import Artplayer from 'artplayer';
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku';
 import Hls from 'hls.js';
-import { Heart } from 'lucide-react';
+import { Download, Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -38,6 +38,8 @@ import PageLayout from '@/components/PageLayout';
 import SkipConfigPanel from '@/components/SkipConfigPanel';
 import Toast from '@/components/Toast';
 
+import { useDownloadManager } from '@/contexts/DownloadManagerContext';
+
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
   interface HTMLVideoElement {
@@ -56,6 +58,7 @@ interface WakeLockSentinel {
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { enqueueDownload, openManager } = useDownloadManager();
 
   // -----------------------------------------------------------------------------
   // 状态变量（State）
@@ -1608,6 +1611,39 @@ function PlayPageClient() {
     }
   };
 
+  const enqueueEpisodeDownload = async (channel: 'browser' | 'ffmpeg') => {
+    if (!videoUrl) {
+      showToast('当前播放地址不可下载', 'error');
+      return;
+    }
+
+    const episodeLabel =
+      detail?.episodes_titles?.[currentEpisodeIndex] ||
+      `第${currentEpisodeIndex + 1}集`;
+
+    try {
+      await enqueueDownload({
+        title: `${videoTitle || detail?.title || '视频'} ${episodeLabel}`,
+        sourceUrl: videoUrl,
+        channel,
+      });
+      showToast('已加入下载队列', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : '加入下载任务失败',
+        'error',
+      );
+    }
+  };
+
+  const handleDownloadCurrentEpisode = async () => {
+    await enqueueEpisodeDownload('browser');
+  };
+
+  const handleFfmpegDownloadCurrentEpisode = async () => {
+    await enqueueEpisodeDownload('ffmpeg');
+  };
+
   useEffect(() => {
     if (
       !Artplayer ||
@@ -2665,6 +2701,31 @@ function PlayPageClient() {
                     {detail.type_name}
                   </span>
                 )}
+              </div>
+              <div className='mb-4 flex flex-wrap items-center gap-2'>
+                <button
+                  type='button'
+                  onClick={handleDownloadCurrentEpisode}
+                  className='inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-600 transition hover:bg-emerald-500/20 dark:text-emerald-300'
+                >
+                  <Download className='h-4 w-4' />
+                  下载当前集
+                </button>
+                <button
+                  type='button'
+                  onClick={handleFfmpegDownloadCurrentEpisode}
+                  className='inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-600 transition hover:bg-amber-500/20 dark:text-amber-300'
+                >
+                  <Download className='h-4 w-4' />
+                  FFmpeg 转存下载
+                </button>
+                <button
+                  type='button'
+                  onClick={openManager}
+                  className='inline-flex items-center gap-1.5 rounded-lg border border-gray-300/70 bg-white/40 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-white/70 dark:border-gray-600 dark:bg-gray-800/40 dark:text-gray-200 dark:hover:bg-gray-700/60'
+                >
+                  打开下载管理
+                </button>
               </div>
               {/* 剧情简介 */}
               {detail?.desc && (

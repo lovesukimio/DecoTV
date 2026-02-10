@@ -514,6 +514,24 @@ body {
   );
 }
 
+/* 源浏览器：青绿流光 */
+.chip-source-browser {
+  background: linear-gradient(
+    90deg,
+    rgba(16, 185, 129, 0.34),
+    rgba(20, 184, 166, 0.34)
+  );
+  border-color: rgba(16, 185, 129, 0.52);
+}
+.chip-source-browser::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(20, 184, 166, 0.45),
+    rgba(16, 185, 129, 0.45) 60%,
+    transparent 85%
+  );
+}
+
 /* 电影：粉橙霓虹 */
 .chip-movie {
   background: linear-gradient(
