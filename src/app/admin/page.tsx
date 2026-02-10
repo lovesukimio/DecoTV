@@ -7879,7 +7879,7 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
 
       {isNodeModalOpen && (
         <div
-          className='fixed inset-0 z-[1002] flex items-center justify-center bg-black/60 p-4'
+          className='fixed inset-0 z-1002 flex items-center justify-center bg-black/60 p-4'
           onClick={closeNodeModal}
         >
           <div
