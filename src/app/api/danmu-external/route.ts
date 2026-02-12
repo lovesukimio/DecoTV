@@ -36,6 +36,9 @@ interface DandanplayAnimeEntry {
   animeTitle: string;
   type: string;
   typeDescription?: string;
+  imageUrl?: string;
+  animeImageUrl?: string;
+  cover?: string;
   episodes: Array<{
     episodeId: number;
     episodeTitle: string;
@@ -60,6 +63,7 @@ interface DandanplayCommentResult {
 }
 
 interface MatchedEpisode {
+  animeId?: number;
   episodeId: number;
   animeTitle: string;
   episodeTitle: string;
@@ -152,6 +156,13 @@ function setCache<T>(
   ttl: number,
 ) {
   cache.set(key, { data, ts: Date.now(), ttl });
+}
+
+function parsePositiveInt(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
 }
 
 // ============================================================================
@@ -347,6 +358,7 @@ function findBestMatch(
   );
 
   return {
+    animeId: best.anime.animeId,
     episodeId,
     animeTitle: best.anime.animeTitle,
     episodeTitle: episodeEntry?.episodeTitle || `第${episode}集`,
@@ -590,6 +602,7 @@ async function resolveEpisode(
 interface DanmuResult {
   danmus: DanmuItem[];
   matchInfo: {
+    animeId?: number;
     animeTitle: string;
     episodeTitle: string;
     episodeId: number;
@@ -635,6 +648,7 @@ async function fetchDanmu(
       return {
         danmus: cachedDanmu,
         matchInfo: {
+          animeId: matched.animeId,
           animeTitle: matched.animeTitle,
           episodeTitle: matched.episodeTitle,
           episodeId: matched.episodeId,
@@ -663,6 +677,7 @@ async function fetchDanmu(
       return {
         danmus: [],
         matchInfo: {
+          animeId: matched.animeId,
           animeTitle: matched.animeTitle,
           episodeTitle: matched.episodeTitle,
           episodeId: matched.episodeId,
@@ -688,6 +703,7 @@ async function fetchDanmu(
     return {
       danmus,
       matchInfo: {
+        animeId: matched.animeId,
         animeTitle: matched.animeTitle,
         episodeTitle: matched.episodeTitle,
         episodeId: matched.episodeId,
@@ -698,6 +714,74 @@ async function fetchDanmu(
     console.error('[danmu] Fetch error:', err);
     return emptyResult;
   }
+}
+
+async function fetchDanmuByEpisodeId(
+  appId: string,
+  appSecret: string,
+  options: {
+    animeId?: number;
+    episodeId: number;
+    animeTitle?: string;
+    episodeTitle?: string;
+    forceRefresh?: boolean;
+  },
+): Promise<DanmuResult> {
+  const {
+    animeId,
+    episodeId,
+    animeTitle,
+    episodeTitle,
+    forceRefresh = false,
+  } = options;
+  const emptyResult: DanmuResult = {
+    danmus: [],
+    matchInfo: {
+      animeId,
+      animeTitle: animeTitle || '手动匹配',
+      episodeTitle: episodeTitle || `episodeId:${episodeId}`,
+      episodeId,
+      matchLevel: 'manual-override',
+    },
+  };
+
+  if (!appId || !appSecret || !episodeId) {
+    return emptyResult;
+  }
+
+  const danmuCacheKey = `danmu:${episodeId}`;
+  const cachedDanmu = forceRefresh
+    ? null
+    : getCacheValid(danmuCache, danmuCacheKey);
+  if (cachedDanmu) {
+    return {
+      danmus: cachedDanmu,
+      matchInfo: emptyResult.matchInfo,
+    };
+  }
+
+  const commentData = await fetchComments(appId, appSecret, episodeId);
+  if (
+    !commentData ||
+    !commentData.comments ||
+    commentData.comments.length === 0
+  ) {
+    setCache(danmuCache, danmuCacheKey, [], DANMU_TTL_EMPTY);
+    return emptyResult;
+  }
+
+  const danmus: DanmuItem[] = [];
+  for (const comment of commentData.comments) {
+    const parsed = parseDandanComment(comment.p, comment.m);
+    if (parsed) danmus.push(parsed);
+  }
+
+  setCache(danmuCache, danmuCacheKey, danmus, DANMU_TTL_DEFAULT);
+
+  return {
+    danmus,
+    matchInfo: emptyResult.matchInfo,
+  };
 }
 
 // ============================================================================
@@ -748,6 +832,7 @@ async function fetchFromCustomServer(
   success: boolean;
   danmus: DanmuItem[];
   match: {
+    animeId?: number;
     animeTitle: string;
     episodeTitle: string;
     episodeId: number;
@@ -809,6 +894,9 @@ async function fetchFromCustomServer(
               success: true,
               danmus,
               match: {
+                animeId:
+                  parsePositiveInt(String(bestMatch.animeId ?? '')) ||
+                  undefined,
                 animeTitle: bestMatch.animeTitle || title,
                 episodeTitle: bestMatch.episodeTitle || `第${episode}集`,
                 episodeId,
@@ -867,6 +955,8 @@ async function fetchFromCustomServer(
               success: true,
               danmus,
               match: {
+                animeId:
+                  parsePositiveInt(String(anime?.animeId ?? '')) || undefined,
                 animeTitle: anime.animeTitle || title,
                 episodeTitle: targetEp.episodeTitle || `第${episode}集`,
                 episodeId: targetEp.episodeId,
@@ -901,6 +991,87 @@ async function fetchFromCustomServer(
   return { ...emptyResult, error: '自定义弹幕服务器未返回有效弹幕数据' };
 }
 
+async function fetchFromCustomServerByEpisodeId(
+  dc: NonNullable<Awaited<ReturnType<typeof getConfig>>['DanmuConfig']>,
+  options: {
+    animeId?: number;
+    episodeId: number;
+    animeTitle?: string;
+    episodeTitle?: string;
+  },
+): Promise<{
+  success: boolean;
+  danmus: DanmuItem[];
+  match: {
+    animeId?: number;
+    animeTitle: string;
+    episodeTitle: string;
+    episodeId: number;
+    matchLevel: string;
+  } | null;
+  error?: string;
+}> {
+  const emptyResult = { success: false, danmus: [], match: null };
+  const { animeId, episodeId, animeTitle, episodeTitle } = options;
+
+  if (!episodeId) {
+    return { ...emptyResult, error: 'episode_id 无效' };
+  }
+
+  const baseUrl = dc.serverUrl.replace(/\/+$/, '');
+  const tokenSegment = dc.token ? `/${dc.token}` : '';
+  const serverBase = `${baseUrl}${tokenSegment}`;
+  const format = dc.danmuOutputFormat || 'json';
+
+  try {
+    const commentResp = await fetch(
+      `${serverBase}/api/v2/comment/${episodeId}?format=${format}`,
+      {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+
+    if (!commentResp.ok) {
+      return {
+        ...emptyResult,
+        error: `评论接口请求失败: HTTP ${commentResp.status} ${commentResp.statusText}`,
+      };
+    }
+
+    const commentData = await commentResp.json();
+    const comments = commentData?.comments || [];
+    const danmus = parseCustomComments(comments);
+    const manualMatch = {
+      animeId,
+      animeTitle: animeTitle || '手动匹配',
+      episodeTitle: episodeTitle || `episodeId:${episodeId}`,
+      episodeId,
+      matchLevel: 'manual-override',
+    };
+
+    if (danmus.length === 0) {
+      return {
+        success: true,
+        danmus: [],
+        match: manualMatch,
+        error: '该集暂无弹幕',
+      };
+    }
+
+    return {
+      success: true,
+      danmus,
+      match: manualMatch,
+    };
+  } catch (err) {
+    return {
+      ...emptyResult,
+      error: `自定义弹幕服务器请求失败: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
 // ============================================================================
 // Route Handler — 重构后的优先级逻辑
 //
@@ -922,13 +1093,32 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const title = searchParams.get('title');
   const episodeStr = searchParams.get('episode');
+  const manualAnimeId = parsePositiveInt(searchParams.get('anime_id'));
+  const manualEpisodeId = parsePositiveInt(searchParams.get('episode_id'));
+  const manualAnimeTitle = searchParams.get('anime_title') || undefined;
+  const manualEpisodeTitle = searchParams.get('episode_title') || undefined;
   const year = searchParams.get('year') || undefined;
   const forceRefresh = searchParams.get('force') === '1';
-  const episode = episodeStr ? parseInt(episodeStr, 10) : 1;
+  const episodeParsed = parsePositiveInt(episodeStr);
+  const episode = episodeParsed || 1;
+  const requestedManualEpisode = searchParams.get('episode_id');
+  const isManualOverride = requestedManualEpisode !== null;
 
-  if (!title) {
+  if (isManualOverride && !manualEpisodeId) {
     return NextResponse.json(
-      { code: 400, message: '缺少必要参数: title', danmus: [], count: 0 },
+      { code: 400, message: 'episode_id 无效', danmus: [], count: 0 },
+      { status: 400 },
+    );
+  }
+
+  if (!title && !manualEpisodeId) {
+    return NextResponse.json(
+      {
+        code: 400,
+        message: '缺少必要参数: title 或 episode_id',
+        danmus: [],
+        count: 0,
+      },
       { status: 400 },
     );
   }
@@ -971,12 +1161,20 @@ export async function GET(request: Request) {
       '[danmu-external] ★ Custom danmu ENABLED by admin config — ignoring env vars',
     );
 
-    const customResult = await fetchFromCustomServer(
-      customConfig,
-      title,
-      episode,
-      forceRefresh,
-    );
+    const customResult =
+      manualEpisodeId && isManualOverride
+        ? await fetchFromCustomServerByEpisodeId(customConfig, {
+            animeId: manualAnimeId || undefined,
+            episodeId: manualEpisodeId,
+            animeTitle: manualAnimeTitle || title || undefined,
+            episodeTitle: manualEpisodeTitle || undefined,
+          })
+        : await fetchFromCustomServer(
+            customConfig,
+            title || '',
+            episode,
+            forceRefresh,
+          );
 
     const cacheTime = await getCacheTime();
     const cacheHeaders = forceRefresh
@@ -1051,14 +1249,23 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await fetchDanmu(
-      appId,
-      appSecret,
-      title,
-      episode,
-      year,
-      forceRefresh,
-    );
+    const result =
+      manualEpisodeId && isManualOverride
+        ? await fetchDanmuByEpisodeId(appId, appSecret, {
+            animeId: manualAnimeId || undefined,
+            episodeId: manualEpisodeId,
+            animeTitle: manualAnimeTitle || title || undefined,
+            episodeTitle: manualEpisodeTitle || undefined,
+            forceRefresh,
+          })
+        : await fetchDanmu(
+            appId,
+            appSecret,
+            title || '',
+            episode,
+            year,
+            forceRefresh,
+          );
 
     // 去重 + 排序
     let finalDanmus = deduplicateDanmu(result.danmus);

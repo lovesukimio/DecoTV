@@ -23,10 +23,18 @@ export interface DanmuSettings {
 }
 
 export interface DanmuMatchInfo {
+  animeId?: number;
   animeTitle: string;
   episodeTitle: string;
   episodeId: number;
   matchLevel: string;
+}
+
+export interface DanmuManualOverride {
+  animeId: number;
+  episodeId: number;
+  animeTitle?: string;
+  episodeTitle?: string;
 }
 
 export interface DanmuLoadMeta {
@@ -43,7 +51,9 @@ export interface UseDanmuResult {
   matchInfo: DanmuMatchInfo | null;
   loadMeta: DanmuLoadMeta;
   updateSettings: (newSettings: Partial<DanmuSettings>) => void;
-  reload: () => Promise<number>;
+  reload: (options?: {
+    manualOverride?: DanmuManualOverride | null;
+  }) => Promise<number>;
   clear: () => void;
 }
 
@@ -120,10 +130,11 @@ interface UseDanmuParams {
   title?: string;
   year?: string;
   episode?: number;
+  manualOverride?: DanmuManualOverride | null;
 }
 
 export function useDanmu(params: UseDanmuParams): UseDanmuResult {
-  const { doubanId, title, year, episode } = params;
+  const { doubanId, title, year, episode, manualOverride } = params;
 
   const [danmuList, setDanmuList] = useState<DanmuItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -157,10 +168,16 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     async (options?: {
       force?: boolean;
       retryOnEmpty?: boolean;
+      manualOverride?: DanmuManualOverride | null;
     }): Promise<number> => {
       const force = options?.force === true;
       const retryOnEmpty = options?.retryOnEmpty !== false;
       const cacheKey = getCacheKey();
+      const activeManualOverride = options?.manualOverride ?? manualOverride;
+      const requestCacheKey =
+        cacheKey && activeManualOverride
+          ? `${cacheKey}__manual_${activeManualOverride.animeId}_${activeManualOverride.episodeId}`
+          : cacheKey;
 
       const applyResult = (
         danmus: DanmuItem[],
@@ -172,12 +189,12 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         setMatchInfo(match);
         setLoadMeta({ source, loadedAt: now, count: danmus.length });
         if (danmus.length > 0) {
-          lastFetchKeyRef.current = cacheKey;
+          lastFetchKeyRef.current = requestCacheKey;
         }
 
         try {
           sessionStorage.setItem(
-            cacheKey,
+            requestCacheKey,
             JSON.stringify({
               data: danmus,
               match: match || null,
@@ -195,6 +212,18 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         if (title) queryParams.set('title', title);
         if (year) queryParams.set('year', year);
         if (episode) queryParams.set('episode', String(episode));
+        if (activeManualOverride?.animeId) {
+          queryParams.set('anime_id', String(activeManualOverride.animeId));
+        }
+        if (activeManualOverride?.episodeId) {
+          queryParams.set('episode_id', String(activeManualOverride.episodeId));
+        }
+        if (activeManualOverride?.animeTitle) {
+          queryParams.set('anime_title', activeManualOverride.animeTitle);
+        }
+        if (activeManualOverride?.episodeTitle) {
+          queryParams.set('episode_title', activeManualOverride.episodeTitle);
+        }
         if (forceRefresh) queryParams.set('force', '1');
 
         const response = await fetch(
@@ -231,7 +260,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
 
       if (
         !force &&
-        cacheKey === lastFetchKeyRef.current &&
+        requestCacheKey === lastFetchKeyRef.current &&
         danmuList.length > 0
       ) {
         return danmuList.length;
@@ -239,7 +268,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
 
       if (!force) {
         try {
-          const cached = sessionStorage.getItem(cacheKey);
+          const cached = sessionStorage.getItem(requestCacheKey);
           if (cached) {
             const parsedCache = JSON.parse(cached);
             if (
@@ -258,7 +287,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
                 loadedAt: parsedCache.timestamp,
                 count: cachedDanmu.length,
               });
-              lastFetchKeyRef.current = cacheKey;
+              lastFetchKeyRef.current = requestCacheKey;
               console.log('[useDanmu] Cache hit:', cachedDanmu.length, 'danmu');
               return cachedDanmu.length;
             }
@@ -317,7 +346,15 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
         setLoading(false);
       }
     },
-    [doubanId, title, year, episode, getCacheKey, danmuList.length],
+    [
+      doubanId,
+      title,
+      year,
+      episode,
+      getCacheKey,
+      manualOverride,
+      danmuList.length,
+    ],
   );
 
   useEffect(() => {
@@ -335,7 +372,7 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doubanId, title, year, episode]);
+  }, [doubanId, title, year, episode, manualOverride]);
 
   const updateSettings = useCallback((newSettings: Partial<DanmuSettings>) => {
     setSettings((prev) => {
@@ -352,18 +389,31 @@ export function useDanmu(params: UseDanmuParams): UseDanmuResult {
     });
   }, []);
 
-  const reload = useCallback(async () => {
-    lastFetchKeyRef.current = '';
-    const cacheKey = getCacheKey();
-    if (cacheKey) {
-      try {
-        sessionStorage.removeItem(cacheKey);
-      } catch {
-        // ignore
+  const reload = useCallback(
+    async (options?: { manualOverride?: DanmuManualOverride | null }) => {
+      lastFetchKeyRef.current = '';
+      const cacheKey = getCacheKey();
+      if (cacheKey) {
+        try {
+          for (let i = sessionStorage.length - 1; i >= 0; i--) {
+            const key = sessionStorage.key(i);
+            if (!key) continue;
+            if (key === cacheKey || key.startsWith(`${cacheKey}__manual_`)) {
+              sessionStorage.removeItem(key);
+            }
+          }
+        } catch {
+          // ignore
+        }
       }
-    }
-    return fetchDanmu({ force: true, retryOnEmpty: false });
-  }, [fetchDanmu, getCacheKey]);
+      return fetchDanmu({
+        force: true,
+        retryOnEmpty: false,
+        manualOverride: options?.manualOverride,
+      });
+    },
+    [fetchDanmu, getCacheKey],
+  );
 
   const clear = useCallback(() => {
     setDanmuList([]);
