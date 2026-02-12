@@ -116,6 +116,7 @@ function SourceBrowserPageClient() {
   const [categoryError, setCategoryError] = useState('');
   const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
   const loadMoreObserverRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreLockRef = useRef(false);
 
   const normalizedKeyword = keyword.trim().toLowerCase();
   const filteredSources = useMemo(() => {
@@ -200,6 +201,7 @@ function SourceBrowserPageClient() {
         );
       } finally {
         if (isLoadMore) {
+          loadMoreLockRef.current = false;
           setIsLoadingMoreCategoryItems(false);
         } else {
           setIsLoadingCategoryItems(false);
@@ -244,6 +246,8 @@ function SourceBrowserPageClient() {
     if (currentSource === 'auto') return;
     if (isLoadingCategoryItems || isLoadingMoreCategoryItems) return;
     if (!hasMoreCategoryItems) return;
+    if (loadMoreLockRef.current) return;
+    loadMoreLockRef.current = true;
     void fetchCategoryItems(selectedCategoryId, categoryPage + 1);
   }, [
     selectedCategoryId,
@@ -256,17 +260,24 @@ function SourceBrowserPageClient() {
   ]);
 
   useEffect(() => {
-    if (!selectedCategoryId || !hasMoreCategoryItems) return;
+    if (!selectedCategoryId || !hasMoreCategoryItems) {
+      if (!isLoadingMoreCategoryItems) {
+        loadMoreLockRef.current = false;
+      }
+      return;
+    }
     if (isLoadingCategoryItems || isLoadingMoreCategoryItems) return;
     if (!loadMoreAnchorRef.current) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) {
-          handleLoadMore();
-        }
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (loadMoreLockRef.current) return;
+        observer.unobserve(entry.target);
+        handleLoadMore();
       },
-      { threshold: 0.15 },
+      { threshold: 0.01, rootMargin: '280px 0px' },
     );
 
     observer.observe(loadMoreAnchorRef.current);
@@ -457,9 +468,14 @@ function SourceBrowserPageClient() {
                   <div className='mt-4'>
                     <VirtualizedVideoGrid
                       data={categoryItems}
+                      virtualizationThreshold={140}
+                      overscan={640}
                       className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
-                      itemKey={(item, index) =>
-                        `${String(item.vod_id || item.vod_name || index)}-${index}`
+                      itemKey={(item) =>
+                        String(
+                          item.vod_id ||
+                            `${item.vod_name || 'item'}-${item.vod_year || ''}-${item.vod_pic || ''}`,
+                        )
                       }
                       renderItem={(item) => (
                         <VideoCard

@@ -36,6 +36,7 @@ function DoubanPageClient() {
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loadMoreLockRef = useRef(false);
 
   const type = searchParams.get('type') || 'movie';
 
@@ -704,6 +705,7 @@ function DoubanPageClient() {
         } catch (err) {
           console.error(err);
         } finally {
+          loadMoreLockRef.current = false;
           setIsLoadingMore(false);
         }
       };
@@ -724,6 +726,9 @@ function DoubanPageClient() {
   useEffect(() => {
     // 如果没有更多数据或正在加载，则不设置监听
     if (!hasMore || isLoadingMore || loading) {
+      if (!isLoadingMore) {
+        loadMoreLockRef.current = false;
+      }
       return;
     }
 
@@ -734,11 +739,17 @@ function DoubanPageClient() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
-          setCurrentPage((prev) => prev + 1);
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (loadMoreLockRef.current || !hasMore || isLoadingMore) return;
+
+        loadMoreLockRef.current = true;
+        if (loadingRef.current) {
+          observer.unobserve(loadingRef.current);
         }
+        setCurrentPage((prev) => prev + 1);
       },
-      { threshold: 0.1 },
+      { threshold: 0.01, rootMargin: '320px 0px' },
     );
 
     observer.observe(loadingRef.current);
@@ -1193,8 +1204,12 @@ function DoubanPageClient() {
           ) : currentSource !== 'auto' && sourceData.length > 0 ? (
             <VirtualizedVideoGrid
               data={sourceData}
+              virtualizationThreshold={140}
+              overscan={640}
               className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
-              itemKey={(item, index) => `source-${item.id}-${index}`}
+              itemKey={(item) =>
+                `source-${item.id || item.title}-${item.year || ''}`
+              }
               renderItem={(item) => (
                 <VideoCard
                   from='douban'
@@ -1207,19 +1222,23 @@ function DoubanPageClient() {
             />
           ) : currentSource !== 'auto' && selectedSourceCategory ? (
             <div className='text-center py-12 text-gray-500 dark:text-gray-400'>
-              <p>No data in this category</p>
-              <p className='text-sm mt-2'>Try another category</p>
+              <p>该分类暂无内容</p>
+              <p className='text-sm mt-2'>请尝试切换其他分类</p>
             </div>
           ) : currentSource !== 'auto' && !selectedSourceCategory ? (
             <div className='text-center py-12 text-gray-500 dark:text-gray-400'>
-              <p>Please choose a category</p>
-              <p className='text-sm mt-2'>Select one from the list above</p>
+              <p>请选择一个分类</p>
+              <p className='text-sm mt-2'>可在上方分类列表中进行选择</p>
             </div>
           ) : (
             <VirtualizedVideoGrid
               data={doubanData}
+              virtualizationThreshold={140}
+              overscan={640}
               className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
-              itemKey={(item, index) => `${item.title}-${index}`}
+              itemKey={(item) =>
+                `douban-${item.id || item.title}-${item.year || ''}`
+              }
               renderItem={(item) => (
                 <VideoCard
                   from='douban'

@@ -878,6 +878,8 @@ function SearchPageClient() {
               ) : viewMode === 'agg' ? (
                 <VirtualizedVideoGrid
                   data={filteredAggResults}
+                  virtualizationThreshold={120}
+                  overscan={640}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
                   itemKey={([mapKey]) => `agg-${mapKey}`}
                   renderItem={([mapKey, group]) => {
@@ -918,6 +920,8 @@ function SearchPageClient() {
               ) : (
                 <VirtualizedVideoGrid
                   data={filteredAllResults}
+                  virtualizationThreshold={120}
+                  overscan={640}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
                   itemKey={(item) => `all-${item.source}-${item.id}`}
                   renderItem={(item) => (
