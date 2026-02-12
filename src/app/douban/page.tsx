@@ -371,10 +371,12 @@ function DoubanPageClient() {
     if (cachedData && cachedData.length > 0) {
       // 缓存命中：使用 flushSync 强制同步更新 DOM，实现毫秒级渲染
       pendingCacheKeyRef.current = null; // 清除待处理标记
+      loadMoreLockRef.current = false;
       flushSync(() => {
         setDoubanData(cachedData);
         setLoading(false);
-        setHasMore(cachedData.length >= 25);
+        setHasMore(cachedData.length > 0);
+        setIsLoadingMore(false);
         setCurrentPage(0);
       });
       return;
