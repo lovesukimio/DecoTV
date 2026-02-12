@@ -33,11 +33,10 @@ import {
   sanitizeFileName,
 } from '@/lib/download-types';
 
-import type { DownloadManagerModalProps } from '../components/DownloadManagerModal';
+import type { DownloadManagerModalProps } from '@/components/DownloadManagerModal';
 
 const DownloadManagerModal = dynamic<DownloadManagerModalProps>(
-  () =>
-    import('../components/DownloadManagerModal.js').then((mod) => mod.default),
+  () => import('../components/DownloadManagerModal').then((mod) => mod.default),
   { ssr: false },
 );
 

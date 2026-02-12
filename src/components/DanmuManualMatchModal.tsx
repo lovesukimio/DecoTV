@@ -156,10 +156,10 @@ export default function DanmuManualMatchModal({
   return createPortal(
     <>
       <div
-        className='fixed inset-0 z-[1008] bg-black/65 backdrop-blur-sm'
+        className='fixed inset-0 z-1008 bg-black/65 backdrop-blur-sm'
         onClick={onClose}
       />
-      <div className='fixed left-1/2 top-1/2 z-[1009] w-[min(96vw,1080px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/20 bg-slate-950/95 shadow-2xl'>
+      <div className='fixed left-1/2 top-1/2 z-1009 w-[min(96vw,1080px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/20 bg-slate-950/95 shadow-2xl'>
         <div className='flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5'>
           <div>
             <h2 className='text-base font-semibold text-white sm:text-lg'>

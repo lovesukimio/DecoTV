@@ -31,31 +31,27 @@ import { isIOSPlatform, useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
 import { useDoubanInfo } from '@/hooks/useDoubanInfo';
 
+import type {
+  DanmuManualMatchModalProps,
+  DanmuManualSelection,
+} from '@/components/DanmuManualMatchModal';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import { MovieMetaInfo } from '@/components/MovieMetaInfo';
 import { MovieRecommends } from '@/components/MovieRecommends';
 import { MovieReviews } from '@/components/MovieReviews';
 import PageLayout from '@/components/PageLayout';
+import type { SkipConfigPanelProps } from '@/components/SkipConfigPanel';
 import Toast from '@/components/Toast';
 
 import { useDownloadManager } from '@/contexts/DownloadManagerContext';
 
-import type {
-  DanmuManualMatchModalProps,
-  DanmuManualSelection,
-} from '../../components/DanmuManualMatchModal';
-import type { SkipConfigPanelProps } from '../../components/SkipConfigPanel';
-
 const DanmuManualMatchModal = dynamic<DanmuManualMatchModalProps>(
   () =>
-    import('../../components/DanmuManualMatchModal.js').then(
-      (mod) => mod.default,
-    ),
+    import('../../components/DanmuManualMatchModal').then((mod) => mod.default),
   { ssr: false },
 );
 const SkipConfigPanel = dynamic<SkipConfigPanelProps>(
-  () =>
-    import('../../components/SkipConfigPanel.js').then((mod) => mod.default),
+  () => import('../../components/SkipConfigPanel').then((mod) => mod.default),
   { ssr: false },
 );
 

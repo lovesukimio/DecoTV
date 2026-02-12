@@ -57,13 +57,11 @@ import PageLayout from '@/components/PageLayout';
 import type { PanSouConfigPanelProps } from '@/components/PanSouConfigPanel';
 
 const ImportExportModal = dynamic<ImportExportModalProps>(
-  () =>
-    import('../../components/ImportExportModal.js').then((mod) => mod.default),
+  () => import('../../components/ImportExportModal').then((mod) => mod.default),
   { ssr: false },
 );
 const PanSouConfigPanel = dynamic<PanSouConfigPanelProps>(
-  () =>
-    import('../../components/PanSouConfigPanel.js').then((mod) => mod.default),
+  () => import('../../components/PanSouConfigPanel').then((mod) => mod.default),
   { ssr: false },
 );
 
