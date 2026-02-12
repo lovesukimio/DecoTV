@@ -1,7 +1,8 @@
 import { Radio, X } from 'lucide-react';
-import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+
+import ExternalImage from '@/components/ExternalImage';
 
 interface ActionItem {
   id: string;
@@ -235,7 +236,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
           <div className='flex items-center gap-3 flex-1 min-w-0'>
             {poster && (
               <div className='relative w-12 h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0'>
-                <Image
+                <ExternalImage
                   src={poster}
                   alt={title}
                   fill

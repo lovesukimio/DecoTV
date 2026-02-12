@@ -1,9 +1,10 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, Film } from 'lucide-react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { memo, useCallback, useRef, useState } from 'react';
+
+import ExternalImage from '@/components/ExternalImage';
 
 // ============================================================================
 // Types
@@ -48,11 +49,10 @@ const RecommendCard = memo(function RecommendCard({
       {/* 封面 */}
       <div className='relative aspect-2/3 rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-md group-hover:shadow-lg transition-all duration-200 group-hover:scale-[1.02]'>
         {item.poster && !imageError ? (
-          <Image
+          <ExternalImage
             src={item.poster}
             alt={item.title}
             fill
-            unoptimized
             className='object-cover'
             referrerPolicy='no-referrer'
             onError={() => setImageError(true)}

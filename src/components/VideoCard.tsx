@@ -8,7 +8,6 @@ import {
   Radio,
   Trash2,
 } from 'lucide-react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
   forwardRef,
@@ -31,6 +30,7 @@ import {
 import { processImageUrl } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
 
+import ExternalImage from '@/components/ExternalImage';
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
 import { SimpleRatingBadge } from '@/components/RatingBadge';
@@ -655,7 +655,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               - 告诉浏览器不同视口下的实际显示尺寸
               - 优化响应式图片加载，避免下载过大图片
             */}
-            <Image
+            <ExternalImage
               src={processImageUrl(actualPoster)}
               alt={actualTitle}
               fill
