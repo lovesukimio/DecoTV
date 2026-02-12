@@ -295,33 +295,46 @@ function DoubanPageClient() {
     // 防止状态不同步时发起错误的请求（这是导致卡顿的根本原因）
     const isStateInSync = (() => {
       if (type === 'movie') {
-        return primarySelection === '热门' || primarySelection === '全部';
+        return (
+          ['全部', '热门', '最新', '豆瓣高分', '冷门佳片'].includes(
+            primarySelection,
+          ) &&
+          ['全部', '华语', '欧美', '韩国', '日本'].includes(secondarySelection)
+        );
       }
       if (type === 'tv') {
         return (
-          (primarySelection === '最近热门' || primarySelection === '全部') &&
-          (secondarySelection === 'tv' || secondarySelection === 'all')
+          ['最近热门', '全部'].includes(primarySelection) &&
+          [
+            'tv',
+            'tv_domestic',
+            'tv_american',
+            'tv_japanese',
+            'tv_korean',
+            'tv_animation',
+            'tv_documentary',
+          ].includes(secondarySelection)
         );
       }
       if (type === 'show') {
         return (
-          (primarySelection === '最近热门' || primarySelection === '全部') &&
-          (secondarySelection === 'show' || secondarySelection === 'all')
+          ['最近热门', '全部'].includes(primarySelection) &&
+          ['show', 'show_domestic', 'show_foreign'].includes(secondarySelection)
         );
       }
       if (type === 'anime') {
-        return ['每日放送', '番剧', '剧场版', '全部'].includes(
-          primarySelection,
-        );
+        return ['每日放送', '番剧', '剧场版'].includes(primarySelection);
       }
       if (type === 'custom') {
-        return true; // 自定义分类不做检查
+        return Boolean(primarySelection && secondarySelection);
       }
       return true;
     })();
 
     if (!isStateInSync) {
       // 状态还没同步，跳过这次加载，等待下一次 useEffect 触发
+      // 兜底回收 loading，避免异常状态导致骨架屏卡死
+      setLoading(false);
       return;
     }
 
