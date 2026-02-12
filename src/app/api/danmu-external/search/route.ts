@@ -7,6 +7,8 @@ import { getConfig } from '@/lib/config';
 export const runtime = 'nodejs';
 
 const DANDANPLAY_API_BASE = 'https://api.dandanplay.net';
+const SEARCH_TIMEOUT_MS = 20_000;
+const CUSTOM_SEARCH_ANIME_LIMIT = 10;
 
 interface SearchEpisodeItem {
   episodeId: number;
@@ -20,6 +22,14 @@ interface SearchAnimeItem {
   typeDescription?: string;
   imageUrl?: string;
   episodes: SearchEpisodeItem[];
+}
+
+interface SearchAnimeBase {
+  animeId: number;
+  animeTitle: string;
+  type: string;
+  typeDescription?: string;
+  imageUrl?: string;
 }
 
 function getDandanplayCredentials() {
@@ -96,6 +106,20 @@ function readRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function formatSearchErrorMessage(prefix: string, err: unknown): string {
+  if (err instanceof Error) {
+    const lowerMsg = err.message.toLowerCase();
+    if (
+      err.name === 'TimeoutError' ||
+      lowerMsg.includes('aborted due to timeout')
+    ) {
+      return `${prefix}: 请求超时（${Math.round(SEARCH_TIMEOUT_MS / 1000)}秒）`;
+    }
+    return `${prefix}: ${err.message}`;
+  }
+  return `${prefix}: ${String(err)}`;
+}
+
 function normalizeEpisodes(value: unknown): SearchEpisodeItem[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -108,7 +132,12 @@ function normalizeEpisodes(value: unknown): SearchEpisodeItem[] {
 
       return {
         episodeId,
-        episodeTitle: readString(row.episodeTitle) || `episodeId:${episodeId}`,
+        episodeTitle:
+          readString(row.episodeTitle) ||
+          readString(row.title) ||
+          readString(row.name) ||
+          readString(row.ep_name) ||
+          `episodeId:${episodeId}`,
       };
     })
     .filter((item): item is SearchEpisodeItem => item !== null);
@@ -123,28 +152,29 @@ function readImageUrl(row: Record<string, unknown>): string | undefined {
   );
 }
 
-function normalizeAnimes(value: unknown): SearchAnimeItem[] {
+function normalizeAnimeBaseList(value: unknown): SearchAnimeBase[] {
   if (!Array.isArray(value)) return [];
-  const normalized: SearchAnimeItem[] = [];
+  const normalized: SearchAnimeBase[] = [];
 
   for (const item of value) {
     const row = readRecord(item);
     if (!row) continue;
 
-    const animeId = parsePositiveInt(row.animeId);
+    const animeId = parsePositiveInt(row.animeId) || parsePositiveInt(row.id);
     if (!animeId) continue;
 
-    const episodes = normalizeEpisodes(row.episodes);
-    if (episodes.length === 0) continue;
-
-    const anime: SearchAnimeItem = {
+    const anime: SearchAnimeBase = {
       animeId,
-      animeTitle: readString(row.animeTitle) || `animeId:${animeId}`,
-      type: readString(row.type) || 'unknown',
-      episodes,
+      animeTitle:
+        readString(row.animeTitle) ||
+        readString(row.title) ||
+        readString(row.name) ||
+        `animeId:${animeId}`,
+      type: readString(row.type) || readString(row.category) || 'unknown',
     };
 
-    const typeDescription = readString(row.typeDescription);
+    const typeDescription =
+      readString(row.typeDescription) || readString(row.desc);
     if (typeDescription) {
       anime.typeDescription = typeDescription;
     }
@@ -158,6 +188,51 @@ function normalizeAnimes(value: unknown): SearchAnimeItem[] {
   }
 
   return normalized;
+}
+
+function normalizeAnimes(value: unknown): SearchAnimeItem[] {
+  if (!Array.isArray(value)) return [];
+
+  const normalized: SearchAnimeItem[] = [];
+  for (const anime of normalizeAnimeBaseList(value)) {
+    const row = value.find((raw) => {
+      const record = readRecord(raw);
+      if (!record) return false;
+      const rowAnimeId =
+        parsePositiveInt(record.animeId) || parsePositiveInt(record.id);
+      return rowAnimeId === anime.animeId;
+    });
+    const rowRecord = readRecord(row);
+    const episodes = normalizeEpisodes(rowRecord?.episodes);
+    if (episodes.length === 0) continue;
+    normalized.push({ ...anime, episodes });
+  }
+
+  return normalized;
+}
+
+function normalizeBangumiEpisodes(value: unknown): SearchEpisodeItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = readRecord(item);
+      if (!row) return null;
+      const episodeId =
+        parsePositiveInt(row.episodeId) ||
+        parsePositiveInt(row.id) ||
+        parsePositiveInt(row.commentId);
+      if (!episodeId) return null;
+      return {
+        episodeId,
+        episodeTitle:
+          readString(row.episodeTitle) ||
+          readString(row.title) ||
+          readString(row.name) ||
+          readString(row.ep_name) ||
+          `episodeId:${episodeId}`,
+      };
+    })
+    .filter((item): item is SearchEpisodeItem => item !== null);
 }
 
 async function searchFromDandanplay(keyword: string) {
@@ -179,7 +254,7 @@ async function searchFromDandanplay(keyword: string) {
   try {
     const response = await fetch(url, {
       headers,
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -211,7 +286,7 @@ async function searchFromDandanplay(keyword: string) {
     return {
       ok: false,
       status: 502,
-      message: `弹弹Play 搜索异常: ${err instanceof Error ? err.message : String(err)}`,
+      message: formatSearchErrorMessage('弹弹Play 搜索异常', err),
       animes: [] as SearchAnimeItem[],
     };
   }
@@ -224,37 +299,116 @@ async function searchFromCustomServer(
   const baseUrl = dc.serverUrl.replace(/\/+$/, '');
   const tokenSegment = dc.token ? `/${dc.token}` : '';
   const serverBase = `${baseUrl}${tokenSegment}`;
+  const headers = { Accept: 'application/json' };
+  const episodeSearchPaths = [
+    `/api/v2/search/episodes?anime=${encodeURIComponent(keyword)}&episode=`,
+    `/api/v2/search/episodes?anime=${encodeURIComponent(keyword)}`,
+    // 兼容少数非标准实现（官方 danmu_api 仍然使用 anime 参数）
+    `/api/v2/search/episodes?keyword=${encodeURIComponent(keyword)}`,
+  ];
 
+  let lastErrorMessage: string | null = null;
+
+  for (const path of episodeSearchPaths) {
+    try {
+      const response = await fetch(`${serverBase}${path}`, {
+        headers,
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        lastErrorMessage = `自定义弹幕搜索失败: HTTP ${response.status}`;
+        continue;
+      }
+
+      const data = await response.json();
+      const animes = normalizeAnimes(data?.animes || data?.bangumiList || []);
+      if (animes.length > 0) {
+        return {
+          ok: true,
+          status: 200,
+          message: '获取成功',
+          animes,
+        };
+      }
+    } catch (err) {
+      lastErrorMessage = formatSearchErrorMessage('自定义弹幕搜索异常', err);
+    }
+  }
+
+  // fallback: 某些部署仅暴露 /search/anime，再按 animeId 拉 bangumi 详情拿集数
   try {
-    const response = await fetch(
-      `${serverBase}/api/v2/search/episodes?anime=${encodeURIComponent(keyword)}`,
+    const animeResp = await fetch(
+      `${serverBase}/api/v2/search/anime?keyword=${encodeURIComponent(keyword)}`,
       {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(15000),
+        headers,
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
       },
     );
 
-    if (!response.ok) {
+    if (!animeResp.ok) {
       return {
         ok: false,
         status: 502,
-        message: `自定义弹幕搜索失败: HTTP ${response.status}`,
+        message:
+          lastErrorMessage || `自定义弹幕搜索失败: HTTP ${animeResp.status}`,
         animes: [] as SearchAnimeItem[],
       };
     }
 
-    const data = await response.json();
+    const animeData = await animeResp.json();
+    const animeBases = normalizeAnimeBaseList(
+      animeData?.animes || animeData?.bangumiList || [],
+    ).slice(0, CUSTOM_SEARCH_ANIME_LIMIT);
+
+    if (animeBases.length === 0) {
+      return {
+        ok: true,
+        status: 200,
+        message: '获取成功',
+        animes: [] as SearchAnimeItem[],
+      };
+    }
+
+    const enriched = await Promise.all(
+      animeBases.map(async (anime): Promise<SearchAnimeItem | null> => {
+        try {
+          const bangumiResp = await fetch(
+            `${serverBase}/api/v2/bangumi/${anime.animeId}`,
+            {
+              headers,
+              signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+            },
+          );
+          if (!bangumiResp.ok) return null;
+          const bangumiData = await bangumiResp.json();
+          const episodes = normalizeBangumiEpisodes(
+            bangumiData?.bangumi?.episodes || bangumiData?.episodes,
+          );
+          if (episodes.length === 0) return null;
+          return { ...anime, episodes };
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const animes = enriched.filter(
+      (item): item is SearchAnimeItem => item !== null,
+    );
+
     return {
       ok: true,
       status: 200,
       message: '获取成功',
-      animes: normalizeAnimes(data?.animes),
+      animes,
     };
   } catch (err) {
     return {
       ok: false,
       status: 502,
-      message: `自定义弹幕搜索异常: ${err instanceof Error ? err.message : String(err)}`,
+      message:
+        lastErrorMessage || formatSearchErrorMessage('自定义弹幕搜索异常', err),
       animes: [] as SearchAnimeItem[],
     };
   }

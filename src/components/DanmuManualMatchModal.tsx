@@ -2,7 +2,7 @@
 'use client';
 
 import { Loader2, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface DanmuManualSelection {
@@ -56,6 +56,7 @@ export default function DanmuManualMatchModal({
   const [applyingEpisodeId, setApplyingEpisodeId] = useState<number | null>(
     null,
   );
+  const searchingRef = useRef(false);
 
   const selectedAnime = useMemo(
     () => results.find((item) => item.animeId === selectedAnimeId) || null,
@@ -63,6 +64,8 @@ export default function DanmuManualMatchModal({
   );
 
   const searchDanmuSource = useCallback(async (rawKeyword: string) => {
+    if (searchingRef.current) return;
+
     const normalizedKeyword = rawKeyword.trim();
     if (!normalizedKeyword) {
       setError('请输入搜索关键词');
@@ -71,6 +74,7 @@ export default function DanmuManualMatchModal({
       return;
     }
 
+    searchingRef.current = true;
     setSearching(true);
     setError(null);
     try {
@@ -105,6 +109,7 @@ export default function DanmuManualMatchModal({
       setSelectedAnimeId(null);
       setError(err instanceof Error ? err.message : '搜索失败');
     } finally {
+      searchingRef.current = false;
       setSearching(false);
     }
   }, []);
@@ -119,6 +124,7 @@ export default function DanmuManualMatchModal({
     setResults([]);
     setSelectedAnimeId(null);
     setError(null);
+    searchingRef.current = false;
     setApplyingEpisodeId(null);
   }, [defaultKeyword, isOpen, currentEpisode]);
 
@@ -185,6 +191,7 @@ export default function DanmuManualMatchModal({
               type='text'
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
+              disabled={searching}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
@@ -208,6 +215,11 @@ export default function DanmuManualMatchModal({
               搜索弹幕源
             </button>
           </div>
+          {searching && (
+            <p className='mt-2 text-xs text-slate-400'>
+              正在请求弹幕服务器，慢速节点可能需要 15-20 秒，请稍候...
+            </p>
+          )}
           {error && <p className='mt-2 text-xs text-amber-300'>{error}</p>}
         </div>
 

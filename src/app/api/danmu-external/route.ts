@@ -92,6 +92,7 @@ const DANMU_TTL_DEFAULT = 6 * 3600 * 1000; // 弹幕数据默认: 6小时
 const DANMU_TTL_EMPTY = 30 * 60 * 1000; // 空结果: 30分钟（快速重试）
 const CACHE_CLEANUP_INTERVAL = 10 * 60 * 1000; // 清理间隔: 10分钟
 const MAX_CACHE_SIZE = 2000; // 单个缓存 Map 的最大条目数
+const CUSTOM_SERVER_TIMEOUT_MS = 20_000;
 
 let lastCleanup = Date.now();
 
@@ -865,7 +866,7 @@ async function fetchFromCustomServer(
         Accept: 'application/json',
       },
       body: JSON.stringify({ fileName: matchTitle, fileHash: '' }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(CUSTOM_SERVER_TIMEOUT_MS),
     });
 
     if (matchResp.ok) {
@@ -881,7 +882,7 @@ async function fetchFromCustomServer(
           const commentUrl = `${serverBase}/api/v2/comment/${episodeId}?format=${format}`;
           const commentResp = await fetch(commentUrl, {
             headers: { Accept: 'application/json' },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(CUSTOM_SERVER_TIMEOUT_MS),
           });
           if (commentResp.ok) {
             const commentData = await commentResp.json();
@@ -928,7 +929,7 @@ async function fetchFromCustomServer(
     console.log(`[danmu-custom] Trying search fallback: ${searchUrl}`);
     const searchResp = await fetch(searchUrl, {
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(CUSTOM_SERVER_TIMEOUT_MS),
     });
 
     if (searchResp.ok) {
@@ -942,7 +943,7 @@ async function fetchFromCustomServer(
           const commentUrl = `${serverBase}/api/v2/comment/${targetEp.episodeId}?format=${format}`;
           const commentResp = await fetch(commentUrl, {
             headers: { Accept: 'application/json' },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(CUSTOM_SERVER_TIMEOUT_MS),
           });
           if (commentResp.ok) {
             const commentData = await commentResp.json();
@@ -1028,7 +1029,7 @@ async function fetchFromCustomServerByEpisodeId(
       `${serverBase}/api/v2/comment/${episodeId}?format=${format}`,
       {
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(CUSTOM_SERVER_TIMEOUT_MS),
       },
     );
 
