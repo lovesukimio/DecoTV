@@ -22,7 +22,7 @@ interface SourceVideoListResponse {
 interface UseBrowseVideosOptions {
   sourceKey?: string;
   sourceApi?: string | null;
-  categoryId?: string;
+  categoryId?: string | null;
   enabled?: boolean;
   defaultPageSize?: number;
 }
@@ -38,15 +38,61 @@ interface UseBrowseVideosResult {
   reload: () => void;
 }
 
+const ALL_CATEGORY_ALIASES = new Set([
+  '',
+  '*',
+  'all',
+  '0',
+  '-1',
+  '全部',
+  '不限',
+  '全部分类',
+]);
+
+function normalizeCategoryId(categoryId?: string | null): string {
+  if (categoryId == null) return '';
+
+  const raw = String(categoryId).trim();
+  if (!raw) return '';
+
+  const lower = raw.toLowerCase();
+  if (ALL_CATEGORY_ALIASES.has(raw) || ALL_CATEGORY_ALIASES.has(lower)) {
+    return '';
+  }
+
+  return raw;
+}
+
 function buildCategoryApiUrl(
   api: string,
   categoryId: string,
   page: number,
 ): string {
-  if (api.endsWith('/')) {
-    return `${api}?ac=videolist&t=${encodeURIComponent(categoryId)}&pg=${page}`;
+  const params = new URLSearchParams({
+    ac: 'videolist',
+    pg: String(page),
+  });
+  if (categoryId) {
+    params.set('t', categoryId);
   }
-  return `${api}/?ac=videolist&t=${encodeURIComponent(categoryId)}&pg=${page}`;
+
+  if (api.endsWith('/')) {
+    return `${api}?${params.toString()}`;
+  }
+  return `${api}/?${params.toString()}`;
+}
+
+function parseNonNegativeInteger(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return null;
 }
 
 function parsePositiveInteger(value: unknown): number | null {
@@ -66,22 +112,24 @@ function inferHasMore(
   payload: SourceVideoListResponse,
   requestedPage: number,
   fetchedCount: number,
+  currentVideoCount: number,
   defaultPageSize: number,
 ): boolean {
-  const pageCount = parsePositiveInteger(payload.pagecount);
-  if (pageCount !== null) {
-    return requestedPage < pageCount;
+  const total = parseNonNegativeInteger(payload.total);
+  if (total !== null) {
+    return currentVideoCount < total;
   }
 
-  const total = parsePositiveInteger(payload.total);
+  const pageCount = parsePositiveInteger(payload.pagecount);
+  if (pageCount !== null) {
+    const responsePage = parsePositiveInteger(payload.page) ?? requestedPage;
+    return responsePage < pageCount;
+  }
+
   const pageSize =
     parsePositiveInteger(payload.limit) ??
     parsePositiveInteger(payload.page_size) ??
     defaultPageSize;
-
-  if (total !== null) {
-    return requestedPage * pageSize < total;
-  }
 
   return fetchedCount >= pageSize;
 }
@@ -112,17 +160,35 @@ export default function useBrowseVideos({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState('');
 
+  const videosRef = useRef<BrowseVideoItem[]>([]);
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const isLoadingRef = useRef(false);
+  const isLoadingMoreRef = useRef(false);
+
   const requestControllerRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
   const loadMoreLockRef = useRef(false);
   const latestQueryKeyRef = useRef('');
 
+  const normalizedCategoryId = useMemo(
+    () => normalizeCategoryId(categoryId),
+    [categoryId],
+  );
+
   const queryKey = useMemo(
-    () => `${sourceKey || 'auto'}::${categoryId || ''}`,
-    [sourceKey, categoryId],
+    () => `${sourceKey || 'auto'}::${normalizedCategoryId || '__all__'}`,
+    [normalizedCategoryId, sourceKey],
   );
 
   const resetState = useCallback(() => {
+    videosRef.current = [];
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    isLoadingRef.current = false;
+    isLoadingMoreRef.current = false;
+    loadMoreLockRef.current = false;
+
     setVideos([]);
     setPage(1);
     setHasMore(true);
@@ -133,13 +199,7 @@ export default function useBrowseVideos({
 
   const fetchPage = useCallback(
     async (targetPage: number) => {
-      if (
-        !enabled ||
-        sourceKey === 'auto' ||
-        !sourceApi ||
-        !categoryId ||
-        !queryKey
-      ) {
+      if (!enabled || sourceKey === 'auto' || !sourceApi || !queryKey) {
         return;
       }
 
@@ -152,8 +212,10 @@ export default function useBrowseVideos({
 
       if (isLoadMore) {
         loadMoreLockRef.current = true;
+        isLoadingMoreRef.current = true;
         setIsLoadingMore(true);
       } else {
+        isLoadingRef.current = true;
         setIsLoading(true);
       }
       setError('');
@@ -161,7 +223,7 @@ export default function useBrowseVideos({
       try {
         const originalApiUrl = buildCategoryApiUrl(
           sourceApi,
-          categoryId,
+          normalizedCategoryId,
           targetPage,
         );
         const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
@@ -179,10 +241,14 @@ export default function useBrowseVideos({
 
         const payload = (await response.json()) as SourceVideoListResponse;
         const nextItems = Array.isArray(payload.list) ? payload.list : [];
+        const mergedVideos = isLoadMore
+          ? mergeUniqueItems(videosRef.current, nextItems)
+          : nextItems;
         const nextHasMore = inferHasMore(
           payload,
           targetPage,
           nextItems.length,
+          mergedVideos.length,
           defaultPageSize,
         );
 
@@ -194,17 +260,21 @@ export default function useBrowseVideos({
           return;
         }
 
+        videosRef.current = mergedVideos;
+        pageRef.current = targetPage;
+        hasMoreRef.current = nextHasMore;
+
+        setVideos(mergedVideos);
         setPage(targetPage);
         setHasMore(nextHasMore);
-        setVideos((previous) =>
-          isLoadMore ? mergeUniqueItems(previous, nextItems) : nextItems,
-        );
       } catch (err) {
         if (controller.signal.aborted) {
           return;
         }
 
         if (!isLoadMore) {
+          videosRef.current = [];
+          hasMoreRef.current = false;
           setVideos([]);
           setHasMore(false);
         }
@@ -218,51 +288,55 @@ export default function useBrowseVideos({
         }
         if (isLoadMore) {
           loadMoreLockRef.current = false;
+          isLoadingMoreRef.current = false;
           setIsLoadingMore(false);
         } else {
+          isLoadingRef.current = false;
           setIsLoading(false);
         }
       }
     },
-    [categoryId, defaultPageSize, enabled, queryKey, sourceApi, sourceKey],
+    [
+      defaultPageSize,
+      enabled,
+      normalizedCategoryId,
+      queryKey,
+      sourceApi,
+      sourceKey,
+    ],
   );
 
   const loadMore = useCallback(() => {
-    if (!enabled || sourceKey === 'auto' || !sourceApi || !categoryId) {
+    if (!enabled || sourceKey === 'auto' || !sourceApi) {
       return;
     }
-    if (isLoading || isLoadingMore || !hasMore || loadMoreLockRef.current) {
+    if (
+      isLoadingRef.current ||
+      isLoadingMoreRef.current ||
+      !hasMoreRef.current ||
+      loadMoreLockRef.current
+    ) {
       return;
     }
-    void fetchPage(page + 1);
-  }, [
-    categoryId,
-    enabled,
-    fetchPage,
-    hasMore,
-    isLoading,
-    isLoadingMore,
-    page,
-    sourceApi,
-    sourceKey,
-  ]);
+    void fetchPage(pageRef.current + 1);
+  }, [enabled, fetchPage, sourceApi, sourceKey]);
 
   const reload = useCallback(() => {
-    if (!enabled || sourceKey === 'auto' || !sourceApi || !categoryId) {
+    if (!enabled || sourceKey === 'auto' || !sourceApi) {
       return;
     }
     void fetchPage(1);
-  }, [categoryId, enabled, fetchPage, sourceApi, sourceKey]);
+  }, [enabled, fetchPage, sourceApi, sourceKey]);
 
   useEffect(() => {
     latestQueryKeyRef.current = queryKey;
     requestControllerRef.current?.abort();
     requestSequenceRef.current += 1;
-    loadMoreLockRef.current = false;
 
     resetState();
 
-    if (!enabled || sourceKey === 'auto' || !sourceApi || !categoryId) {
+    if (!enabled || sourceKey === 'auto' || !sourceApi) {
+      hasMoreRef.current = false;
       setHasMore(false);
       return;
     }
@@ -272,15 +346,7 @@ export default function useBrowseVideos({
     return () => {
       requestControllerRef.current?.abort();
     };
-  }, [
-    categoryId,
-    enabled,
-    fetchPage,
-    queryKey,
-    resetState,
-    sourceApi,
-    sourceKey,
-  ]);
+  }, [enabled, fetchPage, queryKey, resetState, sourceApi, sourceKey]);
 
   useEffect(() => {
     return () => {

@@ -57,7 +57,7 @@ function SourceBrowserPageClient() {
   const shouldBrowseCategory =
     currentSource !== 'auto' &&
     Boolean(currentSourceConfig?.api) &&
-    Boolean(selectedCategoryId);
+    selectedCategory !== null;
 
   const {
     videos: categoryItems,
