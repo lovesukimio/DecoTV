@@ -95,6 +95,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const [favorited, setFavorited] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [showMobileActions, setShowMobileActions] = useState(false);
+    const [isMobileActionSheetMounted, setIsMobileActionSheetMounted] =
+      useState(false);
     const [searchFavorited, setSearchFavorited] = useState<boolean | null>(
       null,
     ); // 搜索结果的收藏状态
@@ -338,6 +340,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       if (!showMobileActions) {
         // 防止重复触发
         // 立即显示菜单，避免等待数据加载导致动画卡顿
+        setIsMobileActionSheetMounted(true);
         setShowMobileActions(true);
 
         // 异步检查收藏状态，不阻塞菜单显示
@@ -1224,23 +1227,26 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         </div>
 
         {/* 操作菜单 - 支持右键和长按触发 */}
-        <MobileActionSheet
-          isOpen={showMobileActions}
-          onClose={() => setShowMobileActions(false)}
-          title={actualTitle}
-          poster={processImageUrl(actualPoster)}
-          actions={mobileActions}
-          sources={
-            isAggregate && dynamicSourceNames
-              ? Array.from(new Set(dynamicSourceNames))
-              : undefined
-          }
-          isAggregate={isAggregate}
-          sourceName={source_name}
-          currentEpisode={currentEpisode}
-          totalEpisodes={actualEpisodes}
-          origin={origin}
-        />
+        {isMobileActionSheetMounted && (
+          <MobileActionSheet
+            isOpen={showMobileActions}
+            onClose={() => setShowMobileActions(false)}
+            onAfterClose={() => setIsMobileActionSheetMounted(false)}
+            title={actualTitle}
+            poster={processImageUrl(actualPoster)}
+            actions={mobileActions}
+            sources={
+              isAggregate && dynamicSourceNames
+                ? Array.from(new Set(dynamicSourceNames))
+                : undefined
+            }
+            isAggregate={isAggregate}
+            sourceName={source_name}
+            currentEpisode={currentEpisode}
+            totalEpisodes={actualEpisodes}
+            origin={origin}
+          />
+        )}
       </>
     );
   },

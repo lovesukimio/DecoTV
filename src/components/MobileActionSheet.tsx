@@ -1,5 +1,5 @@
 import { Radio, X } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import ExternalImage from '@/components/ExternalImage';
@@ -16,6 +16,7 @@ interface ActionItem {
 interface MobileActionSheetProps {
   isOpen: boolean;
   onClose: () => void;
+  onAfterClose?: () => void;
   title: string;
   actions: ActionItem[];
   poster?: string;
@@ -30,6 +31,7 @@ interface MobileActionSheetProps {
 const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
   isOpen,
   onClose,
+  onAfterClose,
   title,
   actions,
   poster,
@@ -42,6 +44,10 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
+  const onAfterCloseRef = useRef(onAfterClose);
+  useEffect(() => {
+    onAfterCloseRef.current = onAfterClose;
+  }, [onAfterClose]);
   // Portal 容器（将操作面板挂载到 body，避免被父级 contain/transform 影响）
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
 
@@ -80,6 +86,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
       // 等待动画完成后隐藏组件
       timer = setTimeout(() => {
         setIsVisible(false);
+        onAfterCloseRef.current?.();
       }, 200);
     }
 

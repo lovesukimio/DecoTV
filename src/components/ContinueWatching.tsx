@@ -22,6 +22,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     (PlayRecord & { key: string })[]
   >([]);
   const [loading, setLoading] = useState(true);
+  const CONTINUE_WATCHING_LIMIT = 24;
+  const visiblePlayRecords = playRecords.slice(0, CONTINUE_WATCHING_LIMIT);
 
   // 处理播放记录数据更新的函数
   const updatePlayRecords = (allRecords: Record<string, PlayRecord>) => {
@@ -116,7 +118,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
               </div>
             ))
           : // 显示真实数据
-            playRecords.map((record) => {
+            visiblePlayRecords.map((record) => {
               const { source, id } = parseKey(record.key);
               return (
                 <div

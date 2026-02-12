@@ -33,8 +33,6 @@ function DoubanPageClient() {
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectorsReady, setSelectorsReady] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const loadMoreLockRef = useRef(false);
 
@@ -723,43 +721,16 @@ function DoubanPageClient() {
   ]);
 
   // 设置滚动监听
-  useEffect(() => {
-    // 如果没有更多数据或正在加载，则不设置监听
+  const handleGridEndReached = useCallback(() => {
     if (!hasMore || isLoadingMore || loading) {
       if (!isLoadingMore) {
         loadMoreLockRef.current = false;
       }
       return;
     }
-
-    // 确保 loadingRef 存在
-    if (!loadingRef.current) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) return;
-        if (loadMoreLockRef.current || !hasMore || isLoadingMore) return;
-
-        loadMoreLockRef.current = true;
-        if (loadingRef.current) {
-          observer.unobserve(loadingRef.current);
-        }
-        setCurrentPage((prev) => prev + 1);
-      },
-      { threshold: 0.01, rootMargin: '320px 0px' },
-    );
-
-    observer.observe(loadingRef.current);
-    observerRef.current = observer;
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
+    if (loadMoreLockRef.current) return;
+    loadMoreLockRef.current = true;
+    setCurrentPage((prev) => prev + 1);
   }, [hasMore, isLoadingMore, loading]);
 
   // 处理选择器变化
@@ -1153,7 +1124,7 @@ function DoubanPageClient() {
 
           {/* 选择器组件 */}
           {type !== 'custom' ? (
-            <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30 backdrop-blur-sm'>
+            <div className='bg-white/90 dark:bg-gray-900/90 rounded-2xl p-4 sm:p-6 border border-gray-200/40 dark:border-gray-700/40'>
               <DoubanSelector
                 type={type as 'movie' | 'tv' | 'show' | 'anime'}
                 primarySelection={primarySelection}
@@ -1180,7 +1151,7 @@ function DoubanPageClient() {
               />
             </div>
           ) : (
-            <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30 backdrop-blur-sm'>
+            <div className='bg-white/90 dark:bg-gray-900/90 rounded-2xl p-4 sm:p-6 border border-gray-200/40 dark:border-gray-700/40'>
               <DoubanCustomSelector
                 customCategories={customCategories}
                 primarySelection={primarySelection}
@@ -1232,9 +1203,11 @@ function DoubanPageClient() {
             </div>
           ) : (
             <VirtualizedVideoGrid
+              mode='always'
               data={doubanData}
               virtualizationThreshold={140}
               overscan={640}
+              onEndReached={handleGridEndReached}
               className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
               itemKey={(item) =>
                 `douban-${item.id || item.title}-${item.year || ''}`
@@ -1256,16 +1229,7 @@ function DoubanPageClient() {
 
           {/* 加载更多指示器 */}
           {hasMore && !loading && (
-            <div
-              ref={(el) => {
-                if (el && el.offsetParent !== null) {
-                  (
-                    loadingRef as React.MutableRefObject<HTMLDivElement | null>
-                  ).current = el;
-                }
-              }}
-              className='flex justify-center mt-12 py-8'
-            >
+            <div className='flex justify-center mt-12 py-8'>
               {isLoadingMore && (
                 <div className='flex items-center gap-2'>
                   <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>

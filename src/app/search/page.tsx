@@ -877,6 +877,7 @@ function SearchPageClient() {
                 )
               ) : viewMode === 'agg' ? (
                 <VirtualizedVideoGrid
+                  mode='always'
                   data={filteredAggResults}
                   virtualizationThreshold={120}
                   overscan={640}
@@ -919,6 +920,7 @@ function SearchPageClient() {
                 />
               ) : (
                 <VirtualizedVideoGrid
+                  mode='always'
                   data={filteredAllResults}
                   virtualizationThreshold={120}
                   overscan={640}

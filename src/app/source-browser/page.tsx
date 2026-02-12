@@ -114,8 +114,6 @@ function SourceBrowserPageClient() {
   const [categoryPage, setCategoryPage] = useState(1);
   const [hasMoreCategoryItems, setHasMoreCategoryItems] = useState(false);
   const [categoryError, setCategoryError] = useState('');
-  const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
-  const loadMoreObserverRef = useRef<IntersectionObserver | null>(null);
   const loadMoreLockRef = useRef(false);
 
   const normalizedKeyword = keyword.trim().toLowerCase();
@@ -259,49 +257,11 @@ function SourceBrowserPageClient() {
     categoryPage,
   ]);
 
-  useEffect(() => {
-    if (!selectedCategoryId || !hasMoreCategoryItems) {
-      if (!isLoadingMoreCategoryItems) {
-        loadMoreLockRef.current = false;
-      }
-      return;
-    }
-    if (isLoadingCategoryItems || isLoadingMoreCategoryItems) return;
-    if (!loadMoreAnchorRef.current) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) return;
-        if (loadMoreLockRef.current) return;
-        observer.unobserve(entry.target);
-        handleLoadMore();
-      },
-      { threshold: 0.01, rootMargin: '280px 0px' },
-    );
-
-    observer.observe(loadMoreAnchorRef.current);
-    loadMoreObserverRef.current = observer;
-
-    return () => {
-      if (loadMoreObserverRef.current) {
-        loadMoreObserverRef.current.disconnect();
-        loadMoreObserverRef.current = null;
-      }
-    };
-  }, [
-    selectedCategoryId,
-    hasMoreCategoryItems,
-    isLoadingCategoryItems,
-    isLoadingMoreCategoryItems,
-    handleLoadMore,
-  ]);
-
   return (
     <PageLayout activePath='/source-browser'>
       <div className='px-4 sm:px-10 py-4 sm:py-8'>
         <div className='mx-auto w-full max-w-6xl space-y-6'>
-          <section className='rounded-3xl border border-emerald-400/20 bg-linear-to-r from-slate-900/80 via-slate-900/65 to-emerald-950/45 p-5 shadow-[0_15px_50px_-25px_rgba(16,185,129,0.65)] backdrop-blur-xl sm:p-7'>
+          <section className='rounded-3xl border border-emerald-400/20 bg-linear-to-r from-slate-900/92 via-slate-900/86 to-emerald-950/70 p-5 shadow-[0_10px_32px_-24px_rgba(16,185,129,0.55)] sm:p-7'>
             <div className='flex flex-wrap items-start justify-between gap-4'>
               <div className='flex items-center gap-3'>
                 <div className='inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-300/40'>
@@ -343,7 +303,7 @@ function SourceBrowserPageClient() {
             </div>
           </section>
 
-          <section className='rounded-2xl border border-white/10 bg-slate-900/55 p-4 shadow-[0_12px_38px_-28px_rgba(14,165,233,0.7)] backdrop-blur-xl sm:p-5'>
+          <section className='rounded-2xl border border-white/10 bg-slate-900/88 p-4 shadow-[0_8px_28px_-24px_rgba(14,165,233,0.55)] sm:p-5'>
             <div className='mb-3 flex items-center justify-between'>
               <h2 className='text-sm font-semibold text-slate-200'>
                 选择资源站
@@ -386,7 +346,7 @@ function SourceBrowserPageClient() {
             </div>
           </section>
 
-          <section className='rounded-2xl border border-white/10 bg-slate-900/55 p-4 backdrop-blur-xl sm:p-5'>
+          <section className='rounded-2xl border border-white/10 bg-slate-900/88 p-4 sm:p-5'>
             <div className='flex flex-wrap items-center justify-between gap-3'>
               <div>
                 <h3 className='text-sm font-semibold text-slate-200'>
@@ -467,9 +427,11 @@ function SourceBrowserPageClient() {
                 ) : (
                   <div className='mt-4'>
                     <VirtualizedVideoGrid
+                      mode='always'
                       data={categoryItems}
                       virtualizationThreshold={140}
                       overscan={640}
+                      onEndReached={handleLoadMore}
                       className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
                       itemKey={(item) =>
                         String(
@@ -491,10 +453,7 @@ function SourceBrowserPageClient() {
                     />
 
                     {(hasMoreCategoryItems || isLoadingMoreCategoryItems) && (
-                      <div
-                        ref={loadMoreAnchorRef}
-                        className='mt-8 flex items-center justify-center'
-                      >
+                      <div className='mt-8 flex items-center justify-center'>
                         {isLoadingMoreCategoryItems ? (
                           <div className='inline-flex items-center gap-2 rounded-xl border border-slate-600/70 bg-slate-800/45 px-4 py-2 text-sm text-slate-300'>
                             <Loader2 className='h-4 w-4 animate-spin' />
