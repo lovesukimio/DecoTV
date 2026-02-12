@@ -43,6 +43,8 @@ const DownloadManagerModal = dynamic<DownloadManagerModalProps>(
 const MAX_SEGMENT_CONCURRENCY = 6;
 const MAX_SEGMENT_RETRY = 4;
 const SEGMENT_RETRY_BASE_DELAY_MS = 400;
+const SEGMENT_FETCH_TIMEOUT_MS = 45_000;
+const PROGRESS_PATCH_MIN_INTERVAL_MS = 180;
 const SPEED_WINDOW_MS = 5000;
 const FFMPEG_POLL_INTERVAL_MS = 1200;
 
@@ -152,6 +154,23 @@ function applyContainerExtension(fileName: string, ext: 'ts' | 'mp4'): string {
     return normalized.replace(/\.(ts|mp4)$/i, `.${ext}`);
   }
   return `${normalized}.${ext}`;
+}
+
+function isLikely403Error(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message : String(error || '').trim();
+  if (!message) return false;
+  return /(^|[^\d])403([^\d]|$)/.test(message) || message.includes('(403)');
+}
+
+function formatDownloadError(error: unknown, fallback: string): string {
+  const message =
+    error instanceof Error ? error.message : String(error || '').trim();
+  if (!message) return fallback;
+  if (/quota|QuotaExceededError|空间不足|storage/i.test(message)) {
+    return '浏览器可用存储空间不足，请删除部分下载任务后重试';
+  }
+  return message;
 }
 
 function buildProxyUrl(
@@ -760,9 +779,9 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
   );
 
   const runM3U8Download = useCallback(
-    async (taskId: string) => {
-      const task = getTaskById(taskId);
-      if (!task || task.segmentUrls.length === 0) return;
+    async (taskId: string, taskSnapshot?: DownloadTask) => {
+      const baseTask = taskSnapshot || getTaskById(taskId);
+      if (!baseTask || baseTask.segmentUrls.length === 0) return;
       if (runtimeMapRef.current.has(taskId)) return;
 
       const runtime: DownloadRuntime = {
@@ -778,6 +797,18 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         );
         let downloadedBytes = await getDownloadedBytesFromDB(taskId);
         let downloadedSegments = downloadedIndexes.size;
+        let segmentUrls = [...baseTask.segmentUrls];
+        let segmentRanges = { ...(baseTask.segmentRanges || {}) };
+        let totalSegments = segmentUrls.length;
+        let lastProgressPatchAt = 0;
+        const pendingIndexes: number[] = [];
+        let pendingCursor = 0;
+        let playlistRefreshPromise: Promise<void> | null = null;
+        const refererCandidates = dedupeTruthy([
+          baseTask.playlistUrl,
+          baseTask.requestReferer,
+          baseTask.sourceUrl,
+        ]);
 
         patchTask(taskId, {
           status: 'downloading',
@@ -785,11 +816,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
           downloadedBytes,
           speedBps: 0,
           error: undefined,
-          totalBytes: task.totalBytes > 0 ? task.totalBytes : downloadedBytes,
+          totalBytes:
+            baseTask.totalBytes > 0 ? baseTask.totalBytes : downloadedBytes,
         });
 
-        const pendingIndexes: number[] = [];
-        for (let index = 0; index < task.segmentUrls.length; index += 1) {
+        for (let index = 0; index < totalSegments; index += 1) {
           if (!downloadedIndexes.has(index)) {
             pendingIndexes.push(index);
           }
@@ -801,23 +832,100 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const patchProgress = (speedBps: number, force = false) => {
+          const now = Date.now();
+          if (
+            !force &&
+            now - lastProgressPatchAt < PROGRESS_PATCH_MIN_INTERVAL_MS
+          ) {
+            return;
+          }
+          lastProgressPatchAt = now;
+          patchTask(taskId, {
+            downloadedSegments,
+            downloadedBytes,
+            speedBps,
+            totalBytes:
+              baseTask.totalBytes > 0
+                ? baseTask.totalBytes
+                : Math.max(downloadedBytes, baseTask.totalBytes),
+          });
+        };
+
+        const refreshPlaylistFor403 = async () => {
+          if (!baseTask.sourceUrl) return;
+          if (playlistRefreshPromise) {
+            await playlistRefreshPromise;
+            return;
+          }
+
+          playlistRefreshPromise = (async () => {
+            const parsed = await parseM3U8Playlist(
+              baseTask.playlistUrl || baseTask.sourceUrl,
+              0,
+              {
+                referer: baseTask.requestReferer || baseTask.sourceUrl,
+                origin: baseTask.requestOrigin,
+                ua: baseTask.requestUa,
+              },
+            );
+
+            const oldTotalSegments = totalSegments;
+            segmentUrls = parsed.segmentUrls;
+            segmentRanges = parsed.segmentRanges;
+            totalSegments = parsed.segmentUrls.length;
+
+            if (totalSegments > oldTotalSegments) {
+              for (let idx = oldTotalSegments; idx < totalSegments; idx += 1) {
+                if (!downloadedIndexes.has(idx)) {
+                  pendingIndexes.push(idx);
+                }
+              }
+            }
+
+            patchTask(taskId, (current) => ({
+              ...current,
+              playlistUrl: parsed.playlistUrl,
+              segmentUrls: parsed.segmentUrls,
+              segmentRanges: parsed.segmentRanges,
+              totalSegments,
+              fileName: applyContainerExtension(
+                current.fileName,
+                parsed.containerExtension,
+              ),
+            }));
+          })().finally(() => {
+            playlistRefreshPromise = null;
+          });
+
+          await playlistRefreshPromise;
+        };
+
+        const adaptiveConcurrency =
+          totalSegments >= 2500 ? 3 : MAX_SEGMENT_CONCURRENCY;
         const workerCount = Math.max(
           1,
-          Math.min(MAX_SEGMENT_CONCURRENCY, pendingIndexes.length),
+          Math.min(adaptiveConcurrency, pendingIndexes.length),
         );
-        const refererCandidates = dedupeTruthy([
-          task.playlistUrl,
-          task.requestReferer,
-          task.sourceUrl,
-        ]);
 
         const worker = async () => {
           while (runtime.active) {
-            const nextIndex = pendingIndexes.shift();
+            const currentCursor = pendingCursor;
+            if (currentCursor >= pendingIndexes.length) {
+              return;
+            }
+            pendingCursor += 1;
+            const nextIndex = pendingIndexes[currentCursor];
             if (nextIndex === undefined) return;
 
-            const segmentUrl = task.segmentUrls[nextIndex];
-            const rangeHeader = task.segmentRanges?.[nextIndex];
+            let segmentUrl = segmentUrls[nextIndex];
+            let rangeHeader = segmentRanges[nextIndex];
+            if (!segmentUrl) {
+              throw new Error(
+                `分片链接缺失 (${nextIndex + 1}/${totalSegments})`,
+              );
+            }
+
             let done = false;
             let lastError: Error | null = null;
 
@@ -832,6 +940,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
                   : refererCandidates[(attempt - 1) % refererCandidates.length];
 
               const controller = new AbortController();
+              let timedOut = false;
+              const timeoutId = window.setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+              }, SEGMENT_FETCH_TIMEOUT_MS);
               runtime.controllers.add(controller);
 
               try {
@@ -848,15 +961,16 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
                 const response = await fetch(
                   buildProxyUrl(segmentUrl, {
                     referer,
-                    origin: task.requestOrigin,
-                    ua: task.requestUa,
+                    origin: baseTask.requestOrigin,
+                    ua: baseTask.requestUa,
                   }),
                   requestInit,
                 );
+
                 if (!response.ok) {
                   const details = await readApiErrorMessage(
                     response,
-                    `分片下载失败 (${nextIndex + 1}/${task.totalSegments})`,
+                    `分片下载失败 (${nextIndex + 1}/${totalSegments})`,
                   );
                   throw new Error(details);
                 }
@@ -868,28 +982,45 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
                 downloadedSegments = downloadedIndexes.size;
                 downloadedBytes += blob.size;
                 const speedBps = computeSpeed(runtime, blob.size);
-
-                patchTask(taskId, {
-                  downloadedSegments,
-                  downloadedBytes,
-                  speedBps,
-                  totalBytes:
-                    task.totalBytes > 0
-                      ? task.totalBytes
-                      : Math.max(downloadedBytes, task.totalBytes),
-                });
+                patchProgress(speedBps, downloadedSegments === totalSegments);
 
                 done = true;
                 break;
               } catch (error) {
                 if (!runtime.active) return;
-                if ((error as Error).name === 'AbortError') return;
+
+                const isAbortError = (error as Error).name === 'AbortError';
+                if (isAbortError && !timedOut) return;
+
                 lastError =
                   error instanceof Error ? error : new Error(String(error));
+                if (isAbortError && timedOut) {
+                  lastError = new Error(
+                    `分片请求超时 (${nextIndex + 1}/${totalSegments})`,
+                  );
+                }
+
+                if (
+                  isLikely403Error(lastError) &&
+                  attempt < MAX_SEGMENT_RETRY
+                ) {
+                  try {
+                    await refreshPlaylistFor403();
+                    const refreshedUrl = segmentUrls[nextIndex];
+                    if (refreshedUrl) {
+                      segmentUrl = refreshedUrl;
+                      rangeHeader = segmentRanges[nextIndex];
+                    }
+                  } catch {
+                    // 保留原始错误并继续重试
+                  }
+                }
+
                 if (attempt < MAX_SEGMENT_RETRY) {
                   await delay(SEGMENT_RETRY_BASE_DELAY_MS * attempt);
                 }
               } finally {
+                window.clearTimeout(timeoutId);
                 runtime.controllers.delete(controller);
               }
             }
@@ -897,9 +1028,7 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
             if (!done && runtime.active) {
               throw (
                 lastError ||
-                new Error(
-                  `分片下载失败 (${nextIndex + 1}/${task.totalSegments})`,
-                )
+                new Error(`分片下载失败 (${nextIndex + 1}/${totalSegments})`)
               );
             }
           }
@@ -918,8 +1047,7 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         patchTask(taskId, {
           status: 'error',
           speedBps: 0,
-          error:
-            error instanceof Error ? error.message : '分片下载失败，请稍后重试',
+          error: formatDownloadError(error, '分片下载失败，请稍后重试'),
         });
       } finally {
         runtimeMapRef.current.delete(taskId);
@@ -1148,22 +1276,23 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
             return id;
           }
 
-          patchTask(id, (current) => ({
-            ...current,
+          const preparedTask: DownloadTask = {
+            ...task,
             status: 'downloading',
             playlistUrl: parsed.playlistUrl,
             segmentUrls: parsed.segmentUrls,
             segmentRanges: parsed.segmentRanges,
             fileName: applyContainerExtension(
-              current.fileName,
+              task.fileName,
               parsed.containerExtension,
             ),
             totalSegments: parsed.segmentUrls.length,
             downloadedSegments: 0,
             error: undefined,
-          }));
-
-          void runM3U8Download(id);
+            updatedAt: Date.now(),
+          };
+          upsertTask(preparedTask);
+          void runM3U8Download(id, preparedTask);
         } catch (error) {
           patchTask(id, {
             status: 'error',
@@ -1262,8 +1391,14 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
 
       if (task.mediaType === 'm3u8') {
         if (task.segmentUrls.length > 0) {
-          patchTask(taskId, { status: 'downloading', error: undefined });
-          void runM3U8Download(taskId);
+          const resumedTask: DownloadTask = {
+            ...task,
+            status: 'downloading',
+            error: undefined,
+            updatedAt: Date.now(),
+          };
+          upsertTask(resumedTask);
+          void runM3U8Download(taskId, resumedTask);
           return;
         }
         patchTask(taskId, { status: 'parsing', error: undefined });
@@ -1281,20 +1416,26 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
               });
               return;
             }
-            patchTask(taskId, (current) => ({
-              ...current,
+            const latest = getTaskById(taskId);
+            if (!latest) {
+              throw new Error('下载任务不存在，无法继续');
+            }
+            const resumedTask: DownloadTask = {
+              ...latest,
               playlistUrl: parsed.playlistUrl,
               segmentUrls: parsed.segmentUrls,
               segmentRanges: parsed.segmentRanges,
               fileName: applyContainerExtension(
-                current.fileName,
+                latest.fileName,
                 parsed.containerExtension,
               ),
               totalSegments: parsed.segmentUrls.length,
               status: 'downloading',
               error: undefined,
-            }));
-            await runM3U8Download(taskId);
+              updatedAt: Date.now(),
+            };
+            upsertTask(resumedTask);
+            await runM3U8Download(taskId, resumedTask);
           } catch (error) {
             patchTask(taskId, {
               status: 'error',
@@ -1317,6 +1458,7 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
       startFfmpegPolling,
       startFfmpegTask,
       syncTaskWithFfmpegJob,
+      upsertTask,
     ],
   );
 

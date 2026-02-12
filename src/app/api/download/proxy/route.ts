@@ -25,7 +25,8 @@ interface FetchAttemptError {
   details: string;
 }
 
-const FETCH_TIMEOUT_MS = 15_000;
+const PLAYLIST_FETCH_TIMEOUT_MS = 20_000;
+const RESOURCE_FETCH_TIMEOUT_MS = 90_000;
 
 function buildError(status: number, message: string, details?: string) {
   return NextResponse.json(
@@ -209,6 +210,7 @@ async function fetchUpstreamWithFallback(
   options: {
     userAgent?: string;
     playlist?: boolean;
+    timeoutMs: number;
     variants: HeaderVariant[];
   },
 ): Promise<{ response: Response | null; error: FetchAttemptError | null }> {
@@ -223,7 +225,7 @@ async function fetchUpstreamWithFallback(
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs);
       let response: Response;
       try {
         response = await fetch(targetUrl, {
@@ -250,9 +252,14 @@ async function fetchUpstreamWithFallback(
         details,
       };
     } catch (error) {
+      const isAbort = error instanceof Error && error.name === 'AbortError';
       lastError = {
         status: 0,
-        details: error instanceof Error ? error.message : String(error),
+        details: isAbort
+          ? `Upstream request timeout (${Math.round(options.timeoutMs / 1000)}s)`
+          : error instanceof Error
+            ? error.message
+            : String(error),
       };
     }
   }
@@ -289,6 +296,9 @@ export async function GET(request: NextRequest) {
       '',
   );
   const playlist = request.nextUrl.searchParams.get('playlist') === '1';
+  const timeoutMs = playlist
+    ? PLAYLIST_FETCH_TIMEOUT_MS
+    : RESOURCE_FETCH_TIMEOUT_MS;
 
   const variants = buildHeaderVariants(
     parsedTarget.toString(),
@@ -301,6 +311,7 @@ export async function GET(request: NextRequest) {
     {
       userAgent,
       playlist,
+      timeoutMs,
       variants,
     },
   );
