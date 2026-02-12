@@ -1,9 +1,7 @@
 'use client';
 
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { ReactNode, useCallback } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
-
-import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 type VirtualizationMode = 'auto' | 'always' | 'never';
 
@@ -19,8 +17,6 @@ interface VirtualizedVideoGridProps<T> {
   mode?: VirtualizationMode;
   virtualizationThreshold?: number;
   overscan?: number;
-  minVirtualHeight?: number;
-  viewportOffset?: number;
 }
 
 export default function VirtualizedVideoGrid<T>({
@@ -35,56 +31,21 @@ export default function VirtualizedVideoGrid<T>({
   mode = 'auto',
   virtualizationThreshold = 120,
   overscan = 560,
-  minVirtualHeight = 480,
-  viewportOffset = 220,
 }: VirtualizedVideoGridProps<T>) {
   const shouldVirtualize =
     mode === 'always' ||
     (mode === 'auto' && data.length >= virtualizationThreshold);
-  const [virtualHeight, setVirtualHeight] = useState(minVirtualHeight);
-  const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(
-    null,
-  );
-
-  const updateVirtualHeight = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const nextHeight = Math.max(
-      minVirtualHeight,
-      window.innerHeight - viewportOffset,
-    );
-    setVirtualHeight(nextHeight);
-  }, [minVirtualHeight, viewportOffset]);
-
-  useEffect(() => {
-    if (!shouldVirtualize) return;
-
-    updateVirtualHeight();
-    window.addEventListener('resize', updateVirtualHeight, { passive: true });
-    window.addEventListener('orientationchange', updateVirtualHeight);
-
-    return () => {
-      window.removeEventListener('resize', updateVirtualHeight);
-      window.removeEventListener('orientationchange', updateVirtualHeight);
-    };
-  }, [shouldVirtualize, updateVirtualHeight]);
 
   const canLoadMore = Boolean(onEndReached) && hasMore && !isLoadingMore;
 
-  const handleLoadMore = useCallback(() => {
-    if (!onEndReached) return;
-    if (data.length === 0) return;
-    onEndReached(data.length - 1);
-  }, [data.length, onEndReached]);
-
-  const { sentinelRef } = useInfiniteScroll({
-    enabled: shouldVirtualize && canLoadMore,
-    hasMore,
-    isLoading: isLoadingMore,
-    root: scrollerElement,
-    rootMargin: '300px 0px',
-    threshold: 0.01,
-    onLoadMore: handleLoadMore,
-  });
+  const handleEndReached = useCallback(
+    (index: number) => {
+      if (!onEndReached) return;
+      if (!canLoadMore || data.length === 0) return;
+      onEndReached(index);
+    },
+    [onEndReached, canLoadMore, data.length],
+  );
 
   if (!shouldVirtualize) {
     return (
@@ -107,32 +68,21 @@ export default function VirtualizedVideoGrid<T>({
 
   const reverseOverscan = Math.max(Math.round(overscan * 1.8), 960);
   const mainOverscan = Math.max(overscan, 720);
-  const listFooter = () =>
-    canLoadMore ? <div ref={sentinelRef} className='h-2 w-full' /> : null;
 
   return (
-    <div
-      className='w-full'
-      style={{
-        height: `${virtualHeight}px`,
-        minHeight: `${minVirtualHeight}px`,
+    <VirtuosoGrid
+      useWindowScroll
+      data={data}
+      listClassName={className}
+      itemClassName={itemClassName}
+      overscan={{ main: mainOverscan, reverse: reverseOverscan }}
+      increaseViewportBy={{
+        top: Math.max(Math.round(overscan * 1.1), 640),
+        bottom: Math.max(Math.round(overscan * 1.6), 960),
       }}
-    >
-      <VirtuosoGrid
-        data={data}
-        style={{ height: '100%' }}
-        listClassName={className}
-        itemClassName={itemClassName}
-        overscan={{ main: mainOverscan, reverse: reverseOverscan }}
-        increaseViewportBy={{
-          top: reverseOverscan,
-          bottom: Math.max(Math.round(overscan * 1.2), 760),
-        }}
-        components={{ Footer: listFooter }}
-        scrollerRef={(el) => setScrollerElement(el)}
-        computeItemKey={(index, item) => itemKey(item, index)}
-        itemContent={(index, item) => renderItem(item, index)}
-      />
-    </div>
+      computeItemKey={(index, item) => itemKey(item, index)}
+      itemContent={(index, item) => renderItem(item, index)}
+      endReached={handleEndReached}
+    />
   );
 }
