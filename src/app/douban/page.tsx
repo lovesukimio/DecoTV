@@ -1176,7 +1176,7 @@ function DoubanPageClient() {
             <VirtualizedVideoGrid
               data={sourceData}
               virtualizationThreshold={140}
-              overscan={640}
+              overscan={2000}
               className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
               itemKey={(item) =>
                 `source-${item.id || item.title}-${item.year || ''}`
@@ -1206,7 +1206,7 @@ function DoubanPageClient() {
               mode='always'
               data={doubanData}
               virtualizationThreshold={140}
-              overscan={640}
+              overscan={2000}
               onEndReached={handleGridEndReached}
               hasMore={hasMore}
               isLoadingMore={isLoadingMore || loading}

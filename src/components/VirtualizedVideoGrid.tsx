@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useCallback } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
 
 type VirtualizationMode = 'auto' | 'always' | 'never';
@@ -19,6 +19,27 @@ interface VirtualizedVideoGridProps<T> {
   overscan?: number;
 }
 
+function resolveItemId(item: unknown): string | null {
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+
+  const record = item as Record<string, unknown>;
+  const candidates = ['vod_id', 'id', 'douban_id', 'uuid', 'key', 'slug'];
+
+  for (const candidate of candidates) {
+    const value = record[candidate];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return null;
+}
+
 export default function VirtualizedVideoGrid<T>({
   data,
   className,
@@ -30,21 +51,75 @@ export default function VirtualizedVideoGrid<T>({
   isLoadingMore = false,
   mode = 'auto',
   virtualizationThreshold = 120,
-  overscan = 560,
+  overscan = 2000,
 }: VirtualizedVideoGridProps<T>) {
   const shouldVirtualize =
     mode === 'always' ||
     (mode === 'auto' && data.length >= virtualizationThreshold);
 
-  const canLoadMore = Boolean(onEndReached) && hasMore && !isLoadingMore;
+  const resolvedKeys = useMemo(() => {
+    const keyCount = new Map<string, number>();
+
+    return data.map((item, index) => {
+      const rawKey = itemKey(item, index);
+      const trimmedKey = rawKey?.trim();
+      const baseKey = trimmedKey || resolveItemId(item) || 'unknown-item';
+      const duplicateCount = keyCount.get(baseKey) ?? 0;
+
+      keyCount.set(baseKey, duplicateCount + 1);
+
+      if (duplicateCount === 0) {
+        return baseKey;
+      }
+
+      return `${baseKey}_${index}`;
+    });
+  }, [data, itemKey]);
 
   const handleEndReached = useCallback(
     (index: number) => {
       if (!onEndReached) return;
-      if (!canLoadMore || data.length === 0) return;
+      if (!hasMore || isLoadingMore || data.length === 0) return;
       onEndReached(index);
     },
-    [onEndReached, canLoadMore, data.length],
+    [data.length, hasMore, isLoadingMore, onEndReached],
+  );
+
+  const footer = useCallback(() => {
+    if (!onEndReached) {
+      return null;
+    }
+
+    return (
+      <div className='flex min-h-[60px] w-full items-center justify-center py-4'>
+        {isLoadingMore ? (
+          <span
+            className='inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-500/50 border-t-emerald-300'
+            aria-hidden='true'
+          />
+        ) : null}
+      </div>
+    );
+  }, [isLoadingMore, onEndReached]);
+
+  const normalizedOverscan = Math.max(overscan, 2000);
+  const reverseOverscan = Math.max(Math.round(normalizedOverscan * 1.2), 2000);
+  const mainOverscan = normalizedOverscan;
+
+  const components = onEndReached
+    ? {
+        Footer: footer,
+      }
+    : undefined;
+
+  const endReached = onEndReached ? handleEndReached : undefined;
+
+  const increaseViewportBy = useMemo(
+    () => ({
+      top: Math.max(Math.round(normalizedOverscan * 0.75), 1200),
+      bottom: Math.max(Math.round(normalizedOverscan * 1.1), 2000),
+    }),
+    [normalizedOverscan],
   );
 
   if (!shouldVirtualize) {
@@ -52,7 +127,7 @@ export default function VirtualizedVideoGrid<T>({
       <div className={className}>
         {data.map((item, index) => (
           <div
-            key={itemKey(item, index)}
+            key={resolvedKeys[index]}
             className={itemClassName}
             style={{
               contentVisibility: 'auto',
@@ -66,9 +141,6 @@ export default function VirtualizedVideoGrid<T>({
     );
   }
 
-  const reverseOverscan = Math.max(Math.round(overscan * 1.8), 960);
-  const mainOverscan = Math.max(overscan, 720);
-
   return (
     <VirtuosoGrid
       useWindowScroll
@@ -76,13 +148,11 @@ export default function VirtualizedVideoGrid<T>({
       listClassName={className}
       itemClassName={itemClassName}
       overscan={{ main: mainOverscan, reverse: reverseOverscan }}
-      increaseViewportBy={{
-        top: Math.max(Math.round(overscan * 1.1), 640),
-        bottom: Math.max(Math.round(overscan * 1.6), 960),
-      }}
-      computeItemKey={(index, item) => itemKey(item, index)}
+      increaseViewportBy={increaseViewportBy}
+      computeItemKey={(index) => resolvedKeys[index]}
       itemContent={(index, item) => renderItem(item, index)}
-      endReached={handleEndReached}
+      components={components}
+      endReached={endReached}
     />
   );
 }

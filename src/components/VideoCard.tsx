@@ -132,6 +132,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
     const actualTitle = title;
     const actualPoster = poster;
+    const processedPoster = processImageUrl(actualPoster);
     const actualSource = source;
     const actualId = id;
     const actualDoubanId = dynamicDoubanId;
@@ -143,6 +144,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         ? 'movie'
         : 'tv'
       : type;
+
+    useEffect(() => {
+      setIsLoading(false);
+    }, [processedPoster]);
 
     // 获取收藏状态（搜索结果页面不检查）
     useEffect(() => {
@@ -659,10 +664,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               - 优化响应式图片加载，避免下载过大图片
             */}
             <ExternalImage
-              src={processImageUrl(actualPoster)}
+              key={`${actualId || actualTitle}-${processedPoster}`}
+              src={processedPoster}
               alt={actualTitle}
               fill
-              className={origin === 'live' ? 'object-contain' : 'object-cover'}
+              className={`${
+                origin === 'live' ? 'object-contain' : 'object-cover'
+              } transition-opacity duration-300 ${
+                isLoading ? 'opacity-100' : 'opacity-0'
+              }`}
               referrerPolicy='no-referrer'
               loading='lazy'
               decoding='async'
@@ -676,7 +686,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 if (!img.dataset.retried) {
                   img.dataset.retried = 'true';
                   setTimeout(() => {
-                    img.src = processImageUrl(actualPoster);
+                    img.src = processedPoster;
                   }, 2000);
                 }
               }}

@@ -1,99 +1,15 @@
 'use client';
 
 import { CheckCircle2, Loader2, Search, Sparkles } from 'lucide-react';
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import { type SourceCategory, useSourceFilter } from '@/hooks/useSourceFilter';
+import useBrowseVideos from '@/hooks/useBrowseVideos';
+import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import SourceBrowserIcon from '@/components/icons/SourceBrowserIcon';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 import VirtualizedVideoGrid from '@/components/VirtualizedVideoGrid';
-
-interface SourceVideoItem {
-  vod_id?: string | number;
-  vod_name?: string;
-  vod_pic?: string;
-  vod_year?: string;
-  vod_remarks?: string;
-}
-
-interface SourceVideoListResponse {
-  list?: SourceVideoItem[];
-  class?: SourceCategory[];
-  page?: number | string;
-  pagecount?: number | string;
-  total?: number | string;
-  limit?: number | string;
-  page_size?: number | string;
-  msg?: string;
-}
-
-function buildCategoryApiUrl(
-  api: string,
-  categoryId: string,
-  page: number,
-): string {
-  if (api.endsWith('/')) {
-    return `${api}?ac=videolist&t=${encodeURIComponent(categoryId)}&pg=${page}`;
-  }
-  return `${api}/?ac=videolist&t=${encodeURIComponent(categoryId)}&pg=${page}`;
-}
-
-function parsePositiveInteger(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return Math.floor(value);
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
-function inferHasMore(
-  payload: SourceVideoListResponse,
-  requestedPage: number,
-  fetchedCount: number,
-): boolean {
-  const pageCount = parsePositiveInteger(payload.pagecount);
-  if (pageCount !== null) {
-    return requestedPage < pageCount;
-  }
-
-  const total = parsePositiveInteger(payload.total);
-  const pageSize =
-    parsePositiveInteger(payload.limit) ??
-    parsePositiveInteger(payload.page_size) ??
-    20;
-
-  if (total !== null) {
-    return requestedPage * pageSize < total;
-  }
-
-  return fetchedCount >= pageSize;
-}
-
-function mergeUniqueItems(
-  previous: SourceVideoItem[],
-  incoming: SourceVideoItem[],
-): SourceVideoItem[] {
-  const map = new Map<string, SourceVideoItem>();
-  [...previous, ...incoming].forEach((item, index) => {
-    const key = String(item.vod_id || item.vod_name || index);
-    map.set(key, item);
-  });
-  return Array.from(map.values());
-}
 
 function SourceBrowserPageClient() {
   const {
@@ -107,14 +23,6 @@ function SourceBrowserPageClient() {
   } = useSourceFilter();
   const [keyword, setKeyword] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
-  const [categoryItems, setCategoryItems] = useState<SourceVideoItem[]>([]);
-  const [isLoadingCategoryItems, setIsLoadingCategoryItems] = useState(false);
-  const [isLoadingMoreCategoryItems, setIsLoadingMoreCategoryItems] =
-    useState(false);
-  const [categoryPage, setCategoryPage] = useState(1);
-  const [hasMoreCategoryItems, setHasMoreCategoryItems] = useState(false);
-  const [categoryError, setCategoryError] = useState('');
-  const loadMoreLockRef = useRef(false);
 
   const normalizedKeyword = keyword.trim().toLowerCase();
   const filteredSources = useMemo(() => {
@@ -146,75 +54,26 @@ function SourceBrowserPageClient() {
     );
   }, [selectedCategoryId, sourceCategories]);
 
-  const fetchCategoryItems = useCallback(
-    async (categoryId: string, page = 1) => {
-      if (currentSource === 'auto' || !currentSourceConfig) {
-        setCategoryItems([]);
-        setCategoryPage(1);
-        setHasMoreCategoryItems(false);
-        setCategoryError('');
-        return;
-      }
+  const shouldBrowseCategory =
+    currentSource !== 'auto' &&
+    Boolean(currentSourceConfig?.api) &&
+    Boolean(selectedCategoryId);
 
-      const isLoadMore = page > 1;
-      if (isLoadMore) {
-        setIsLoadingMoreCategoryItems(true);
-      } else {
-        setIsLoadingCategoryItems(true);
-      }
-      setCategoryError('');
-
-      try {
-        const originalApiUrl = buildCategoryApiUrl(
-          currentSourceConfig.api,
-          categoryId,
-          page,
-        );
-        const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
-        const response = await fetch(proxyUrl, {
-          cache: 'no-store',
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`分类内容拉取失败 (${response.status})`);
-        }
-
-        const payload = (await response.json()) as SourceVideoListResponse;
-        const nextItems = Array.isArray(payload.list) ? payload.list : [];
-        setCategoryPage(page);
-        setHasMoreCategoryItems(inferHasMore(payload, page, nextItems.length));
-        setCategoryItems((previous) =>
-          isLoadMore ? mergeUniqueItems(previous, nextItems) : nextItems,
-        );
-      } catch (err) {
-        if (!isLoadMore) {
-          setCategoryItems([]);
-          setHasMoreCategoryItems(false);
-        }
-        setCategoryError(
-          err instanceof Error ? err.message : '分类内容拉取失败，请稍后重试',
-        );
-      } finally {
-        if (isLoadMore) {
-          loadMoreLockRef.current = false;
-          setIsLoadingMoreCategoryItems(false);
-        } else {
-          setIsLoadingCategoryItems(false);
-        }
-      }
-    },
-    [currentSource, currentSourceConfig],
-  );
+  const {
+    videos: categoryItems,
+    hasMore: hasMoreCategoryItems,
+    isLoading: isLoadingCategoryItems,
+    isLoadingMore: isLoadingMoreCategoryItems,
+    error: categoryError,
+    loadMore: handleLoadMore,
+  } = useBrowseVideos({
+    sourceKey: currentSource,
+    sourceApi: currentSourceConfig?.api ?? null,
+    categoryId: selectedCategoryId,
+    enabled: shouldBrowseCategory,
+  });
 
   useEffect(() => {
-    setCategoryItems([]);
-    setCategoryPage(1);
-    setHasMoreCategoryItems(false);
-    setIsLoadingMoreCategoryItems(false);
-    setCategoryError('');
     if (currentSource === 'auto') {
       setSelectedCategoryId('');
     }
@@ -233,29 +92,6 @@ function SourceBrowserPageClient() {
       setSelectedCategoryId(String(sourceCategories[0].type_id));
     }
   }, [currentSource, selectedCategoryId, sourceCategories]);
-
-  useEffect(() => {
-    if (!selectedCategoryId) return;
-    void fetchCategoryItems(selectedCategoryId, 1);
-  }, [selectedCategoryId, fetchCategoryItems]);
-
-  const handleLoadMore = useCallback(() => {
-    if (!selectedCategoryId) return;
-    if (currentSource === 'auto') return;
-    if (isLoadingCategoryItems || isLoadingMoreCategoryItems) return;
-    if (!hasMoreCategoryItems) return;
-    if (loadMoreLockRef.current) return;
-    loadMoreLockRef.current = true;
-    void fetchCategoryItems(selectedCategoryId, categoryPage + 1);
-  }, [
-    selectedCategoryId,
-    currentSource,
-    isLoadingCategoryItems,
-    isLoadingMoreCategoryItems,
-    hasMoreCategoryItems,
-    fetchCategoryItems,
-    categoryPage,
-  ]);
 
   return (
     <PageLayout activePath='/source-browser'>
@@ -430,7 +266,7 @@ function SourceBrowserPageClient() {
                       mode='always'
                       data={categoryItems}
                       virtualizationThreshold={140}
-                      overscan={640}
+                      overscan={2000}
                       onEndReached={handleLoadMore}
                       hasMore={hasMoreCategoryItems}
                       isLoadingMore={
