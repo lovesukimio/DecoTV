@@ -602,8 +602,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               // 禁用右键菜单和长按菜单
               pointerEvents: 'auto',
               // 【关键】GPU 加速：创建独立合成层
-              transform: 'translate3d(0, 0, 0)',
-              willChange: 'transform, box-shadow',
+              contain: 'layout style paint',
             } as React.CSSProperties
           }
           onContextMenu={(e) => {
@@ -664,7 +663,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               - 优化响应式图片加载，避免下载过大图片
             */}
             <ExternalImage
-              key={`${actualId || actualTitle}-${processedPoster}`}
               src={processedPoster}
               alt={actualTitle}
               fill
@@ -675,20 +673,17 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               }`}
               referrerPolicy='no-referrer'
               loading='lazy'
+              fetchPriority='low'
               decoding='async'
-              sizes='(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 15vw'
-              placeholder='blur'
+              sizes='(max-width: 640px) 31vw, (max-width: 1024px) 18vw, 12vw'
+              quality={from === 'douban' ? 62 : 70}
+              unoptimized={!(from === 'douban' || from === 'search')}
+              placeholder={from === 'douban' ? 'empty' : 'blur'}
               blurDataURL={POSTER_BLUR_DATA_URL}
               onLoad={() => setIsLoading(true)}
-              onError={(e) => {
+              onError={() => {
                 // 图片加载失败时的重试机制
-                const img = e.target as HTMLImageElement;
-                if (!img.dataset.retried) {
-                  img.dataset.retried = 'true';
-                  setTimeout(() => {
-                    img.src = processedPoster;
-                  }, 2000);
-                }
+                setIsLoading(true);
               }}
               style={
                 {

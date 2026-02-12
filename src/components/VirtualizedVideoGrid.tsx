@@ -19,6 +19,30 @@ interface VirtualizedVideoGridProps<T> {
   overscan?: number;
 }
 
+function getAdaptiveOverscan(overscan?: number): number {
+  if (typeof overscan === 'number' && Number.isFinite(overscan)) {
+    return Math.min(Math.max(Math.round(overscan), 420), 1800);
+  }
+
+  if (typeof navigator === 'undefined') {
+    return 900;
+  }
+
+  const deviceMemory = (navigator as { deviceMemory?: number } | undefined)
+    ?.deviceMemory;
+
+  if (typeof deviceMemory === 'number') {
+    if (deviceMemory <= 4) {
+      return 620;
+    }
+    if (deviceMemory <= 8) {
+      return 820;
+    }
+  }
+
+  return 980;
+}
+
 function resolveItemId(item: unknown): string | null {
   if (!item || typeof item !== 'object') {
     return null;
@@ -50,8 +74,8 @@ export default function VirtualizedVideoGrid<T>({
   hasMore = true,
   isLoadingMore = false,
   mode = 'auto',
-  virtualizationThreshold = 120,
-  overscan = 2000,
+  virtualizationThreshold = 80,
+  overscan,
 }: VirtualizedVideoGridProps<T>) {
   const shouldVirtualize =
     mode === 'always' ||
@@ -102,8 +126,11 @@ export default function VirtualizedVideoGrid<T>({
     );
   }, [isLoadingMore, onEndReached]);
 
-  const normalizedOverscan = Math.max(overscan, 2000);
-  const reverseOverscan = Math.max(Math.round(normalizedOverscan * 1.2), 2000);
+  const normalizedOverscan = useMemo(
+    () => getAdaptiveOverscan(overscan),
+    [overscan],
+  );
+  const reverseOverscan = Math.max(Math.round(normalizedOverscan * 0.85), 360);
   const mainOverscan = normalizedOverscan;
 
   const components = onEndReached
@@ -116,8 +143,8 @@ export default function VirtualizedVideoGrid<T>({
 
   const increaseViewportBy = useMemo(
     () => ({
-      top: Math.max(Math.round(normalizedOverscan * 0.75), 1200),
-      bottom: Math.max(Math.round(normalizedOverscan * 1.1), 2000),
+      top: Math.max(Math.round(normalizedOverscan * 0.45), 260),
+      bottom: Math.max(Math.round(normalizedOverscan * 0.75), 360),
     }),
     [normalizedOverscan],
   );

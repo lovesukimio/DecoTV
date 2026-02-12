@@ -83,6 +83,17 @@
   }
 }
 
+.image-placeholder-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e5e7eb 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.35s linear infinite;
+}
+
+.dark .image-placeholder-shimmer {
+  background: linear-gradient(90deg, #2d2d2d 25%, #3d3d3d 50%, #2d2d2d 75%);
+  background-size: 200% 100%;
+}
+
 @keyframes fadeIn {
   0% {
     opacity: 0;
@@ -841,6 +852,19 @@ html:not(.dark) .hover\:bg-slate-50:hover {
   pointer-events: none;
   /* 降低动态背景的动画强度，避免强烈高光划过体验 */
   animation: bgFloat 40s ease-in-out infinite alternate;
+}
+
+html[data-render-mode='lite'] .bg-animated-gradient::before {
+  animation: none;
+  opacity: 0.45;
+}
+
+html[data-render-mode='lite'] .glass-chip {
+  backdrop-filter: none;
+}
+
+html[data-render-mode='lite'] .chip-glow::after {
+  display: none;
 }
 
 @keyframes bgFloat {
