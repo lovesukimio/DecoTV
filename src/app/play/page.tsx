@@ -1703,11 +1703,26 @@ function PlayPageClient() {
       detail?.episodes_titles?.[currentEpisodeIndex] ||
       `第${currentEpisodeIndex + 1}集`;
 
+    let normalizedSourceUrl = videoUrl;
+    let referer: string | undefined;
+    let origin: string | undefined;
+    try {
+      const parsedUrl = new URL(videoUrl, window.location.href);
+      normalizedSourceUrl = parsedUrl.toString();
+      referer = parsedUrl.toString();
+      origin = parsedUrl.origin;
+    } catch {
+      // 使用原始地址继续下载
+    }
+
     try {
       await enqueueDownload({
         title: `${videoTitle || detail?.title || '视频'} ${episodeLabel}`,
-        sourceUrl: videoUrl,
+        sourceUrl: normalizedSourceUrl,
         channel,
+        referer,
+        origin,
+        ua: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       });
       showToast('已加入下载队列', 'success');
     } catch (error) {

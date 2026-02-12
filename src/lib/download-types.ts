@@ -28,7 +28,11 @@ export interface DownloadTask {
   createdAt: number;
   updatedAt: number;
   segmentUrls: string[];
+  segmentRanges?: Record<number, string>;
   playlistUrl?: string;
+  requestReferer?: string;
+  requestOrigin?: string;
+  requestUa?: string;
   ffmpegJobId?: string;
   downloadUrl?: string;
   error?: string;
@@ -39,13 +43,18 @@ export interface DownloadRequest {
   sourceUrl: string;
   fileNameHint?: string;
   channel?: DownloadChannel;
+  referer?: string;
+  origin?: string;
+  ua?: string;
 }
 
 export interface ParsedM3U8Result {
   playlistUrl: string;
   segmentUrls: string[];
+  segmentRanges: Record<number, string>;
   durationSeconds: number;
   encrypted: boolean;
+  containerExtension: 'ts' | 'mp4';
 }
 
 export function createDownloadId(): string {

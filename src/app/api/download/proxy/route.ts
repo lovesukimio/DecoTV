@@ -9,6 +9,7 @@ const DEFAULT_HEADERS: Record<string, string> = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
   Accept: '*/*',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
   Connection: 'keep-alive',
   'Cache-Control': 'no-cache',
   Pragma: 'no-cache',
@@ -23,6 +24,8 @@ interface FetchAttemptError {
   status: number;
   details: string;
 }
+
+const FETCH_TIMEOUT_MS = 15_000;
 
 function buildError(status: number, message: string, details?: string) {
   return NextResponse.json(
@@ -40,6 +43,33 @@ function safeDecodeURIComponent(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+function parseHttpUrl(raw: string): URL | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const candidates = [trimmed];
+  if (trimmed.includes('%')) {
+    const decoded = safeDecodeURIComponent(trimmed);
+    if (decoded !== trimmed) {
+      candidates.push(decoded);
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        continue;
+      }
+      return parsed;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null;
 }
 
 function normalizeOptional(raw: string | null): string | undefined {
@@ -87,24 +117,44 @@ function buildHeaderVariants(
     variants.push(variant);
   };
 
-  if (referer || origin) {
+  if (referer && origin) {
     push({
-      referer: referer || (origin ? `${origin}/` : undefined),
-      origin: origin || refererOrigin,
+      referer,
+      origin,
+    });
+  }
+
+  if (referer) {
+    push({
+      referer,
+    });
+  }
+
+  if (origin) {
+    push({
+      origin,
+    });
+  }
+
+  if (referer && refererOrigin && refererOrigin !== origin) {
+    push({
+      referer,
+      origin: refererOrigin,
     });
   }
 
   if (targetOrigin) {
     push({
       referer: `${targetOrigin}/`,
+    });
+
+    push({
+      referer: `${targetOrigin}/`,
       origin: targetOrigin,
     });
-  }
 
-  if (referer && refererOrigin && refererOrigin !== targetOrigin) {
     push({
-      referer,
-      origin: refererOrigin,
+      origin: targetOrigin,
     });
   }
 
@@ -172,12 +222,20 @@ async function fetchUpstreamWithFallback(
     });
 
     try {
-      const response = await fetch(targetUrl, {
-        method: 'GET',
-        headers,
-        redirect: 'follow',
-        cache: 'no-store',
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+          redirect: 'follow',
+          cache: 'no-store',
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (response.ok) {
         return {
@@ -216,23 +274,15 @@ export async function GET(request: NextRequest) {
     return buildError(400, 'Missing url');
   }
 
-  const targetUrl = safeDecodeURIComponent(targetRaw);
-  let parsedTarget: URL;
-  try {
-    parsedTarget = new URL(targetUrl);
-    if (!['http:', 'https:'].includes(parsedTarget.protocol)) {
-      return buildError(400, 'Unsupported protocol');
-    }
-  } catch {
+  const parsedTarget = parseHttpUrl(targetRaw);
+  if (!parsedTarget) {
     return buildError(400, 'Invalid url');
   }
 
   const referer = normalizeOptional(
-    safeDecodeURIComponent(request.nextUrl.searchParams.get('referer') || ''),
+    request.nextUrl.searchParams.get('referer'),
   );
-  const origin = normalizeOptional(
-    safeDecodeURIComponent(request.nextUrl.searchParams.get('origin') || ''),
-  );
+  const origin = normalizeOptional(request.nextUrl.searchParams.get('origin'));
   const userAgent = normalizeOptional(
     request.nextUrl.searchParams.get('ua') ||
       request.headers.get('user-agent') ||

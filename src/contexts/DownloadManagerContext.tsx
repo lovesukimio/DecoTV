@@ -41,6 +41,8 @@ const DownloadManagerModal = dynamic<DownloadManagerModalProps>(
 );
 
 const MAX_SEGMENT_CONCURRENCY = 6;
+const MAX_SEGMENT_RETRY = 4;
+const SEGMENT_RETRY_BASE_DELAY_MS = 400;
 const SPEED_WINDOW_MS = 5000;
 const FFMPEG_POLL_INTERVAL_MS = 1200;
 
@@ -114,6 +116,44 @@ function isM3U8Url(sourceUrl: string): boolean {
   return /\.m3u8($|\?)/i.test(sourceUrl);
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function dedupeTruthy(values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((item) => item?.trim())
+        .filter((item): item is string => Boolean(item)),
+    ),
+  );
+}
+
+function guessContainerExtension(
+  segmentUrls: string[],
+  hasInitSegment: boolean,
+): 'ts' | 'mp4' {
+  const hasMp4LikeSegment = segmentUrls.some((url) =>
+    /\.(m4s|mp4|cmfv|cmfa)($|[?#])/i.test(url),
+  );
+  if (hasMp4LikeSegment || hasInitSegment) {
+    return 'mp4';
+  }
+  return 'ts';
+}
+
+function applyContainerExtension(fileName: string, ext: 'ts' | 'mp4'): string {
+  const normalized = fileName.trim();
+  if (!normalized) return `deco-video.${ext}`;
+  if (/\.(ts|mp4)$/i.test(normalized)) {
+    return normalized.replace(/\.(ts|mp4)$/i, `.${ext}`);
+  }
+  return `${normalized}.${ext}`;
+}
+
 function buildProxyUrl(
   targetUrl: string,
   options: ProxyFetchOptions = {},
@@ -158,7 +198,7 @@ async function readApiErrorMessage(
   fallback: string,
 ): Promise<string> {
   try {
-    const payload = (await response.json()) as {
+    const payload = (await response.clone().json()) as {
       error?: string;
       details?: string;
       recommendation?: string;
@@ -242,11 +282,13 @@ async function fetchFfmpegJob(jobId: string): Promise<FfmpegJobPayload | null> {
 
 async function fetchTextByProxy(
   targetUrl: string,
-  referer?: string,
+  options: ProxyFetchOptions = {},
 ): Promise<string> {
   const response = await fetch(
     buildProxyUrl(targetUrl, {
-      referer,
+      referer: options.referer,
+      origin: options.origin,
+      ua: options.ua,
       playlist: true,
     }),
     {
@@ -261,6 +303,45 @@ async function fetchTextByProxy(
     throw new Error(details);
   }
   return response.text();
+}
+
+function parseByteRange(
+  rawValue: string,
+): { length: number; offset?: number } | null {
+  const normalized = rawValue
+    .replace(/^#EXT-X-BYTERANGE:/i, '')
+    .split(',')[0]
+    .trim();
+  if (!normalized) return null;
+
+  const [lengthRaw, offsetRaw] = normalized.split('@');
+  const length = Number.parseInt(lengthRaw, 10);
+  if (!Number.isFinite(length) || length <= 0) {
+    return null;
+  }
+
+  if (!offsetRaw) {
+    return { length };
+  }
+
+  const offset = Number.parseInt(offsetRaw, 10);
+  if (!Number.isFinite(offset) || offset < 0) {
+    return null;
+  }
+
+  return { length, offset };
+}
+
+function buildRangeHeader(
+  byteRange: { length: number; offset?: number },
+  fallbackStart = 0,
+): { header: string; nextOffset: number } {
+  const start = Math.max(0, byteRange.offset ?? fallbackStart);
+  const end = start + byteRange.length - 1;
+  return {
+    header: `bytes=${start}-${end}`,
+    nextOffset: end + 1,
+  };
 }
 
 function extractBandwidth(line: string): number {
@@ -278,13 +359,13 @@ function parseDuration(line: string): number {
 async function parseM3U8Playlist(
   playlistUrl: string,
   depth = 0,
-  referer?: string,
+  options: ProxyFetchOptions = {},
 ): Promise<ParsedM3U8Result> {
   if (depth > 4) {
     throw new Error('M3U8 嵌套层级过深');
   }
 
-  const text = await fetchTextByProxy(playlistUrl, referer);
+  const text = await fetchTextByProxy(playlistUrl, options);
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -292,17 +373,48 @@ async function parseM3U8Playlist(
 
   const variants: Array<{ url: string; bandwidth: number }> = [];
   const segmentUrls: string[] = [];
+  const segmentRanges: Record<number, string> = {};
   const nestedPlaylists: string[] = [];
+  const byterangeOffsetByUrl = new Map<string, number>();
   let pendingBandwidth = 0;
+  let pendingByteRange: { length: number; offset?: number } | null = null;
   let waitingVariantUrl = false;
   let encrypted = false;
   let durationSeconds = 0;
+  let hasInitSegment = false;
+  let activeMap: {
+    url: string;
+    rangeHeader?: string;
+    signature: string;
+  } | null = null;
+  let injectedMapSignature: string | null = null;
 
   for (const line of lines) {
     if (line.startsWith('#')) {
       if (line.startsWith('#EXT-X-STREAM-INF')) {
         pendingBandwidth = extractBandwidth(line);
         waitingVariantUrl = true;
+      } else if (line.startsWith('#EXT-X-BYTERANGE:')) {
+        pendingByteRange = parseByteRange(line);
+      } else if (line.startsWith('#EXT-X-MAP:')) {
+        const uriMatch = line.match(/URI="([^"]+)"/i);
+        if (uriMatch?.[1]) {
+          const resolvedMapUrl = new URL(uriMatch[1], playlistUrl).toString();
+          const mapByteRangeRaw = line.match(/BYTERANGE="([^"]+)"/i)?.[1];
+          let rangeHeader: string | undefined;
+          if (mapByteRangeRaw) {
+            const mapByteRange = parseByteRange(mapByteRangeRaw);
+            if (mapByteRange) {
+              rangeHeader = buildRangeHeader(mapByteRange, 0).header;
+            }
+          }
+          activeMap = {
+            url: resolvedMapUrl,
+            rangeHeader,
+            signature: `${resolvedMapUrl}|${rangeHeader || ''}`,
+          };
+          injectedMapSignature = null;
+        }
       } else if (line.startsWith('#EXT-X-KEY')) {
         const method = line.match(/METHOD=([^,]+)/i)?.[1]?.toUpperCase();
         if (method && method !== 'NONE') {
@@ -327,23 +439,72 @@ async function parseM3U8Playlist(
       continue;
     }
 
+    if (activeMap && activeMap.signature !== injectedMapSignature) {
+      const mapIndex = segmentUrls.length;
+      segmentUrls.push(activeMap.url);
+      if (activeMap.rangeHeader) {
+        segmentRanges[mapIndex] = activeMap.rangeHeader;
+      }
+      hasInitSegment = true;
+      injectedMapSignature = activeMap.signature;
+    }
+
+    const segmentIndex = segmentUrls.length;
     segmentUrls.push(resolved);
+
+    if (pendingByteRange) {
+      const fallbackStart = byterangeOffsetByUrl.get(resolved) || 0;
+      const range = buildRangeHeader(pendingByteRange, fallbackStart);
+      segmentRanges[segmentIndex] = range.header;
+      byterangeOffsetByUrl.set(resolved, range.nextOffset);
+      pendingByteRange = null;
+    } else {
+      byterangeOffsetByUrl.delete(resolved);
+    }
   }
 
   if (variants.length > 0) {
     variants.sort((a, b) => b.bandwidth - a.bandwidth);
-    return parseM3U8Playlist(variants[0].url, depth + 1, playlistUrl);
+    let lastError: unknown;
+    for (const variant of variants) {
+      try {
+        return await parseM3U8Playlist(variant.url, depth + 1, {
+          ...options,
+          referer: playlistUrl,
+        });
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('变体播放列表解析失败');
   }
 
   if (segmentUrls.length === 0 && nestedPlaylists.length > 0) {
-    return parseM3U8Playlist(nestedPlaylists[0], depth + 1, playlistUrl);
+    let lastError: unknown;
+    for (const nestedUrl of nestedPlaylists) {
+      try {
+        return await parseM3U8Playlist(nestedUrl, depth + 1, {
+          ...options,
+          referer: playlistUrl,
+        });
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('子播放列表解析失败');
   }
 
   return {
     playlistUrl,
     segmentUrls,
+    segmentRanges,
     durationSeconds,
     encrypted,
+    containerExtension: guessContainerExtension(segmentUrls, hasInitSegment),
   };
 }
 
@@ -578,7 +739,10 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const finalBlob = new Blob(parts, { type: 'video/mp2t' });
+      const isMp4Output = /\.mp4$/i.test(task.fileName);
+      const finalBlob = new Blob(parts, {
+        type: isMp4Output ? 'video/mp4' : 'video/mp2t',
+      });
       triggerBrowserDownload(finalBlob, task.fileName);
 
       await clearTaskSegmentsFromDB(taskId);
@@ -641,6 +805,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
           1,
           Math.min(MAX_SEGMENT_CONCURRENCY, pendingIndexes.length),
         );
+        const refererCandidates = dedupeTruthy([
+          task.playlistUrl,
+          task.requestReferer,
+          task.sourceUrl,
+        ]);
 
         const worker = async () => {
           while (runtime.active) {
@@ -648,48 +817,90 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
             if (nextIndex === undefined) return;
 
             const segmentUrl = task.segmentUrls[nextIndex];
-            const controller = new AbortController();
-            runtime.controllers.add(controller);
-            try {
-              const response = await fetch(
-                buildProxyUrl(segmentUrl, {
-                  referer: task.playlistUrl || task.sourceUrl,
-                }),
-                {
+            const rangeHeader = task.segmentRanges?.[nextIndex];
+            let done = false;
+            let lastError: Error | null = null;
+
+            for (
+              let attempt = 1;
+              attempt <= MAX_SEGMENT_RETRY && runtime.active;
+              attempt += 1
+            ) {
+              const referer =
+                attempt === MAX_SEGMENT_RETRY || refererCandidates.length === 0
+                  ? undefined
+                  : refererCandidates[(attempt - 1) % refererCandidates.length];
+
+              const controller = new AbortController();
+              runtime.controllers.add(controller);
+
+              try {
+                const requestInit: RequestInit = {
                   cache: 'no-store',
                   signal: controller.signal,
-                },
-              );
-              if (!response.ok) {
-                const details = await readApiErrorMessage(
-                  response,
-                  `分片下载失败 (${nextIndex + 1}/${task.totalSegments})`,
+                };
+                if (rangeHeader) {
+                  requestInit.headers = {
+                    Range: rangeHeader,
+                  };
+                }
+
+                const response = await fetch(
+                  buildProxyUrl(segmentUrl, {
+                    referer,
+                    origin: task.requestOrigin,
+                    ua: task.requestUa,
+                  }),
+                  requestInit,
                 );
-                throw new Error(details);
+                if (!response.ok) {
+                  const details = await readApiErrorMessage(
+                    response,
+                    `分片下载失败 (${nextIndex + 1}/${task.totalSegments})`,
+                  );
+                  throw new Error(details);
+                }
+
+                const blob = await response.blob();
+                await saveSegmentBlobToDB(taskId, nextIndex, blob);
+
+                downloadedIndexes.add(nextIndex);
+                downloadedSegments = downloadedIndexes.size;
+                downloadedBytes += blob.size;
+                const speedBps = computeSpeed(runtime, blob.size);
+
+                patchTask(taskId, {
+                  downloadedSegments,
+                  downloadedBytes,
+                  speedBps,
+                  totalBytes:
+                    task.totalBytes > 0
+                      ? task.totalBytes
+                      : Math.max(downloadedBytes, task.totalBytes),
+                });
+
+                done = true;
+                break;
+              } catch (error) {
+                if (!runtime.active) return;
+                if ((error as Error).name === 'AbortError') return;
+                lastError =
+                  error instanceof Error ? error : new Error(String(error));
+                if (attempt < MAX_SEGMENT_RETRY) {
+                  await delay(SEGMENT_RETRY_BASE_DELAY_MS * attempt);
+                }
+              } finally {
+                runtime.controllers.delete(controller);
               }
-              const blob = await response.blob();
-              await saveSegmentBlobToDB(taskId, nextIndex, blob);
+            }
 
-              downloadedIndexes.add(nextIndex);
-              downloadedSegments = downloadedIndexes.size;
-              downloadedBytes += blob.size;
-              const speedBps = computeSpeed(runtime, blob.size);
-
-              patchTask(taskId, {
-                downloadedSegments,
-                downloadedBytes,
-                speedBps,
-                totalBytes:
-                  task.totalBytes > 0
-                    ? task.totalBytes
-                    : Math.max(downloadedBytes, task.totalBytes),
-              });
-            } catch (error) {
-              if (!runtime.active) return;
-              if ((error as Error).name === 'AbortError') return;
-              throw error;
-            } finally {
-              runtime.controllers.delete(controller);
+            if (!done && runtime.active) {
+              throw (
+                lastError ||
+                new Error(
+                  `分片下载失败 (${nextIndex + 1}/${task.totalSegments})`,
+                )
+              );
             }
           }
         };
@@ -730,6 +941,7 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
       runtime.controllers.add(controller);
 
       try {
+        const taskMeta = getTaskById(taskId);
         patchTask(taskId, {
           status: 'downloading',
           totalSegments: 1,
@@ -738,10 +950,17 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
           error: undefined,
         });
 
-        const response = await fetch(buildProxyUrl(sourceUrl), {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          buildProxyUrl(sourceUrl, {
+            referer: taskMeta?.requestReferer || sourceUrl,
+            origin: taskMeta?.requestOrigin,
+            ua: taskMeta?.requestUa,
+          }),
+          {
+            cache: 'no-store',
+            signal: controller.signal,
+          },
+        );
         if (!response.ok) {
           const details = await readApiErrorMessage(
             response,
@@ -840,6 +1059,18 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
     async (request: DownloadRequest): Promise<string> => {
       const sourceUrl = resolveTargetUrl(request.sourceUrl);
       const isM3U8 = isM3U8Url(sourceUrl);
+      const requestReferer = request.referer?.trim() || sourceUrl;
+      let requestOrigin = request.origin?.trim();
+      if (!requestOrigin) {
+        try {
+          requestOrigin = new URL(requestReferer).origin;
+        } catch {
+          requestOrigin = undefined;
+        }
+      }
+      const requestUa =
+        request.ua?.trim() ||
+        (typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
       const requestedChannel: DownloadChannel =
         request.channel === 'ffmpeg' ? 'ffmpeg' : 'browser';
       const downloadChannel: DownloadChannel = isM3U8
@@ -857,6 +1088,9 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         fileName: `${fileNameBase}${isM3U8 ? (downloadChannel === 'ffmpeg' ? '.mp4' : '.ts') : ''}`,
         mediaType: isM3U8 ? 'm3u8' : 'file',
         downloadChannel,
+        requestReferer,
+        requestOrigin,
+        requestUa,
         status: isM3U8
           ? downloadChannel === 'ffmpeg'
             ? 'queued'
@@ -871,6 +1105,7 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         segmentUrls: [],
+        segmentRanges: {},
       };
 
       upsertTask(task);
@@ -893,7 +1128,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          const parsed = await parseM3U8Playlist(sourceUrl);
+          const parsed = await parseM3U8Playlist(sourceUrl, 0, {
+            referer: requestReferer,
+            origin: requestOrigin,
+            ua: requestUa,
+          });
           if (parsed.encrypted) {
             patchTask(id, {
               status: 'error',
@@ -914,6 +1153,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
             status: 'downloading',
             playlistUrl: parsed.playlistUrl,
             segmentUrls: parsed.segmentUrls,
+            segmentRanges: parsed.segmentRanges,
+            fileName: applyContainerExtension(
+              current.fileName,
+              parsed.containerExtension,
+            ),
             totalSegments: parsed.segmentUrls.length,
             downloadedSegments: 0,
             error: undefined,
@@ -1025,7 +1269,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         patchTask(taskId, { status: 'parsing', error: undefined });
         void (async () => {
           try {
-            const parsed = await parseM3U8Playlist(task.sourceUrl);
+            const parsed = await parseM3U8Playlist(task.sourceUrl, 0, {
+              referer: task.requestReferer || task.sourceUrl,
+              origin: task.requestOrigin,
+              ua: task.requestUa,
+            });
             if (parsed.encrypted) {
               patchTask(taskId, {
                 status: 'error',
@@ -1037,6 +1285,11 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
               ...current,
               playlistUrl: parsed.playlistUrl,
               segmentUrls: parsed.segmentUrls,
+              segmentRanges: parsed.segmentRanges,
+              fileName: applyContainerExtension(
+                current.fileName,
+                parsed.containerExtension,
+              ),
               totalSegments: parsed.segmentUrls.length,
               status: 'downloading',
               error: undefined,
