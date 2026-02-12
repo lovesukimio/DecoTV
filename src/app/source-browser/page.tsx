@@ -432,6 +432,10 @@ function SourceBrowserPageClient() {
                       virtualizationThreshold={140}
                       overscan={640}
                       onEndReached={handleLoadMore}
+                      hasMore={hasMoreCategoryItems}
+                      isLoadingMore={
+                        isLoadingCategoryItems || isLoadingMoreCategoryItems
+                      }
                       className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
                       itemKey={(item) =>
                         String(

@@ -500,6 +500,8 @@ function SearchPageClient() {
     // 当搜索参数变化时更新搜索状态
     const query = searchParams.get('q') || '';
     currentQueryRef.current = query.trim();
+    groupRefs.current.clear();
+    groupStatsRef.current.clear();
 
     if (query) {
       setSearchQuery(query);
@@ -686,6 +688,8 @@ function SearchPageClient() {
         flushTimerRef.current = null;
       }
       pendingResultsRef.current = [];
+      groupRefs.current.clear();
+      groupStatsRef.current.clear();
     };
   }, []);
 
@@ -877,9 +881,9 @@ function SearchPageClient() {
                 )
               ) : viewMode === 'agg' ? (
                 <VirtualizedVideoGrid
-                  mode='always'
+                  mode='auto'
                   data={filteredAggResults}
-                  virtualizationThreshold={120}
+                  virtualizationThreshold={240}
                   overscan={640}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
                   itemKey={([mapKey]) => `agg-${mapKey}`}
@@ -920,9 +924,9 @@ function SearchPageClient() {
                 />
               ) : (
                 <VirtualizedVideoGrid
-                  mode='always'
+                  mode='auto'
                   data={filteredAllResults}
-                  virtualizationThreshold={120}
+                  virtualizationThreshold={240}
                   overscan={640}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
                   itemKey={(item) => `all-${item.source}-${item.id}`}

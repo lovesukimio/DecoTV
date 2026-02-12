@@ -1208,6 +1208,8 @@ function DoubanPageClient() {
               virtualizationThreshold={140}
               overscan={640}
               onEndReached={handleGridEndReached}
+              hasMore={hasMore}
+              isLoadingMore={isLoadingMore || loading}
               className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
               itemKey={(item) =>
                 `douban-${item.id || item.title}-${item.year || ''}`
