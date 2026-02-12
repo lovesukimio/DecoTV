@@ -15,6 +15,7 @@ import { type SourceCategory, useSourceFilter } from '@/hooks/useSourceFilter';
 import SourceBrowserIcon from '@/components/icons/SourceBrowserIcon';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
+import VirtualizedVideoGrid from '@/components/VirtualizedVideoGrid';
 
 interface SourceVideoItem {
   vod_id?: string | number;
@@ -454,24 +455,24 @@ function SourceBrowserPageClient() {
                   </div>
                 ) : (
                   <div className='mt-4'>
-                    <div className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-                      {categoryItems.map((item, index) => (
-                        <div
-                          key={`${String(item.vod_id || item.vod_name || index)}-${index}`}
-                          className='w-full'
-                        >
-                          <VideoCard
-                            id={String(item.vod_id || '')}
-                            source={currentSource}
-                            source_name={currentSourceName}
-                            title={item.vod_name || '未命名资源'}
-                            poster={item.vod_pic || ''}
-                            year={item.vod_year || ''}
-                            from='search'
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    <VirtualizedVideoGrid
+                      data={categoryItems}
+                      className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
+                      itemKey={(item, index) =>
+                        `${String(item.vod_id || item.vod_name || index)}-${index}`
+                      }
+                      renderItem={(item) => (
+                        <VideoCard
+                          id={String(item.vod_id || '')}
+                          source={currentSource}
+                          source_name={currentSourceName}
+                          title={item.vod_name || 'Untitled'}
+                          poster={item.vod_pic || ''}
+                          year={item.vod_year || ''}
+                          from='search'
+                        />
+                      )}
+                    />
 
                     {(hasMoreCategoryItems || isLoadingMoreCategoryItems) && (
                       <div

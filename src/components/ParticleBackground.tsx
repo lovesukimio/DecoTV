@@ -22,7 +22,7 @@ export default function ParticleBackground() {
       {/* ========== 统一极光层 (Lite - 全平台通用) ========== */}
       {/* 紫色光斑 - 左上角，响应式尺寸 */}
       <div
-        className='absolute -top-16 -left-16 w-64 h-64 md:w-[40vw] md:h-[40vw] md:max-w-125 md:max-h-125 rounded-full mix-blend-screen filter blur-[50px] md:blur-[80px] animate-blob-slow transform-gpu will-change-transform'
+        className='absolute -top-16 -left-16 w-64 h-64 md:w-[40vw] md:h-[40vw] md:max-w-125 md:max-h-125 rounded-full mix-blend-screen filter blur-[28px] md:blur-[44px] animate-blob-slow motion-reduce:animate-none transform-gpu will-change-transform'
         style={{
           background:
             'radial-gradient(circle, rgba(139,92,246,0.22) 0%, transparent 70%)',
@@ -32,7 +32,7 @@ export default function ParticleBackground() {
 
       {/* 青蓝光斑 - 右下角，响应式尺寸 */}
       <div
-        className='absolute bottom-20 -right-16 md:bottom-0 md:-right-20 w-56 h-56 md:w-[35vw] md:h-[35vw] md:max-w-md md:max-h-md rounded-full mix-blend-screen filter blur-[45px] md:blur-[70px] animate-blob-slow transform-gpu will-change-transform'
+        className='absolute bottom-20 -right-16 md:bottom-0 md:-right-20 w-56 h-56 md:w-[35vw] md:h-[35vw] md:max-w-md md:max-h-md rounded-full mix-blend-screen filter blur-[24px] md:blur-[40px] animate-blob-slow motion-reduce:animate-none transform-gpu will-change-transform'
         style={{
           background:
             'radial-gradient(circle, rgba(34,211,238,0.18) 0%, transparent 70%)',
@@ -57,12 +57,12 @@ export default function ParticleBackground() {
             transform: translate3d(0, 0, 0) scale(1);
           }
           50% {
-            transform: translate3d(15px, -25px, 0) scale(1.05);
+            transform: translate3d(10px, -14px, 0) scale(1.03);
           }
         }
 
         .animate-blob-slow {
-          animation: blob-slow 12s ease-in-out infinite;
+          animation: blob-slow 18s ease-in-out infinite;
         }
       `}</style>
     </div>

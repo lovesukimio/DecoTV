@@ -240,7 +240,7 @@ function TopNavbar() {
     >
       <div className='mx-auto max-w-7xl px-4'>
         {/* PC 端保留 backdrop-blur 磨砂玻璃效果 */}
-        <div className='mt-2 rounded-2xl border border-white/10 bg-white/80 dark:bg-gray-900/80 md:bg-white/30 md:dark:bg-gray-900/40 shadow-[0_0_1px_0_rgba(255,255,255,0.5),0_0_40px_-10px_rgba(99,102,241,0.5)] backdrop-blur-none md:backdrop-blur-xl'>
+        <div className='mt-2 rounded-2xl border border-white/10 bg-white/85 dark:bg-gray-900/85 md:bg-white/45 md:dark:bg-gray-900/55 shadow-[0_0_1px_0_rgba(255,255,255,0.35),0_8px_20px_-12px_rgba(15,23,42,0.45)] backdrop-blur-none md:backdrop-blur-sm'>
           <nav className='flex items-center justify-between h-14 px-3'>
             {/* Left: Logo */}
             <div className='flex items-center gap-2 min-w-0'>

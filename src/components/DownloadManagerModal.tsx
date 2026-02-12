@@ -19,7 +19,7 @@ import {
   formatTaskProgress,
 } from '@/lib/download-types';
 
-interface DownloadManagerModalProps {
+export interface DownloadManagerModalProps {
   isOpen: boolean;
   tasks: DownloadTask[];
   onClose: () => void;

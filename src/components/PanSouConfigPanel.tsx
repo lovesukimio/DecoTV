@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import type { AdminConfig } from '@/lib/admin.types';
 import { DEFAULT_PANSOU_SERVER_URL, MAX_PANSOU_NODE_COUNT } from '@/lib/pansou';
 
-interface PanSouConfigPanelProps {
+export interface PanSouConfigPanelProps {
   config: AdminConfig | null;
   refreshConfig: () => Promise<void>;
 }

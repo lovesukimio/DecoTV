@@ -43,6 +43,7 @@ import {
   Video,
 } from 'lucide-react';
 import { GripVertical } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -51,9 +52,20 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { DEFAULT_PANSOU_SERVER_URL } from '@/lib/pansou';
 
 import DataMigration from '@/components/DataMigration';
-import ImportExportModal from '@/components/ImportExportModal';
+import type { ImportExportModalProps } from '@/components/ImportExportModal';
 import PageLayout from '@/components/PageLayout';
-import PanSouConfigPanel from '@/components/PanSouConfigPanel';
+import type { PanSouConfigPanelProps } from '@/components/PanSouConfigPanel';
+
+const ImportExportModal = dynamic<ImportExportModalProps>(
+  () =>
+    import('../../components/ImportExportModal.js').then((mod) => mod.default),
+  { ssr: false },
+);
+const PanSouConfigPanel = dynamic<PanSouConfigPanelProps>(
+  () =>
+    import('../../components/PanSouConfigPanel.js').then((mod) => mod.default),
+  { ssr: false },
+);
 
 // 统一按钮样式系统
 const buttonStyles = {
@@ -4187,14 +4199,18 @@ const VideoSourceConfig = ({
       />
 
       {/* 导入导出模态框 */}
-      <ImportExportModal
-        isOpen={importExportModal.isOpen}
-        mode={importExportModal.mode}
-        onClose={() => setImportExportModal({ isOpen: false, mode: 'import' })}
-        onImport={handleImportSources}
-        onExport={handleExportSources}
-        result={importExportModal.result}
-      />
+      {importExportModal.isOpen && (
+        <ImportExportModal
+          isOpen={importExportModal.isOpen}
+          mode={importExportModal.mode}
+          onClose={() =>
+            setImportExportModal({ isOpen: false, mode: 'import' })
+          }
+          onImport={handleImportSources}
+          onExport={handleExportSources}
+          result={importExportModal.result}
+        />
+      )}
 
       {/* 批量操作确认弹窗 */}
       {confirmModal.isOpen &&

@@ -27,6 +27,7 @@ import SearchResultFilter, {
 } from '@/components/SearchResultFilter';
 import SearchSuggestions from '@/components/SearchSuggestions';
 import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
+import VirtualizedVideoGrid from '@/components/VirtualizedVideoGrid';
 
 function SearchPageClient() {
   // 搜索历史
@@ -48,6 +49,7 @@ function SearchPageClient() {
   const [completedSources, setCompletedSources] = useState(0);
   const pendingResultsRef = useRef<SearchResult[]>([]);
   const flushTimerRef = useRef<number | null>(null);
+  const backToTopRafRef = useRef<number | null>(null);
   const [useFluidSearch, setUseFluidSearch] = useState(true);
   // 聚合卡片 refs 与聚合统计缓存
   const groupRefs = useRef<
@@ -464,40 +466,33 @@ function SearchPageClient() {
     );
 
     // 获取滚动位置的函数 - 专门针对 body 滚动
-    const getScrollTop = () => {
-      return document.body.scrollTop || 0;
+    const getScrollTop = () =>
+      document.body.scrollTop || document.documentElement.scrollTop || 0;
+
+    const updateBackToTopState = () => {
+      setShowBackToTop(getScrollTop() > 300);
     };
 
-    // 使用 requestAnimationFrame 持续检测滚动位置
-    let isRunning = false;
-    const checkScrollPosition = () => {
-      if (!isRunning) return;
-
-      const scrollTop = getScrollTop();
-      const shouldShow = scrollTop > 300;
-      setShowBackToTop(shouldShow);
-
-      requestAnimationFrame(checkScrollPosition);
-    };
-
-    // 启动持续检测
-    isRunning = true;
-    checkScrollPosition();
-
-    // 监听 body 元素的滚动事件
     const handleScroll = () => {
-      const scrollTop = getScrollTop();
-      setShowBackToTop(scrollTop > 300);
+      if (backToTopRafRef.current !== null) return;
+      backToTopRafRef.current = window.requestAnimationFrame(() => {
+        backToTopRafRef.current = null;
+        updateBackToTopState();
+      });
     };
 
+    updateBackToTopState();
+    window.addEventListener('scroll', handleScroll, { passive: true });
     document.body.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       unsubscribe();
-      isRunning = false; // 停止 requestAnimationFrame 循环
-
-      // 移除 body 滚动事件监听器
+      window.removeEventListener('scroll', handleScroll);
       document.body.removeEventListener('scroll', handleScroll);
+      if (backToTopRafRef.current !== null) {
+        cancelAnimationFrame(backToTopRafRef.current);
+        backToTopRafRef.current = null;
+      }
     };
   }, []);
 
@@ -880,76 +875,71 @@ function SearchPageClient() {
                     未找到相关结果
                   </div>
                 )
-              ) : (
-                <div
-                  key={`search-results-${viewMode}`}
+              ) : viewMode === 'agg' ? (
+                <VirtualizedVideoGrid
+                  data={filteredAggResults}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
-                >
-                  {viewMode === 'agg'
-                    ? filteredAggResults.map(([mapKey, group]) => {
-                        const title = group[0]?.title || '';
-                        const poster = group[0]?.poster || '';
-                        const year = group[0]?.year || 'unknown';
-                        const { episodes, source_names, douban_id } =
-                          computeGroupStats(group);
-                        const type = episodes === 1 ? 'movie' : 'tv';
+                  itemKey={([mapKey]) => `agg-${mapKey}`}
+                  renderItem={([mapKey, group]) => {
+                    const title = group[0]?.title || '';
+                    const poster = group[0]?.poster || '';
+                    const year = group[0]?.year || 'unknown';
+                    const { episodes, source_names, douban_id } =
+                      computeGroupStats(group);
+                    const type = episodes === 1 ? 'movie' : 'tv';
 
-                        // 如果该聚合第一次出现，写入初始统计
-                        if (!groupStatsRef.current.has(mapKey)) {
-                          groupStatsRef.current.set(mapKey, {
-                            episodes,
-                            source_names,
-                            douban_id,
-                          });
+                    if (!groupStatsRef.current.has(mapKey)) {
+                      groupStatsRef.current.set(mapKey, {
+                        episodes,
+                        source_names,
+                        douban_id,
+                      });
+                    }
+
+                    return (
+                      <VideoCard
+                        ref={getGroupRef(mapKey)}
+                        from='search'
+                        isAggregate={true}
+                        title={title}
+                        poster={poster}
+                        year={year}
+                        episodes={episodes}
+                        source_names={source_names}
+                        douban_id={douban_id}
+                        query={
+                          searchQuery.trim() !== title ? searchQuery.trim() : ''
                         }
-
-                        return (
-                          <div key={`agg-${mapKey}`} className='w-full'>
-                            <VideoCard
-                              ref={getGroupRef(mapKey)}
-                              from='search'
-                              isAggregate={true}
-                              title={title}
-                              poster={poster}
-                              year={year}
-                              episodes={episodes}
-                              source_names={source_names}
-                              douban_id={douban_id}
-                              query={
-                                searchQuery.trim() !== title
-                                  ? searchQuery.trim()
-                                  : ''
-                              }
-                              type={type}
-                            />
-                          </div>
-                        );
-                      })
-                    : filteredAllResults.map((item) => (
-                        <div
-                          key={`all-${item.source}-${item.id}`}
-                          className='w-full'
-                        >
-                          <VideoCard
-                            id={item.id}
-                            title={item.title}
-                            poster={item.poster}
-                            episodes={item.episodes.length}
-                            source={item.source}
-                            source_name={item.source_name}
-                            douban_id={item.douban_id}
-                            query={
-                              searchQuery.trim() !== item.title
-                                ? searchQuery.trim()
-                                : ''
-                            }
-                            year={item.year}
-                            from='search'
-                            type={item.episodes.length > 1 ? 'tv' : 'movie'}
-                          />
-                        </div>
-                      ))}
-                </div>
+                        type={type}
+                      />
+                    );
+                  }}
+                />
+              ) : (
+                <VirtualizedVideoGrid
+                  data={filteredAllResults}
+                  className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
+                  itemKey={(item) => `all-${item.source}-${item.id}`}
+                  renderItem={(item) => (
+                    <VideoCard
+                      id={item.id}
+                      title={item.title}
+                      poster={item.poster}
+                      episodes={item.episodes.length}
+                      source={item.source}
+                      source_name={item.source_name}
+                      douban_id={item.douban_id}
+                      query={
+                        searchQuery.trim() !== item.title
+                          ? searchQuery.trim()
+                          : ''
+                      }
+                      year={item.year}
+                      from='search'
+                      type={item.episodes.length > 1 ? 'tv' : 'movie'}
+                    />
+                  )}
+                />
               )}
             </section>
           ) : searchHistory.length > 0 ? (
@@ -1005,7 +995,7 @@ function SearchPageClient() {
       {/* 返回顶部悬浮按钮 */}
       <button
         onClick={scrollToTop}
-        className={`fixed bottom-20 md:bottom-6 right-6 z-500 w-12 h-12 bg-green-500/90 hover:bg-green-500 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out flex items-center justify-center group ${
+        className={`fixed bottom-20 md:bottom-6 right-6 z-500 w-12 h-12 bg-green-500/95 hover:bg-green-500 text-white rounded-full shadow-lg transition-all duration-300 ease-in-out flex items-center justify-center group ${
           showBackToTop
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-4 pointer-events-none'

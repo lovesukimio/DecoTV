@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 'use client';
 
+import dynamic from 'next/dynamic';
 import {
   createContext,
   ReactNode,
@@ -32,7 +33,13 @@ import {
   sanitizeFileName,
 } from '@/lib/download-types';
 
-import DownloadManagerModal from '@/components/DownloadManagerModal';
+import type { DownloadManagerModalProps } from '../components/DownloadManagerModal';
+
+const DownloadManagerModal = dynamic<DownloadManagerModalProps>(
+  () =>
+    import('../components/DownloadManagerModal.js').then((mod) => mod.default),
+  { ssr: false },
+);
 
 const MAX_SEGMENT_CONCURRENCY = 6;
 const SPEED_WINDOW_MS = 5000;
@@ -1198,15 +1205,17 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
   return (
     <DownloadManagerContext.Provider value={contextValue}>
       {children}
-      <DownloadManagerModal
-        isOpen={isManagerOpen}
-        tasks={tasks}
-        onClose={closeManager}
-        onPause={pauseTask}
-        onResume={resumeTask}
-        onRetry={retryTask}
-        onRemove={removeTask}
-      />
+      {isManagerOpen && (
+        <DownloadManagerModal
+          isOpen={isManagerOpen}
+          tasks={tasks}
+          onClose={closeManager}
+          onPause={pauseTask}
+          onResume={resumeTask}
+          onRetry={retryTask}
+          onRemove={removeTask}
+        />
+      )}
     </DownloadManagerContext.Provider>
   );
 }

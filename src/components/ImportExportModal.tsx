@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle, Download, Upload, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
-interface ImportResult {
+export interface ImportResult {
   success: number;
   failed: number;
   skipped: number;
@@ -16,7 +16,7 @@ interface ImportResult {
   }>;
 }
 
-interface ImportExportModalProps {
+export interface ImportExportModalProps {
   isOpen: boolean;
   mode: 'import' | 'export' | 'result';
   onClose: () => void;

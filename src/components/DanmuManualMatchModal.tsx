@@ -26,7 +26,7 @@ interface DanmuSearchAnimeItem {
   episodes: DanmuSearchEpisodeItem[];
 }
 
-interface DanmuManualMatchModalProps {
+export interface DanmuManualMatchModalProps {
   isOpen: boolean;
   defaultKeyword: string;
   currentEpisode: number;

@@ -63,6 +63,9 @@ export type VideoCardHandle = {
   setDoubanId: (id?: number) => void;
 };
 
+const POSTER_BLUR_DATA_URL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
 const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
   function VideoCard(
     {
@@ -576,7 +579,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           - 解决用户反馈"点击无反应"的体验问题
         */}
         <div
-          className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-150 ease-out hover:shadow-lg hover:shadow-purple-500/20 hover:z-500 active:scale-95 active:opacity-80'
+          className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-150 ease-out hover:shadow-sm hover:shadow-black/20 hover:z-500 active:scale-95 active:opacity-80'
           onClick={handleClick}
           {...longPressProps}
           style={
@@ -661,6 +664,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               loading='lazy'
               decoding='async'
               sizes='(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 15vw'
+              placeholder='blur'
+              blurDataURL={POSTER_BLUR_DATA_URL}
               onLoad={() => setIsLoading(true)}
               onError={(e) => {
                 // 图片加载失败时的重试机制
@@ -809,7 +814,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               actualYear !== 'unknown' &&
               actualYear.trim() !== '' && (
                 <div
-                  className='absolute top-2 bg-black/50 text-white text-xs font-medium px-2 py-1 rounded backdrop-blur-sm shadow-sm transition-all duration-300 ease-out group-hover:opacity-90 left-2'
+                  className='absolute top-2 bg-black/75 text-white text-xs font-medium px-2 py-1 rounded shadow-sm transition-all duration-300 ease-out group-hover:opacity-90 left-2'
                   style={
                     {
                       WebkitUserSelect: 'none',
@@ -852,13 +857,13 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                       EP {String(currentEpisode).padStart(2, '0')}
                     </span>
                     {/* 右侧：总集数 - 半透明黑背景 */}
-                    <span className='flex items-center bg-black/70 backdrop-blur-sm px-1.5 py-0.5 text-[10px] font-medium text-white/60'>
+                    <span className='flex items-center bg-black/80 px-1.5 py-0.5 text-[10px] font-medium text-white/60'>
                       / {actualEpisodes}
                     </span>
                   </>
                 ) : (
                   /* 仅显示总集数 */
-                  <span className='flex items-center bg-black/70 backdrop-blur-sm px-2 py-0.5 text-[10px] font-medium text-white/80'>
+                  <span className='flex items-center bg-black/80 px-2 py-0.5 text-[10px] font-medium text-white/80'>
                     {actualEpisodes} 集
                   </span>
                 )}
@@ -1019,7 +1024,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                             }}
                           >
                             <div
-                              className='bg-gray-800/90 backdrop-blur-sm text-white text-xs sm:text-xs rounded-lg shadow-xl border border-white/10 p-1.5 sm:p-2 min-w-25 sm:min-w-30 max-w-35 sm:max-w-50 overflow-hidden'
+                              className='bg-gray-800/95 text-white text-xs sm:text-xs rounded-lg shadow-lg border border-white/10 p-1.5 sm:p-2 min-w-25 sm:min-w-30 max-w-35 sm:max-w-50 overflow-hidden'
                               style={
                                 {
                                   WebkitUserSelect: 'none',

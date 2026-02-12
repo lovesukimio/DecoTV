@@ -7,6 +7,7 @@ import Artplayer from 'artplayer';
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku';
 import Hls from 'hls.js';
 import { Download, Heart } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -30,18 +31,33 @@ import { isIOSPlatform, useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
 import { useDoubanInfo } from '@/hooks/useDoubanInfo';
 
-import DanmuManualMatchModal, {
-  type DanmuManualSelection,
-} from '@/components/DanmuManualMatchModal';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import { MovieMetaInfo } from '@/components/MovieMetaInfo';
 import { MovieRecommends } from '@/components/MovieRecommends';
 import { MovieReviews } from '@/components/MovieReviews';
 import PageLayout from '@/components/PageLayout';
-import SkipConfigPanel from '@/components/SkipConfigPanel';
 import Toast from '@/components/Toast';
 
 import { useDownloadManager } from '@/contexts/DownloadManagerContext';
+
+import type {
+  DanmuManualMatchModalProps,
+  DanmuManualSelection,
+} from '../../components/DanmuManualMatchModal';
+import type { SkipConfigPanelProps } from '../../components/SkipConfigPanel';
+
+const DanmuManualMatchModal = dynamic<DanmuManualMatchModalProps>(
+  () =>
+    import('../../components/DanmuManualMatchModal.js').then(
+      (mod) => mod.default,
+    ),
+  { ssr: false },
+);
+const SkipConfigPanel = dynamic<SkipConfigPanelProps>(
+  () =>
+    import('../../components/SkipConfigPanel.js').then((mod) => mod.default),
+  { ssr: false },
+);
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -2484,7 +2500,7 @@ function PlayPageClient() {
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
               }
-              className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
+              className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/90 hover:bg-white dark:bg-gray-800/90 dark:hover:bg-gray-800 border border-gray-200/60 dark:border-gray-700/60 shadow-sm hover:shadow-md transition-all duration-200'
               title={
                 isEpisodeSelectorCollapsed ? '显示选集面板' : '隐藏选集面板'
               }
@@ -2542,7 +2558,7 @@ function PlayPageClient() {
                   ref={danmuMetaWrapRef}
                   className='absolute top-3 right-3 z-40 flex items-end gap-2'
                 >
-                  <div className='flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-white backdrop-blur-md shadow-lg md:max-w-90'>
+                  <div className='flex max-w-[80vw] items-center gap-2 rounded-full border border-white/20 bg-black/75 px-3 py-1.5 text-white shadow-lg md:max-w-90'>
                     <div className='min-w-0'>
                       <button
                         ref={danmuMetaToggleRef}
@@ -2669,7 +2685,7 @@ function PlayPageClient() {
                   </div>
 
                   {showDanmuMeta && (
-                    <div className='w-[min(80vw,320px)] rounded-xl border border-white/20 bg-black/75 p-3 text-white shadow-lg backdrop-blur-md'>
+                    <div className='w-[min(80vw,320px)] rounded-xl border border-white/20 bg-black/85 p-3 text-white shadow-lg'>
                       <div className='mb-2 flex items-center justify-between gap-2'>
                         <p className='text-xs font-medium text-white/90'>
                           弹幕加载详情
@@ -2731,7 +2747,7 @@ function PlayPageClient() {
 
                 {/* 换源加载提示 - 使用播放器自带的加载动画 */}
                 {isVideoLoading && (
-                  <div className='absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl'>
+                  <div className='absolute inset-0 z-50 flex items-center justify-center bg-black/70 rounded-xl'>
                     <div className='flex flex-col items-center gap-3'>
                       <div className='w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin' />
                       <span className='text-white/80 text-sm'>
@@ -2905,24 +2921,28 @@ function PlayPageClient() {
           year={videoYear}
         />
 
-        <DanmuManualMatchModal
-          isOpen={isDanmuManualModalOpen}
-          defaultKeyword={videoTitle}
-          currentEpisode={currentEpisodeIndex + 1}
-          onClose={() => setIsDanmuManualModalOpen(false)}
-          onApply={handleApplyManualDanmuSelection}
-        />
+        {isDanmuManualModalOpen && (
+          <DanmuManualMatchModal
+            isOpen={isDanmuManualModalOpen}
+            defaultKeyword={videoTitle}
+            currentEpisode={currentEpisodeIndex + 1}
+            onClose={() => setIsDanmuManualModalOpen(false)}
+            onApply={handleApplyManualDanmuSelection}
+          />
+        )}
       </div>
 
       {/* 跳过片头片尾设置面板 */}
-      <SkipConfigPanel
-        isOpen={isSkipConfigPanelOpen}
-        onClose={() => setIsSkipConfigPanelOpen(false)}
-        config={skipConfig}
-        onChange={handleSkipConfigChange}
-        videoDuration={artPlayerRef.current?.duration || 0}
-        currentTime={artPlayerRef.current?.currentTime || 0}
-      />
+      {isSkipConfigPanelOpen && (
+        <SkipConfigPanel
+          isOpen={isSkipConfigPanelOpen}
+          onClose={() => setIsSkipConfigPanelOpen(false)}
+          config={skipConfig}
+          onChange={handleSkipConfigChange}
+          videoDuration={artPlayerRef.current?.duration || 0}
+          currentTime={artPlayerRef.current?.currentTime || 0}
+        />
+      )}
 
       {/* Toast 通知 */}
       {toast.show && (

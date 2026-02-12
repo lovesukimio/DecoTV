@@ -3,7 +3,7 @@
 import { Clock, FastForward, Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-interface SkipConfigPanelProps {
+export interface SkipConfigPanelProps {
   isOpen: boolean;
   onClose: () => void;
   config: {

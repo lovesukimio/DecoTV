@@ -194,7 +194,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
     >
       {/* 背景遮罩 */}
       <div
-        className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out ${
+        className={`absolute inset-0 bg-black/70 transition-opacity duration-200 ease-out ${
           isAnimating ? 'opacity-100' : 'opacity-0'
         }`}
         onClick={onClose}
@@ -207,7 +207,6 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
           e.preventDefault();
         }}
         style={{
-          backdropFilter: 'blur(4px)',
           willChange: 'opacity',
           touchAction: 'none', // 禁用所有触摸操作
         }}
@@ -215,7 +214,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
 
       {/* 操作表单 */}
       <div
-        className='relative w-full max-w-lg mx-4 mb-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl transition-all duration-200 ease-out'
+        className='relative w-full max-w-lg mx-4 mb-4 rounded-2xl border border-gray-200/70 bg-white shadow-xl transition-all duration-200 ease-out dark:border-gray-700/70 dark:bg-gray-900'
         onTouchMove={(e) => {
           // 允许操作表单内部滚动，阻止事件冒泡到外层
           e.stopPropagation();
@@ -244,6 +243,8 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
                     origin === 'live' ? 'object-contain' : 'object-cover'
                   }
                   loading='lazy'
+                  decoding='async'
+                  sizes='48px'
                 />
               </div>
             )}
