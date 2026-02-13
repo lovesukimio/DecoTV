@@ -1,7 +1,14 @@
 'use client';
 
 import { CheckCircle2, Loader2, Search, Sparkles } from 'lucide-react';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import useBrowseVideos from '@/hooks/useBrowseVideos';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
@@ -9,7 +16,17 @@ import { useSourceFilter } from '@/hooks/useSourceFilter';
 import SourceBrowserIcon from '@/components/icons/SourceBrowserIcon';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
-import VirtualizedVideoGrid from '@/components/VirtualizedVideoGrid';
+
+const MAX_GRID_ITEMS = 540;
+
+function parseDoubanId(value: unknown): number | undefined {
+  if (value == null) return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return parsed;
+}
 
 function SourceBrowserPageClient() {
   const {
@@ -23,6 +40,7 @@ function SourceBrowserPageClient() {
   } = useSourceFilter();
   const [keyword, setKeyword] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const normalizedKeyword = keyword.trim().toLowerCase();
   const filteredSources = useMemo(() => {
@@ -65,13 +83,30 @@ function SourceBrowserPageClient() {
     isLoading: isLoadingCategoryItems,
     isLoadingMore: isLoadingMoreCategoryItems,
     error: categoryError,
-    loadMore: handleLoadMore,
+    loadMore: loadMoreCategoryItems,
   } = useBrowseVideos({
     sourceKey: currentSource,
     sourceApi: currentSourceConfig?.api ?? null,
     categoryId: selectedCategoryId,
     enabled: shouldBrowseCategory,
   });
+
+  const hasReachedDomLimit = categoryItems.length >= MAX_GRID_ITEMS;
+  const activeHasMore = hasMoreCategoryItems && !hasReachedDomLimit;
+  const activeIsLoadingMore =
+    isLoadingCategoryItems || isLoadingMoreCategoryItems;
+
+  const handleLoadMore = useCallback(() => {
+    if (!activeHasMore || activeIsLoadingMore || categoryItems.length === 0) {
+      return;
+    }
+    loadMoreCategoryItems();
+  }, [
+    activeHasMore,
+    activeIsLoadingMore,
+    categoryItems.length,
+    loadMoreCategoryItems,
+  ]);
 
   useEffect(() => {
     if (currentSource === 'auto') {
@@ -92,6 +127,35 @@ function SourceBrowserPageClient() {
       setSelectedCategoryId(String(sourceCategories[0].type_id));
     }
   }, [currentSource, selectedCategoryId, sourceCategories]);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+    if (!activeHasMore || activeIsLoadingMore || categoryItems.length === 0)
+      return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          handleLoadMore();
+        });
+      },
+      {
+        root: null,
+        rootMargin: '520px 0px',
+        threshold: 0,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [
+    activeHasMore,
+    activeIsLoadingMore,
+    categoryItems.length,
+    handleLoadMore,
+  ]);
 
   return (
     <PageLayout activePath='/source-browser'>
@@ -262,54 +326,70 @@ function SourceBrowserPageClient() {
                   </div>
                 ) : (
                   <div className='mt-4'>
-                    <VirtualizedVideoGrid
-                      mode='always'
-                      data={categoryItems}
-                      virtualizationThreshold={140}
-                      overscan={2000}
-                      onEndReached={handleLoadMore}
-                      hasMore={hasMoreCategoryItems}
-                      isLoadingMore={
-                        isLoadingCategoryItems || isLoadingMoreCategoryItems
-                      }
-                      className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
-                      itemKey={(item) =>
-                        String(
-                          item.vod_id ||
-                            `${item.vod_name || 'item'}-${item.vod_year || ''}-${item.vod_pic || ''}`,
-                        )
-                      }
-                      renderItem={(item) => (
-                        <VideoCard
-                          id={String(item.vod_id || '')}
-                          source={currentSource}
-                          source_name={currentSourceName}
-                          title={item.vod_name || 'Untitled'}
-                          poster={item.vod_pic || ''}
-                          year={item.vod_year || ''}
-                          from='search'
-                        />
-                      )}
-                    />
+                    <div className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
+                      {categoryItems.map((item, index) => (
+                        <div
+                          key={String(
+                            item.vod_id ||
+                              `${item.vod_name || 'item'}-${item.vod_year || ''}-${item.vod_pic || ''}-${index}`,
+                          )}
+                          className='w-full'
+                          style={{
+                            contentVisibility: 'auto',
+                            containIntrinsicSize: '300px',
+                          }}
+                        >
+                          <VideoCard
+                            id={String(item.vod_id || '')}
+                            source={currentSource}
+                            source_name={currentSourceName}
+                            title={item.vod_name || 'Untitled'}
+                            poster={item.vod_pic || ''}
+                            year={item.vod_year || ''}
+                            douban_id={parseDoubanId(
+                              item.vod_douban_id ?? item.douban_id,
+                            )}
+                            from='search'
+                          />
+                        </div>
+                      ))}
+                    </div>
 
-                    {(hasMoreCategoryItems || isLoadingMoreCategoryItems) && (
-                      <div className='mt-8 flex items-center justify-center'>
-                        {isLoadingMoreCategoryItems ? (
-                          <div className='inline-flex items-center gap-2 rounded-xl border border-slate-600/70 bg-slate-800/45 px-4 py-2 text-sm text-slate-300'>
-                            <Loader2 className='h-4 w-4 animate-spin' />
-                            正在加载下一页...
-                          </div>
+                    <div className='mt-10 flex flex-col items-center gap-4 pb-2'>
+                      <div
+                        ref={loadMoreSentinelRef}
+                        className='h-1 w-full'
+                        aria-hidden='true'
+                      />
+                      <button
+                        type='button'
+                        onClick={handleLoadMore}
+                        disabled={!activeHasMore || activeIsLoadingMore}
+                        className='inline-flex min-w-40 items-center justify-center gap-2 rounded-xl border border-white/20 bg-slate-900/70 px-5 py-2.5 text-sm font-medium text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.14)_inset,0_10px_30px_-16px_rgba(16,185,129,0.65)] backdrop-blur-md transition hover:border-emerald-300/50 hover:bg-slate-800/80 disabled:cursor-not-allowed disabled:border-slate-600/60 disabled:bg-slate-800/45 disabled:text-slate-400'
+                      >
+                        {activeIsLoadingMore ? (
+                          <>
+                            <span
+                              className='inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-400/50 border-t-emerald-300'
+                              aria-hidden='true'
+                            />
+                            加载中...
+                          </>
+                        ) : activeHasMore ? (
+                          '加载更多'
+                        ) : hasReachedDomLimit ? (
+                          '已达性能上限'
                         ) : (
-                          <button
-                            type='button'
-                            onClick={handleLoadMore}
-                            className='inline-flex items-center gap-2 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/25'
-                          >
-                            加载下一页
-                          </button>
+                          '已到底部'
                         )}
-                      </div>
-                    )}
+                      </button>
+                      {hasReachedDomLimit && (
+                        <p className='text-xs text-slate-400'>
+                          已限制最大渲染数量（{MAX_GRID_ITEMS}
+                          ），请切换分类继续浏览。
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
               </>

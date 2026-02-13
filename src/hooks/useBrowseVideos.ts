@@ -8,6 +8,8 @@ export interface BrowseVideoItem {
   vod_pic?: string;
   vod_year?: string;
   vod_remarks?: string;
+  vod_douban_id?: string | number;
+  douban_id?: string | number;
 }
 
 interface SourceVideoListResponse {

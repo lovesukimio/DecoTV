@@ -144,6 +144,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         ? 'movie'
         : 'tv'
       : type;
+    const posterQuality = useMemo(() => {
+      if (from === 'douban') return 58;
+      if (from === 'search') return 62;
+      return 70;
+    }, [from]);
+
+    const posterFetchPriority = useMemo(() => {
+      if (from === 'douban' || from === 'search') return 'auto' as const;
+      return 'low' as const;
+    }, [from]);
 
     useEffect(() => {
       setIsLoading(false);
@@ -611,6 +621,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             e.stopPropagation();
 
             // 右键弹出操作菜单
+            setIsMobileActionSheetMounted(true);
             setShowMobileActions(true);
 
             // 异步检查收藏状态，不阻塞菜单显示
@@ -673,10 +684,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               }`}
               referrerPolicy='no-referrer'
               loading='lazy'
-              fetchPriority='low'
+              fetchPriority={posterFetchPriority}
               decoding='async'
               sizes='(max-width: 640px) 31vw, (max-width: 1024px) 18vw, 12vw'
-              quality={from === 'douban' ? 62 : 70}
+              quality={posterQuality}
               unoptimized={!(from === 'douban' || from === 'search')}
               placeholder={from === 'douban' ? 'empty' : 'blur'}
               blurDataURL={POSTER_BLUR_DATA_URL}

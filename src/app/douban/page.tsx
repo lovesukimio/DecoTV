@@ -32,6 +32,26 @@ import VideoCard from '@/components/VideoCard';
 
 import { useGlobalCache } from '@/contexts/GlobalCacheContext';
 
+const MAX_GRID_ITEMS = 540;
+
+interface SourceGridItem {
+  id: string;
+  title: string;
+  poster: string;
+  rate: string;
+  year: string;
+  doubanId?: number;
+}
+
+function parseDoubanId(value: unknown): number | undefined {
+  if (value == null) return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return parsed;
+}
+
 function DoubanPageClient() {
   const searchParams = useSearchParams();
   const [doubanData, setDoubanData] = useState<DoubanItem[]>([]);
@@ -766,7 +786,7 @@ function DoubanPageClient() {
     setCurrentPage((prev) => prev + 1);
   }, [hasMore, isLoadingMore, loading]);
 
-  const sourceItems = useMemo<DoubanItem[]>(
+  const sourceItems = useMemo<SourceGridItem[]>(
     () =>
       sourceCategoryItems.map((item) => ({
         id: String(item.vod_id || ''),
@@ -774,17 +794,20 @@ function DoubanPageClient() {
         poster: item.vod_pic || '',
         rate: '',
         year: item.vod_year || '',
+        doubanId: parseDoubanId(item.vod_douban_id ?? item.douban_id),
       })),
     [sourceCategoryItems],
   );
 
-  const activeHasMore = isSourceMode ? hasMoreSourceItems : hasMore;
-  const activeIsLoadingMore = isSourceMode
-    ? isLoadingMoreSourceItems
-    : isLoadingMore;
   const activeItemsCount = isSourceMode
     ? sourceItems.length
     : doubanData.length;
+  const hasReachedDomLimit = activeItemsCount >= MAX_GRID_ITEMS;
+  const activeHasMore =
+    (isSourceMode ? hasMoreSourceItems : hasMore) && !hasReachedDomLimit;
+  const activeIsLoadingMore = isSourceMode
+    ? isLoadingMoreSourceItems
+    : isLoadingMore;
 
   const handleLoadMore = useCallback(() => {
     if (isSourceMode) {
@@ -1217,6 +1240,7 @@ function DoubanPageClient() {
                       title={item.title}
                       poster={item.poster}
                       year={item.year}
+                      douban_id={item.doubanId}
                       type={type === 'movie' ? 'movie' : ''}
                     />
                   </div>
@@ -1288,10 +1312,17 @@ function DoubanPageClient() {
                   </>
                 ) : activeHasMore ? (
                   '加载更多'
+                ) : hasReachedDomLimit ? (
+                  '已达性能上限'
                 ) : (
                   '已到底部'
                 )}
               </button>
+              {hasReachedDomLimit && (
+                <p className='text-xs text-slate-400'>
+                  已限制最大渲染数量（{MAX_GRID_ITEMS}），请切换分类继续浏览。
+                </p>
+              )}
             </div>
           )}
         </div>
