@@ -2491,6 +2491,7 @@ function LivePageClient() {
                                       alt={channel.name}
                                       className='w-full h-full rounded object-contain'
                                       loading='lazy'
+                                      decoding='async'
                                     />
                                   ) : (
                                     <Tv className='w-5 h-5 text-gray-500' />
@@ -2720,6 +2721,7 @@ function LivePageClient() {
                         alt={currentChannel.name}
                         className='w-full h-full rounded object-contain'
                         loading='lazy'
+                        decoding='async'
                       />
                     ) : (
                       <Tv className='w-10 h-10 text-gray-500' />
