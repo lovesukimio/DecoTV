@@ -3,9 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import type { AdminConfig } from '@/lib/admin.types';
+import { persistAdminConfigMutation } from '@/lib/admin-config-mutation';
 import { verifyApiAuth } from '@/lib/auth';
-import { getConfig, invalidateConfigCache } from '@/lib/config';
-import { db } from '@/lib/db';
+import { getConfig } from '@/lib/config';
 import { normalizePanSouConfig } from '@/lib/pansou';
 
 export const runtime = 'nodejs';
@@ -50,8 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     adminConfig.PanSouConfig = nextPanSouConfig;
-    await db.saveAdminConfig(adminConfig);
-    invalidateConfigCache();
+    await persistAdminConfigMutation(adminConfig);
 
     return NextResponse.json(
       {

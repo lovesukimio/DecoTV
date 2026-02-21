@@ -2,9 +2,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { persistAdminConfigMutation } from '@/lib/admin-config-mutation';
 import { verifyApiAuth } from '@/lib/auth';
 import { getConfig, getLocalModeConfig } from '@/lib/config';
-import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -144,8 +144,7 @@ export async function POST(request: NextRequest) {
       LoginBackground: LoginBackground || '',
     };
 
-    // 写入数据库
-    await db.saveAdminConfig(adminConfig);
+    await persistAdminConfigMutation(adminConfig);
 
     return NextResponse.json(
       { ok: true },

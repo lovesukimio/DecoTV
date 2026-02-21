@@ -4,8 +4,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { promisify } from 'util';
 import { gunzip } from 'zlib';
 
+import { persistAdminConfigMutation } from '@/lib/admin-config-mutation';
 import { verifyApiAuth } from '@/lib/auth';
-import { configSelfCheck, setCachedConfig } from '@/lib/config';
+import { configSelfCheck } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
 
@@ -93,8 +94,7 @@ export async function POST(req: NextRequest) {
 
     // 导入管理员配置
     importData.data.adminConfig = configSelfCheck(importData.data.adminConfig);
-    await db.saveAdminConfig(importData.data.adminConfig);
-    await setCachedConfig(importData.data.adminConfig);
+    await persistAdminConfigMutation(importData.data.adminConfig);
 
     // 导入用户数据
     const userData = importData.data.userData;

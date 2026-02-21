@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { GripVertical } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -8298,6 +8299,7 @@ const PanSouConfigComponent = ({
 };
 
 function AdminPageClient() {
+  const router = useRouter();
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
   const [config, setConfig] = useState<AdminConfig | null>(null);
@@ -8407,6 +8409,11 @@ function AdminPageClient() {
     },
     [loadLocalConfig],
   );
+
+  const refreshConfigAfterMutation = useCallback(async () => {
+    await fetchConfig();
+    router.refresh();
+  }, [fetchConfig, router]);
 
   // 同步配置到后端内存（本地模式专用）
   const syncConfigToBackend = useCallback(async (configToSync: AdminConfig) => {
@@ -8624,7 +8631,7 @@ function AdminPageClient() {
           throw new Error(`重置失败: ${response.status}`);
         }
         showSuccess('重置成功，请刷新页面！', showAlert);
-        await fetchConfig();
+        await refreshConfigAfterMutation();
         setShowResetConfigModal(false);
       } catch (err) {
         showError(err instanceof Error ? err.message : '重置失败', showAlert);
@@ -8753,7 +8760,7 @@ function AdminPageClient() {
             >
               <ConfigFileComponent
                 config={config}
-                refreshConfig={fetchConfig}
+                refreshConfig={refreshConfigAfterMutation}
                 storageMode={storageMode}
                 updateConfig={updateConfig}
               />
@@ -8772,7 +8779,10 @@ function AdminPageClient() {
             isExpanded={expandedTabs.siteConfig}
             onToggle={() => toggleTab('siteConfig')}
           >
-            <SiteConfigComponent config={config} refreshConfig={fetchConfig} />
+            <SiteConfigComponent
+              config={config}
+              refreshConfig={refreshConfigAfterMutation}
+            />
           </CollapsibleTab>
 
           <div className='space-y-4'>
@@ -8788,7 +8798,7 @@ function AdminPageClient() {
               <UserConfig
                 config={config}
                 role={role}
-                refreshConfig={fetchConfig}
+                refreshConfig={refreshConfigAfterMutation}
               />
             </CollapsibleTab>
 
@@ -8803,7 +8813,7 @@ function AdminPageClient() {
             >
               <VideoSourceConfig
                 config={config}
-                refreshConfig={fetchConfig}
+                refreshConfig={refreshConfigAfterMutation}
                 storageMode={storageMode}
                 updateConfig={updateConfig}
               />
@@ -8820,7 +8830,7 @@ function AdminPageClient() {
             >
               <LiveSourceConfig
                 config={config}
-                refreshConfig={fetchConfig}
+                refreshConfig={refreshConfigAfterMutation}
                 storageMode={storageMode}
                 updateConfig={updateConfig}
               />
@@ -9366,7 +9376,7 @@ function AdminPageClient() {
             >
               <DanmuConfigComponent
                 config={config}
-                refreshConfig={fetchConfig}
+                refreshConfig={refreshConfigAfterMutation}
               />
             </CollapsibleTab>
 
@@ -9378,7 +9388,10 @@ function AdminPageClient() {
               isExpanded={expandedTabs.pansouConfig}
               onToggle={() => toggleTab('pansouConfig')}
             >
-              <PanSouConfigPanel config={config} refreshConfig={fetchConfig} />
+              <PanSouConfigPanel
+                config={config}
+                refreshConfig={refreshConfigAfterMutation}
+              />
             </CollapsibleTab>
 
             {/* 分类配置标签 */}
@@ -9393,7 +9406,10 @@ function AdminPageClient() {
               isExpanded={expandedTabs.categoryConfig}
               onToggle={() => toggleTab('categoryConfig')}
             >
-              <CategoryConfig config={config} refreshConfig={fetchConfig} />
+              <CategoryConfig
+                config={config}
+                refreshConfig={refreshConfigAfterMutation}
+              />
             </CollapsibleTab>
 
             {/* 数据迁移标签 - 仅站长可见 */}
@@ -9409,7 +9425,7 @@ function AdminPageClient() {
                 isExpanded={expandedTabs.dataMigration}
                 onToggle={() => toggleTab('dataMigration')}
               >
-                <DataMigration onRefreshConfig={fetchConfig} />
+                <DataMigration onRefreshConfig={refreshConfigAfterMutation} />
               </CollapsibleTab>
             )}
           </div>
