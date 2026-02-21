@@ -101,10 +101,8 @@ export async function POST(req: NextRequest) {
     for (const username in userData) {
       const user = userData[username];
 
-      // 重新注册用户（包含密码）
-      if (user.password) {
-        await db.registerUser(username, user.password);
-      }
+      // NOTE: 即使密码为空也需注册用户，否则播放记录/收藏等数据会成为孤儿数据
+      await db.registerUser(username, user.password || '');
 
       // 导入播放记录
       if (user.playRecords) {

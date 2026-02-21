@@ -5156,7 +5156,7 @@ const SiteConfigComponent = ({
           config.SiteConfig.DoubanImageProxyType || 'cmliussss-cdn-tencent',
         DoubanImageProxy: config.SiteConfig.DoubanImageProxy || '',
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
-        FluidSearch: config.SiteConfig.FluidSearch || true,
+        FluidSearch: config.SiteConfig.FluidSearch ?? true,
         LoginBackground:
           config.SiteConfig.LoginBackground ||
           'https://pan.yyds.nyc.mn/background.png',
@@ -7081,29 +7081,31 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
       {/* 服务器配置区域 */}
       {danmuSettings.enabled && (
         <div className='space-y-6'>
-          {/* 自定义弹幕提示 */}
-          <div className='rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/15 p-4'>
-            <div className='flex items-start gap-2'>
-              <AlertTriangle className='w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5' />
-              <div className='space-y-1'>
-                <p className='text-sm font-medium text-amber-900 dark:text-amber-200'>
-                  内置演示站仅供测试，极其不稳定，强烈建议用户自行部署。
-                </p>
-                <p className='text-xs text-amber-700 dark:text-amber-300 flex flex-wrap items-center gap-1.5'>
-                  自部署教程:
-                  <a
-                    href={DEPLOYMENT_GUIDE_URL}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    className='inline-flex items-center gap-1 font-medium underline hover:text-amber-900 dark:hover:text-amber-100'
-                  >
-                    huangxd-/danmu_api
-                    <ExternalLink className='w-3 h-3' />
-                  </a>
-                </p>
+          {/* 仅当使用内置演示站时显示警告 */}
+          {danmuSettings.serverUrl === RECOMMENDED_DANMU_SERVER.url && (
+            <div className='rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/15 p-4'>
+              <div className='flex items-start gap-2'>
+                <AlertTriangle className='w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5' />
+                <div className='space-y-1'>
+                  <p className='text-sm font-medium text-amber-900 dark:text-amber-200'>
+                    内置演示站仅供测试，极其不稳定，强烈建议用户自行部署。
+                  </p>
+                  <p className='text-xs text-amber-700 dark:text-amber-300 flex flex-wrap items-center gap-1.5'>
+                    自部署教程:
+                    <a
+                      href={DEPLOYMENT_GUIDE_URL}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      className='inline-flex items-center gap-1 font-medium underline hover:text-amber-900 dark:hover:text-amber-100'
+                    >
+                      huangxd-/danmu_api
+                      <ExternalLink className='w-3 h-3' />
+                    </a>
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* 服务器地址 & Token */}
           <div className='bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'>

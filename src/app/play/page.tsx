@@ -70,6 +70,44 @@ interface WakeLockSentinel {
   removeEventListener(type: 'release', listener: () => void): void;
 }
 
+// 弹幕播放器偏好设置持久化
+const DANMUKU_SETTINGS_KEY = 'decotv_danmuku_settings';
+const DEFAULT_DANMUKU_SETTINGS = { speed: 5, opacity: 1, fontSize: 25 };
+
+/**
+ * 从 localStorage 读取弹幕播放器偏好
+ * @returns 合并默认值后的弹幕设置
+ */
+function loadDanmukuSettings(): typeof DEFAULT_DANMUKU_SETTINGS {
+  try {
+    const saved = localStorage.getItem(DANMUKU_SETTINGS_KEY);
+    if (saved) {
+      return { ...DEFAULT_DANMUKU_SETTINGS, ...JSON.parse(saved) };
+    }
+  } catch {
+    // NOTE: SSR 或 localStorage 不可用时静默回退
+  }
+  return { ...DEFAULT_DANMUKU_SETTINGS };
+}
+
+/**
+ * 将弹幕播放器偏好写入 localStorage
+ * @param settings 要持久化的设置（可部分更新）
+ */
+function saveDanmukuSettings(
+  settings: Partial<typeof DEFAULT_DANMUKU_SETTINGS>,
+) {
+  try {
+    const current = loadDanmukuSettings();
+    localStorage.setItem(
+      DANMUKU_SETTINGS_KEY,
+      JSON.stringify({ ...current, ...settings }),
+    );
+  } catch {
+    // NOTE: localStorage 不可用时静默忽略
+  }
+}
+
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2051,25 +2089,51 @@ function PlayPageClient() {
         ],
         // 弹幕插件 - 只保留原生蓝色设置与发弹幕 UI
         plugins: [
-          artplayerPluginDanmuku({
-            danmuku: [], // 初始为空，后续通过 load() 加载
-            speed: 5,
-            opacity: 1,
-            fontSize: 25,
-            color: '#FFFFFF',
-            mode: 0,
-            margin: [10, '25%'],
-            antiOverlap: true,
-            synchronousPlayback: false,
-            lockTime: 5,
-            maxLength: 200,
-            theme: 'dark',
-            heatmap: false,
-            visible: true,
-            emitter: true,
-          }),
+          // NOTE: 从 localStorage 读取用户上次的弹幕偏好设置
+          artplayerPluginDanmuku(
+            (() => {
+              const savedSettings = loadDanmukuSettings();
+              return {
+                danmuku: [], // 初始为空，后续通过 load() 加载
+                speed: savedSettings.speed,
+                opacity: savedSettings.opacity,
+                fontSize: savedSettings.fontSize,
+                color: '#FFFFFF',
+                mode: 0,
+                margin: [10, '25%'],
+                antiOverlap: true,
+                synchronousPlayback: false,
+                lockTime: 5,
+                maxLength: 200,
+                theme: 'dark',
+                heatmap: false,
+                visible: true,
+                emitter: true,
+              };
+            })(),
+          ),
         ],
       });
+
+      // 监听弹幕设置变更事件，将用户偏好持久化到 localStorage
+      artPlayerRef.current.on(
+        'artplayerPluginDanmuku:opacity' as any,
+        (opacity: number) => {
+          saveDanmukuSettings({ opacity });
+        },
+      );
+      artPlayerRef.current.on(
+        'artplayerPluginDanmuku:fontSize' as any,
+        (fontSize: number) => {
+          saveDanmukuSettings({ fontSize });
+        },
+      );
+      artPlayerRef.current.on(
+        'artplayerPluginDanmuku:speed' as any,
+        (speed: number) => {
+          saveDanmukuSettings({ speed });
+        },
+      );
 
       // 播放器创建完成后，尝试立即注入当前已获取的弹幕
       if (danmuList.length > 0) {

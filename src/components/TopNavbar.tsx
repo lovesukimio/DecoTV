@@ -77,7 +77,7 @@ const NAV_ITEMS = [
     label: '源浏览器',
     chip: 'chip-source-browser',
     type: 'exact',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'netdisk',
@@ -86,7 +86,7 @@ const NAV_ITEMS = [
     label: '网盘',
     chip: 'chip-netdisk',
     type: 'exact',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'movie',
@@ -96,7 +96,7 @@ const NAV_ITEMS = [
     chip: 'chip-movie',
     type: 'douban',
     doubanType: 'movie',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'tv',
@@ -106,7 +106,7 @@ const NAV_ITEMS = [
     chip: 'chip-tv',
     type: 'douban',
     doubanType: 'tv',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'anime',
@@ -116,7 +116,7 @@ const NAV_ITEMS = [
     chip: 'chip-anime',
     type: 'douban',
     doubanType: 'anime',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'show',
@@ -126,7 +126,7 @@ const NAV_ITEMS = [
     chip: 'chip-show',
     type: 'douban',
     doubanType: 'show',
-    openInNewTab: true,
+    openInNewTab: false,
   },
   {
     key: 'live',
@@ -135,7 +135,7 @@ const NAV_ITEMS = [
     label: '直播',
     chip: 'chip-live',
     type: 'exact',
-    openInNewTab: true,
+    openInNewTab: false,
   },
 ] as const;
 
