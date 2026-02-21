@@ -56,14 +56,14 @@ export function normalizePanSouUsername(value: unknown): string {
   if (typeof value !== 'string') {
     return '';
   }
-  return value.trim();
+  return value.replace(/[\r\n]/g, '').trim();
 }
 
 export function normalizePanSouPassword(value: unknown): string {
   if (typeof value !== 'string') {
     return '';
   }
-  return value;
+  return value.replace(/[\r\n]/g, '').trim();
 }
 
 export function getDefaultPanSouNode(): PanSouNodeConfig {
@@ -266,9 +266,9 @@ export function buildPanSouAuthorizationHeader(args: {
   const password = normalizePanSouPassword(args.password);
 
   if (username && password) {
-    const encoded = Buffer.from(`${username}:${password}`, 'utf8').toString(
-      'base64',
-    );
+    const encoded = Buffer.from(`${username}:${password}`, 'utf8')
+      .toString('base64')
+      .replace(/\s+/g, '');
     return `Basic ${encoded}`;
   }
 
@@ -277,7 +277,10 @@ export function buildPanSouAuthorizationHeader(args: {
     return `Bearer ${token}`;
   }
 
-  return args.fallbackAuthorization || '';
+  if (typeof args.fallbackAuthorization !== 'string') {
+    return '';
+  }
+  return args.fallbackAuthorization.replace(/[\r\n]/g, '').trim();
 }
 
 export function parsePluginNames(value: unknown): string[] {
