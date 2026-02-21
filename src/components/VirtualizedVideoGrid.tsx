@@ -6,7 +6,7 @@ import { VirtuosoGrid } from 'react-virtuoso';
 type VirtualizationMode = 'auto' | 'always' | 'never';
 
 interface VirtualizedVideoGridProps<T> {
-  data: T[];
+  data: T[] | null | undefined;
   className: string;
   itemClassName?: string;
   itemKey: (item: T, index: number) => string;
@@ -78,7 +78,11 @@ export default function VirtualizedVideoGrid<T>({
   overscan,
 }: VirtualizedVideoGridProps<T>) {
   // NOTE: 防御性保护 —— 确保 data 始终是有效数组，避免上游传入 undefined/null 时崩溃
-  const safeData = useMemo(() => data ?? ([] as T[]), [data]);
+  const dataIsArray = Array.isArray(data);
+  const safeData = useMemo(
+    () => (dataIsArray ? data : ([] as T[])),
+    [data, dataIsArray],
+  );
   const shouldVirtualize =
     mode === 'always' ||
     (mode === 'auto' && safeData.length >= virtualizationThreshold);
@@ -127,6 +131,7 @@ export default function VirtualizedVideoGrid<T>({
       </div>
     );
   }, [isLoadingMore, onEndReached]);
+  const emptyFooter = useCallback(() => null, []);
 
   const normalizedOverscan = useMemo(
     () => getAdaptiveOverscan(overscan),
@@ -135,11 +140,12 @@ export default function VirtualizedVideoGrid<T>({
   const reverseOverscan = Math.max(Math.round(normalizedOverscan * 0.85), 360);
   const mainOverscan = normalizedOverscan;
 
-  const components = onEndReached
-    ? {
-        Footer: footer,
-      }
-    : undefined;
+  const components = useMemo(
+    () => ({
+      Footer: onEndReached ? footer : emptyFooter,
+    }),
+    [emptyFooter, footer, onEndReached],
+  );
 
   const endReached = onEndReached ? handleEndReached : undefined;
 
@@ -150,6 +156,14 @@ export default function VirtualizedVideoGrid<T>({
     }),
     [normalizedOverscan],
   );
+
+  if (!dataIsArray) {
+    return (
+      <div className='py-8 text-center text-sm text-slate-500 dark:text-slate-400'>
+        加载失败，请重试
+      </div>
+    );
+  }
 
   if (!shouldVirtualize) {
     return (

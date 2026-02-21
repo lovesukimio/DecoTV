@@ -66,6 +66,37 @@ export type VideoCardHandle = {
 const POSTER_BLUR_DATA_URL =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
+const FAST_DIRECT_IMAGE_HOSTS = [
+  'img.doubanio.cmliussss.net',
+  'img.doubanio.cmliussss.com',
+  'lain.bgm.tv',
+] as const;
+
+function shouldBypassNextImageOptimization(imageUrl: string): boolean {
+  if (!imageUrl) {
+    return false;
+  }
+
+  try {
+    const url = new URL(imageUrl, 'https://decotv.local');
+    const hostname = url.hostname.toLowerCase();
+    for (const fastHost of FAST_DIRECT_IMAGE_HOSTS) {
+      if (hostname === fastHost || hostname.endsWith(`.${fastHost}`)) {
+        return true;
+      }
+    }
+  } catch {
+    const lower = imageUrl.toLowerCase();
+    for (const fastHost of FAST_DIRECT_IMAGE_HOSTS) {
+      if (lower.includes(fastHost)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
   function VideoCard(
     {
@@ -133,6 +164,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const actualTitle = title;
     const actualPoster = poster;
     const processedPoster = processImageUrl(actualPoster);
+    const shouldBypassNextImageProxy = useMemo(
+      () => shouldBypassNextImageOptimization(processedPoster),
+      [processedPoster],
+    );
+    const shouldUseUnoptimizedPoster = useMemo(
+      () =>
+        shouldBypassNextImageProxy || !(from === 'douban' || from === 'search'),
+      [from, shouldBypassNextImageProxy],
+    );
     const actualSource = source;
     const actualId = id;
     const actualDoubanId = dynamicDoubanId;
@@ -688,7 +728,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               decoding='async'
               sizes='(max-width: 640px) 31vw, (max-width: 1024px) 18vw, 12vw'
               quality={posterQuality}
-              unoptimized={!(from === 'douban' || from === 'search')}
+              unoptimized={shouldUseUnoptimizedPoster}
               placeholder={from === 'douban' ? 'empty' : 'blur'}
               blurDataURL={POSTER_BLUR_DATA_URL}
               onLoad={() => setIsLoading(true)}
