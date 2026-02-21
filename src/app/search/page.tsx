@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any,@typescript-eslint/no-non-null-assertion,no-empty */
+/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any,@typescript-eslint/no-non-null-assertion,no-empty,no-console */
 'use client';
 
 import { ChevronUp, Search, X } from 'lucide-react';
@@ -199,85 +199,95 @@ function SearchPageClient() {
   // 聚合后的结果（按标题和年份分组）
   // ✨ 只聚合相关度较高的结果（标题包含关键词或模糊匹配）
   const aggregatedResults = useMemo(() => {
-    const query = currentQueryRef.current.trim().toLowerCase();
-    const queryNoSpace = query.replace(/\s+/g, '');
+    try {
+      // NOTE: 防御性校验 —— 确保 searchResults 是有效数组
+      const safeResults = Array.isArray(searchResults) ? searchResults : [];
+      if (safeResults.length === 0) return [];
 
-    const normQuery = normalizedQuery
-      ? normalizedQuery.trim().toLowerCase()
-      : query;
-    const normQueryNoSpace = normQuery.replace(/\s+/g, '');
+      const query = currentQueryRef.current.trim().toLowerCase();
+      const queryNoSpace = query.replace(/\s+/g, '');
 
-    // 过滤：只保留标题相关的结果
-    // NOTE: 上游 API 可能返回 title/episodes 为 null 的残缺数据，先过滤再处理
-    const relevantResults = searchResults.filter((item) => {
-      if (!item || !item.title) return false;
-      const title = item.title.toLowerCase();
-      const titleNoSpace = title.replace(/\s+/g, '');
+      const normQuery = normalizedQuery
+        ? normalizedQuery.trim().toLowerCase()
+        : query;
+      const normQueryNoSpace = normQuery.replace(/\s+/g, '');
 
-      // 包含完整关键词 (检查原词和转换后的词)
-      if (
-        title.includes(query) ||
-        titleNoSpace.includes(queryNoSpace) ||
-        title.includes(normQuery) ||
-        titleNoSpace.includes(normQueryNoSpace)
-      ) {
-        return true;
-      }
+      // 过滤：只保留标题相关的结果
+      // NOTE: 上游 API 可能返回 title/episodes 为 null 的残缺数据，先过滤再处理
+      const relevantResults = safeResults.filter((item) => {
+        if (!item || !item.title) return false;
+        const title = (item.title || '').toLowerCase();
+        const titleNoSpace = title.replace(/\s+/g, '');
 
-      // 顺序包含关键词的所有字符 (检查原词)
-      let queryIndex = 0;
-      for (
-        let i = 0;
-        i < titleNoSpace.length && queryIndex < queryNoSpace.length;
-        i++
-      ) {
-        if (titleNoSpace[i] === queryNoSpace[queryIndex]) {
-          queryIndex++;
+        // 包含完整关键词 (检查原词和转换后的词)
+        if (
+          title.includes(query) ||
+          titleNoSpace.includes(queryNoSpace) ||
+          title.includes(normQuery) ||
+          titleNoSpace.includes(normQueryNoSpace)
+        ) {
+          return true;
         }
-      }
-      if (queryIndex === queryNoSpace.length) return true;
 
-      // 顺序包含关键词的所有字符 (检查转换后的词)
-      if (normQuery !== query) {
-        let normIndex = 0;
+        // 顺序包含关键词的所有字符 (检查原词)
+        let queryIndex = 0;
         for (
           let i = 0;
-          i < titleNoSpace.length && normIndex < normQueryNoSpace.length;
+          i < titleNoSpace.length && queryIndex < queryNoSpace.length;
           i++
         ) {
-          if (titleNoSpace[i] === normQueryNoSpace[normIndex]) {
-            normIndex++;
+          if (titleNoSpace[i] === queryNoSpace[queryIndex]) {
+            queryIndex++;
           }
         }
-        if (normIndex === normQueryNoSpace.length) return true;
-      }
+        if (queryIndex === queryNoSpace.length) return true;
 
-      return false;
-    });
+        // 顺序包含关键词的所有字符 (检查转换后的词)
+        if (normQuery !== query) {
+          let normIndex = 0;
+          for (
+            let i = 0;
+            i < titleNoSpace.length && normIndex < normQueryNoSpace.length;
+            i++
+          ) {
+            if (titleNoSpace[i] === normQueryNoSpace[normIndex]) {
+              normIndex++;
+            }
+          }
+          if (normIndex === normQueryNoSpace.length) return true;
+        }
 
-    const map = new Map<string, SearchResult[]>();
-    const keyOrder: string[] = []; // 记录键出现的顺序
+        return false;
+      });
 
-    relevantResults.forEach((item) => {
-      // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
-      const key = `${(item.title || '').replaceAll(' ', '')}-${
-        item.year || 'unknown'
-      }-${(item.episodes?.length ?? 0) === 1 ? 'movie' : 'tv'}`;
-      const arr = map.get(key) || [];
+      const map = new Map<string, SearchResult[]>();
+      const keyOrder: string[] = []; // 记录键出现的顺序
 
-      // 如果是新的键，记录其顺序
-      if (arr.length === 0) {
-        keyOrder.push(key);
-      }
+      relevantResults.forEach((item) => {
+        // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
+        const key = `${(item.title || '').replaceAll(' ', '')}-${
+          item.year || 'unknown'
+        }-${(item.episodes?.length ?? 0) === 1 ? 'movie' : 'tv'}`;
+        const arr = map.get(key) || [];
 
-      arr.push(item);
-      map.set(key, arr);
-    });
+        // 如果是新的键，记录其顺序
+        if (arr.length === 0) {
+          keyOrder.push(key);
+        }
 
-    // 按出现顺序返回聚合结果
-    return keyOrder.map(
-      (key) => [key, map.get(key)!] as [string, SearchResult[]],
-    );
+        arr.push(item);
+        map.set(key, arr);
+      });
+
+      // 按出现顺序返回聚合结果
+      return keyOrder.map(
+        (key) => [key, map.get(key)!] as [string, SearchResult[]],
+      );
+    } catch (err) {
+      // FIXME: 聚合计算异常时降级为空结果，避免整个渲染树崩溃
+      console.error('aggregatedResults 计算异常:', err);
+      return [];
+    }
   }, [searchResults]);
 
   // 当聚合结果变化时，如果某个聚合已存在，则调用其卡片 ref 的 set 方法增量更新
@@ -366,78 +376,96 @@ function SearchPageClient() {
 
   // 非聚合：应用筛选与排序
   const filteredAllResults = useMemo(() => {
-    const { source, title, year, yearOrder } = filterAll;
-    const filtered = searchResults.filter((item) => {
-      if (source !== 'all' && item.source !== source) return false;
-      if (title !== 'all' && item.title !== title) return false;
-      if (year !== 'all' && item.year !== year) return false;
-      return true;
-    });
+    try {
+      const safeResults = Array.isArray(searchResults) ? searchResults : [];
+      const { source, title, year, yearOrder } = filterAll;
+      const filtered = safeResults.filter((item) => {
+        if (!item) return false;
+        if (source !== 'all' && item.source !== source) return false;
+        if (title !== 'all' && item.title !== title) return false;
+        if (year !== 'all' && item.year !== year) return false;
+        return true;
+      });
 
-    // 如果是无排序状态，直接返回过滤后的原始顺序
-    if (yearOrder === 'none') {
-      return filtered;
+      // 如果是无排序状态，直接返回过滤后的原始顺序
+      if (yearOrder === 'none') {
+        return filtered;
+      }
+
+      // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
+      return filtered.sort((a, b) => {
+        // 首先按年份排序
+        const yearComp = compareYear(a.year, b.year, yearOrder);
+        if (yearComp !== 0) return yearComp;
+
+        // 年份相同时，精确匹配在前
+        const aExactMatch = (a.title || '') === searchQuery.trim();
+        const bExactMatch = (b.title || '') === searchQuery.trim();
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        // 最后按标题排序，正序时字母序，倒序时反字母序
+        return yearOrder === 'asc'
+          ? (a.title || '').localeCompare(b.title || '')
+          : (b.title || '').localeCompare(a.title || '');
+      });
+    } catch (err) {
+      console.error('filteredAllResults 计算异常:', err);
+      return [];
     }
-
-    // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
-    return filtered.sort((a, b) => {
-      // 首先按年份排序
-      const yearComp = compareYear(a.year, b.year, yearOrder);
-      if (yearComp !== 0) return yearComp;
-
-      // 年份相同时，精确匹配在前
-      const aExactMatch = a.title === searchQuery.trim();
-      const bExactMatch = b.title === searchQuery.trim();
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
-
-      // 最后按标题排序，正序时字母序，倒序时反字母序
-      return yearOrder === 'asc'
-        ? (a.title || '').localeCompare(b.title || '')
-        : (b.title || '').localeCompare(a.title || '');
-    });
   }, [searchResults, filterAll, searchQuery]);
 
   // 聚合：应用筛选与排序
   const filteredAggResults = useMemo(() => {
-    const { source, title, year, yearOrder } = filterAgg as any;
-    const filtered = aggregatedResults.filter(([_, group]) => {
-      const gTitle = group[0]?.title ?? '';
-      const gYear = group[0]?.year ?? 'unknown';
-      const hasSource =
-        source === 'all' ? true : group.some((item) => item.source === source);
-      if (!hasSource) return false;
-      if (title !== 'all' && gTitle !== title) return false;
-      if (year !== 'all' && gYear !== year) return false;
-      return true;
-    });
+    try {
+      const safeAggResults = Array.isArray(aggregatedResults)
+        ? aggregatedResults
+        : [];
+      const { source, title, year, yearOrder } = filterAgg as any;
+      const filtered = safeAggResults.filter(([_, group]) => {
+        if (!Array.isArray(group) || group.length === 0) return false;
+        const gTitle = group[0]?.title ?? '';
+        const gYear = group[0]?.year ?? 'unknown';
+        const hasSource =
+          source === 'all'
+            ? true
+            : group.some((item) => item?.source === source);
+        if (!hasSource) return false;
+        if (title !== 'all' && gTitle !== title) return false;
+        if (year !== 'all' && gYear !== year) return false;
+        return true;
+      });
 
-    // 如果是无排序状态，保持按关键字+年份+类型出现的原始顺序
-    if (yearOrder === 'none') {
-      return filtered;
+      // 如果是无排序状态，保持按关键字+年份+类型出现的原始顺序
+      if (yearOrder === 'none') {
+        return filtered;
+      }
+
+      // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
+      return filtered.sort((a, b) => {
+        // 首先按年份排序
+        const aYear = a[1][0]?.year ?? 'unknown';
+        const bYear = b[1][0]?.year ?? 'unknown';
+        const yearComp = compareYear(aYear, bYear, yearOrder);
+        if (yearComp !== 0) return yearComp;
+
+        // 年份相同时，精确匹配在前
+        const aExactMatch = (a[1][0]?.title ?? '') === searchQuery.trim();
+        const bExactMatch = (b[1][0]?.title ?? '') === searchQuery.trim();
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        // 最后按标题排序，正序时字母序，倒序时反字母序
+        const aTitle = a[1][0]?.title ?? '';
+        const bTitle = b[1][0]?.title ?? '';
+        return yearOrder === 'asc'
+          ? aTitle.localeCompare(bTitle)
+          : bTitle.localeCompare(aTitle);
+      });
+    } catch (err) {
+      console.error('filteredAggResults 计算异常:', err);
+      return [];
     }
-
-    // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
-    return filtered.sort((a, b) => {
-      // 首先按年份排序
-      const aYear = a[1][0]?.year ?? 'unknown';
-      const bYear = b[1][0]?.year ?? 'unknown';
-      const yearComp = compareYear(aYear, bYear, yearOrder);
-      if (yearComp !== 0) return yearComp;
-
-      // 年份相同时，精确匹配在前
-      const aExactMatch = (a[1][0]?.title ?? '') === searchQuery.trim();
-      const bExactMatch = (b[1][0]?.title ?? '') === searchQuery.trim();
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
-
-      // 最后按标题排序，正序时字母序，倒序时反字母序
-      const aTitle = a[1][0]?.title ?? '';
-      const bTitle = b[1][0]?.title ?? '';
-      return yearOrder === 'asc'
-        ? aTitle.localeCompare(bTitle)
-        : bTitle.localeCompare(aTitle);
-    });
   }, [aggregatedResults, filterAgg, searchQuery]);
 
   useEffect(() => {
@@ -658,11 +686,18 @@ function SearchPageClient() {
 
             if (data.results && Array.isArray(data.results)) {
               // ✨ 后端已按相关性排序，直接使用结果
-              const results: SearchResult[] = data.results as SearchResult[];
+              // NOTE: 逐项验证，过滤掉无效条目
+              const results: SearchResult[] = (data.results as any[]).filter(
+                (r: any) =>
+                  r != null && typeof r === 'object' && r.title && r.id,
+              ) as SearchResult[];
 
               setSearchResults(results);
               setTotalSources(1);
               setCompletedSources(1);
+            } else {
+              // NOTE: API 返回了非标准结构，强制降级为空
+              setSearchResults([]);
             }
             setIsLoading(false);
           })
@@ -875,7 +910,8 @@ function SearchPageClient() {
                   </div>
                 </label>
               </div>
-              {searchResults.length === 0 ? (
+              {(Array.isArray(searchResults) ? searchResults : []).length ===
+              0 ? (
                 isLoading ? (
                   <div className='flex justify-center items-center h-40'>
                     <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
@@ -888,17 +924,21 @@ function SearchPageClient() {
               ) : viewMode === 'agg' ? (
                 <VirtualizedVideoGrid
                   mode='auto'
-                  data={filteredAggResults}
+                  data={filteredAggResults || []}
                   virtualizationThreshold={240}
                   overscan={640}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
                   itemKey={([mapKey]) => `agg-${mapKey}`}
                   renderItem={([mapKey, group]) => {
-                    const title = group[0]?.title || '';
-                    const poster = group[0]?.poster || '';
-                    const year = group[0]?.year || 'unknown';
+                    // NOTE: 防御性校验 —— group 必须是非空数组
+                    const safeGroup =
+                      Array.isArray(group) && group.length > 0 ? group : [];
+                    if (safeGroup.length === 0) return null;
+                    const title = safeGroup[0]?.title || '';
+                    const poster = safeGroup[0]?.poster || '';
+                    const year = safeGroup[0]?.year || 'unknown';
                     const { episodes, source_names, douban_id } =
-                      computeGroupStats(group);
+                      computeGroupStats(safeGroup);
                     const type = episodes === 1 ? 'movie' : 'tv';
 
                     if (!groupStatsRef.current.has(mapKey)) {
@@ -931,7 +971,7 @@ function SearchPageClient() {
               ) : (
                 <VirtualizedVideoGrid
                   mode='auto'
-                  data={filteredAllResults}
+                  data={filteredAllResults || []}
                   virtualizationThreshold={240}
                   overscan={640}
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
