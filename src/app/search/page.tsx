@@ -393,8 +393,8 @@ function SearchPageClient() {
 
       // 最后按标题排序，正序时字母序，倒序时反字母序
       return yearOrder === 'asc'
-        ? a.title.localeCompare(b.title)
-        : b.title.localeCompare(a.title);
+        ? (a.title || '').localeCompare(b.title || '')
+        : (b.title || '').localeCompare(a.title || '');
     });
   }, [searchResults, filterAll, searchQuery]);
 
@@ -420,20 +420,20 @@ function SearchPageClient() {
     // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
     return filtered.sort((a, b) => {
       // 首先按年份排序
-      const aYear = a[1][0].year;
-      const bYear = b[1][0].year;
+      const aYear = a[1][0]?.year ?? 'unknown';
+      const bYear = b[1][0]?.year ?? 'unknown';
       const yearComp = compareYear(aYear, bYear, yearOrder);
       if (yearComp !== 0) return yearComp;
 
       // 年份相同时，精确匹配在前
-      const aExactMatch = a[1][0].title === searchQuery.trim();
-      const bExactMatch = b[1][0].title === searchQuery.trim();
+      const aExactMatch = (a[1][0]?.title ?? '') === searchQuery.trim();
+      const bExactMatch = (b[1][0]?.title ?? '') === searchQuery.trim();
       if (aExactMatch && !bExactMatch) return -1;
       if (!aExactMatch && bExactMatch) return 1;
 
       // 最后按标题排序，正序时字母序，倒序时反字母序
-      const aTitle = a[1][0].title;
-      const bTitle = b[1][0].title;
+      const aTitle = a[1][0]?.title ?? '';
+      const bTitle = b[1][0]?.title ?? '';
       return yearOrder === 'asc'
         ? aTitle.localeCompare(bTitle)
         : bTitle.localeCompare(aTitle);
@@ -575,8 +575,12 @@ function SearchPageClient() {
                 ) {
                   // 缓冲新增结果，节流刷入，避免频繁重渲染导致闪烁
                   // ✨ 后端已按相关性排序，直接使用结果
-                  const incoming: SearchResult[] =
-                    payload.results as SearchResult[];
+                  const incoming: SearchResult[] = (
+                    payload.results as SearchResult[]
+                  ).filter(
+                    // NOTE: 过滤上游返回的残缺数据，防止 title/episodes 为空导致渲染崩溃
+                    (r: SearchResult) => r && r.title && r.id,
+                  );
                   pendingResultsRef.current.push(...incoming);
                   if (!flushTimerRef.current) {
                     flushTimerRef.current = window.setTimeout(() => {

@@ -77,14 +77,16 @@ export default function VirtualizedVideoGrid<T>({
   virtualizationThreshold = 80,
   overscan,
 }: VirtualizedVideoGridProps<T>) {
+  // NOTE: 防御性保护 —— 确保 data 始终是有效数组，避免上游传入 undefined/null 时崩溃
+  const safeData = useMemo(() => data ?? ([] as T[]), [data]);
   const shouldVirtualize =
     mode === 'always' ||
-    (mode === 'auto' && data.length >= virtualizationThreshold);
+    (mode === 'auto' && safeData.length >= virtualizationThreshold);
 
   const resolvedKeys = useMemo(() => {
     const keyCount = new Map<string, number>();
 
-    return data.map((item, index) => {
+    return safeData.map((item, index) => {
       const rawKey = itemKey(item, index);
       const trimmedKey = rawKey?.trim();
       const baseKey = trimmedKey || resolveItemId(item) || 'unknown-item';
@@ -98,15 +100,15 @@ export default function VirtualizedVideoGrid<T>({
 
       return `${baseKey}_${index}`;
     });
-  }, [data, itemKey]);
+  }, [safeData, itemKey]);
 
   const handleEndReached = useCallback(
     (index: number) => {
       if (!onEndReached) return;
-      if (!hasMore || isLoadingMore || data.length === 0) return;
+      if (!hasMore || isLoadingMore || safeData.length === 0) return;
       onEndReached(index);
     },
-    [data.length, hasMore, isLoadingMore, onEndReached],
+    [safeData.length, hasMore, isLoadingMore, onEndReached],
   );
 
   const footer = useCallback(() => {
@@ -152,7 +154,7 @@ export default function VirtualizedVideoGrid<T>({
   if (!shouldVirtualize) {
     return (
       <div className={className}>
-        {data.map((item, index) => (
+        {safeData.map((item, index) => (
           <div
             key={resolvedKeys[index]}
             className={itemClassName}
@@ -171,7 +173,7 @@ export default function VirtualizedVideoGrid<T>({
   return (
     <VirtuosoGrid
       useWindowScroll
-      data={data}
+      data={safeData}
       listClassName={className}
       itemClassName={itemClassName}
       overscan={{ main: mainOverscan, reverse: reverseOverscan }}
