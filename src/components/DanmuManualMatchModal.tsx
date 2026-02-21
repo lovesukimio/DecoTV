@@ -1,9 +1,10 @@
-/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { Loader2, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+
+import ExternalImage from '@/components/ExternalImage';
 
 export interface DanmuManualSelection {
   animeId: number;
@@ -250,12 +251,14 @@ export default function DanmuManualMatchModal({
                           : 'border-white/10 bg-white/5 hover:bg-white/10'
                       }`}
                     >
-                      <div className='h-14 w-10 overflow-hidden rounded bg-slate-800/80'>
+                      <div className='relative h-14 w-10 overflow-hidden rounded bg-slate-800/80'>
                         {anime.imageUrl ? (
-                          <img
+                          <ExternalImage
                             src={anime.imageUrl}
                             alt={anime.animeTitle}
-                            className='h-full w-full object-cover'
+                            fill
+                            className='object-cover'
+                            sizes='40px'
                           />
                         ) : (
                           <div className='flex h-full w-full items-center justify-center text-[10px] text-slate-400'>

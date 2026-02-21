@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console, @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console */
 
 'use client';
 
@@ -26,7 +26,7 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { generateCacheKey, globalCache } from '@/lib/unified-cache';
-import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { getVideoResolutionFromM3u8 } from '@/lib/utils';
 import { isIOSPlatform, useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
 import { useDoubanInfo } from '@/hooks/useDoubanInfo';
@@ -36,6 +36,7 @@ import type {
   DanmuManualSelection,
 } from '@/components/DanmuManualMatchModal';
 import EpisodeSelector from '@/components/EpisodeSelector';
+import ExternalImage from '@/components/ExternalImage';
 import { MovieMetaInfo } from '@/components/MovieMetaInfo';
 import { MovieRecommends } from '@/components/MovieRecommends';
 import { MovieReviews } from '@/components/MovieReviews';
@@ -2947,10 +2948,12 @@ function PlayPageClient() {
               <div className='relative bg-gray-300 dark:bg-gray-700 aspect-2/3 flex items-center justify-center rounded-xl overflow-hidden'>
                 {videoCover ? (
                   <>
-                    <img
-                      src={processImageUrl(videoCover)}
+                    <ExternalImage
+                      src={videoCover}
                       alt={videoTitle}
-                      className='w-full h-full object-cover'
+                      fill
+                      className='object-cover'
+                      sizes='(max-width: 768px) 100vw, 280px'
                     />
 
                     {/* 豆瓣链接按钮 */}

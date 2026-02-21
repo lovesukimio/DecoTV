@@ -66,37 +66,6 @@ export type VideoCardHandle = {
 const POSTER_BLUR_DATA_URL =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-const FAST_DIRECT_IMAGE_HOSTS = [
-  'img.doubanio.cmliussss.net',
-  'img.doubanio.cmliussss.com',
-  'lain.bgm.tv',
-] as const;
-
-function shouldBypassNextImageOptimization(imageUrl: string): boolean {
-  if (!imageUrl) {
-    return false;
-  }
-
-  try {
-    const url = new URL(imageUrl, 'https://decotv.local');
-    const hostname = url.hostname.toLowerCase();
-    for (const fastHost of FAST_DIRECT_IMAGE_HOSTS) {
-      if (hostname === fastHost || hostname.endsWith(`.${fastHost}`)) {
-        return true;
-      }
-    }
-  } catch {
-    const lower = imageUrl.toLowerCase();
-    for (const fastHost of FAST_DIRECT_IMAGE_HOSTS) {
-      if (lower.includes(fastHost)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
   function VideoCard(
     {
@@ -164,15 +133,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const actualTitle = title;
     const actualPoster = poster;
     const processedPoster = processImageUrl(actualPoster);
-    const shouldBypassNextImageProxy = useMemo(
-      () => shouldBypassNextImageOptimization(processedPoster),
-      [processedPoster],
-    );
-    const shouldUseUnoptimizedPoster = useMemo(
-      () =>
-        shouldBypassNextImageProxy || !(from === 'douban' || from === 'search'),
-      [from, shouldBypassNextImageProxy],
-    );
     const actualSource = source;
     const actualId = id;
     const actualDoubanId = dynamicDoubanId;
@@ -184,11 +144,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         ? 'movie'
         : 'tv'
       : type;
-    const posterQuality = useMemo(() => {
-      if (from === 'douban') return 58;
-      if (from === 'search') return 62;
-      return 70;
-    }, [from]);
 
     const posterFetchPriority = useMemo(() => {
       if (from === 'douban' || from === 'search') return 'auto' as const;
@@ -727,8 +682,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               fetchPriority={posterFetchPriority}
               decoding='async'
               sizes='(max-width: 640px) 31vw, (max-width: 1024px) 18vw, 12vw'
-              quality={posterQuality}
-              unoptimized={shouldUseUnoptimizedPoster}
               placeholder={from === 'douban' ? 'empty' : 'blur'}
               blurDataURL={POSTER_BLUR_DATA_URL}
               onLoad={() => setIsLoading(true)}

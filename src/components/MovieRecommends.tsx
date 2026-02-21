@@ -42,20 +42,17 @@ const RecommendCard = memo(function RecommendCard({
   item: RecommendItem;
   onClick: () => void;
 }) {
-  const [imageError, setImageError] = useState(false);
-
   return (
     <div onClick={onClick} className='group shrink-0 w-32 cursor-pointer'>
       {/* 封面 */}
       <div className='relative aspect-2/3 rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-md group-hover:shadow-lg transition-all duration-200 group-hover:scale-[1.02]'>
-        {item.poster && !imageError ? (
+        {item.poster ? (
           <ExternalImage
             src={item.poster}
             alt={item.title}
             fill
             className='object-cover'
             referrerPolicy='no-referrer'
-            onError={() => setImageError(true)}
             sizes='128px'
           />
         ) : (
