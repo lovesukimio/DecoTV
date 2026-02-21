@@ -208,7 +208,9 @@ function SearchPageClient() {
     const normQueryNoSpace = normQuery.replace(/\s+/g, '');
 
     // 过滤：只保留标题相关的结果
+    // NOTE: 上游 API 可能返回 title/episodes 为 null 的残缺数据，先过滤再处理
     const relevantResults = searchResults.filter((item) => {
+      if (!item || !item.title) return false;
       const title = item.title.toLowerCase();
       const titleNoSpace = title.replace(/\s+/g, '');
 
@@ -258,9 +260,9 @@ function SearchPageClient() {
 
     relevantResults.forEach((item) => {
       // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
-      const key = `${item.title.replaceAll(' ', '')}-${
+      const key = `${(item.title || '').replaceAll(' ', '')}-${
         item.year || 'unknown'
-      }-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+      }-${(item.episodes?.length ?? 0) === 1 ? 'movie' : 'tv'}`;
       const arr = map.get(key) || [];
 
       // 如果是新的键，记录其顺序
@@ -935,7 +937,7 @@ function SearchPageClient() {
                       id={item.id}
                       title={item.title}
                       poster={item.poster}
-                      episodes={item.episodes.length}
+                      episodes={item.episodes?.length ?? 0}
                       source={item.source}
                       source_name={item.source_name}
                       douban_id={item.douban_id}
@@ -946,7 +948,7 @@ function SearchPageClient() {
                       }
                       year={item.year}
                       from='search'
-                      type={item.episodes.length > 1 ? 'tv' : 'movie'}
+                      type={(item.episodes?.length ?? 0) > 1 ? 'tv' : 'movie'}
                     />
                   )}
                 />

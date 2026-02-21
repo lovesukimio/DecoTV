@@ -157,7 +157,7 @@ export function rankSearchResults(
     }
 
     // 年份也相同时，按标题字母顺序
-    return a.result.title.localeCompare(b.result.title);
+    return (a.result.title || '').localeCompare(b.result.title || '');
   });
 
   const filtered = scoredResults.filter((item) => item.score > 0);

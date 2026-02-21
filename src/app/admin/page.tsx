@@ -7081,8 +7081,13 @@ const DanmuConfigComponent = ({ config, refreshConfig }: DanmuConfigProps) => {
       {/* 服务器配置区域 */}
       {danmuSettings.enabled && (
         <div className='space-y-6'>
-          {/* 仅当使用内置演示站时显示警告 */}
-          {danmuSettings.serverUrl === RECOMMENDED_DANMU_SERVER.url && (
+          {/* 仅当使用内置演示站（或未配置自定义地址）时显示警告 */}
+          {(!danmuSettings.serverUrl ||
+            DEMO_DANMU_SERVERS.some(
+              (s) =>
+                normalizeServerUrl(s.url) ===
+                normalizeServerUrl(danmuSettings.serverUrl),
+            )) && (
             <div className='rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/15 p-4'>
               <div className='flex items-start gap-2'>
                 <AlertTriangle className='w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5' />
