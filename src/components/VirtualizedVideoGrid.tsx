@@ -121,7 +121,7 @@ export default function VirtualizedVideoGrid<T>({
     }
 
     return (
-      <div className='flex min-h-[60px] w-full items-center justify-center py-4'>
+      <div className='flex min-h-15 w-full items-center justify-center py-4'>
         {isLoadingMore ? (
           <span
             className='inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-500/50 border-t-emerald-300'

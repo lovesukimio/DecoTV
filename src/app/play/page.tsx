@@ -425,6 +425,7 @@ function PlayPageClient() {
 
   // Wake Lock 相关
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const mobileMouseSeekCleanupRef = useRef<(() => void) | null>(null);
 
   const [isDanmuManualModalOpen, setIsDanmuManualModalOpen] = useState(false);
   const [manualDanmuOverrides, setManualDanmuOverrides] = useState<
@@ -1031,8 +1032,318 @@ function PlayPageClient() {
     }
   };
 
+  const cleanupMobileMouseSeekPatch = () => {
+    if (mobileMouseSeekCleanupRef.current) {
+      mobileMouseSeekCleanupRef.current();
+      mobileMouseSeekCleanupRef.current = null;
+    }
+  };
+
+  const patchMobileProgressMouseSeek = (art: any): (() => void) | null => {
+    const player = art?.template?.$player as HTMLElement | undefined;
+    const progressRoot = art?.template?.$progress as HTMLElement | undefined;
+    if (!player || !progressRoot) return null;
+
+    // Artplayer 在 mobile 模式下默认只处理 touch 拖动；这里补充 mouse/pointer 拖动。
+    if (!player.classList.contains('art-mobile')) return null;
+
+    const control = progressRoot.querySelector(
+      '.art-control-progress',
+    ) as HTMLElement | null;
+    if (!control) return null;
+    const tip = control.querySelector(
+      '.art-progress-tip',
+    ) as HTMLElement | null;
+    const mouseModeClass = 'art-mobile-mouse-tip';
+    const mouseSeekingClass = 'art-mobile-mouse-seeking';
+
+    type SeekSnapshot = {
+      second: number;
+      ratio: number;
+      x: number;
+      width: number;
+    };
+
+    let hideTipTimer: NodeJS.Timeout | null = null;
+    let dragRectLeft = 0;
+    let dragRectWidth = 0;
+    let rafSeekId: number | null = null;
+    let pendingClientX: number | null = null;
+    let pendingShowTip = false;
+
+    const markMouseMode = () => {
+      player.classList.add(mouseModeClass);
+    };
+
+    const setMouseSeekingState = (seeking: boolean) => {
+      if (seeking) {
+        player.classList.add(mouseSeekingClass);
+      } else {
+        player.classList.remove(mouseSeekingClass);
+      }
+    };
+
+    const clearHideTipTimer = () => {
+      if (hideTipTimer) {
+        clearTimeout(hideTipTimer);
+        hideTipTimer = null;
+      }
+    };
+
+    const cancelScheduledSeek = () => {
+      if (rafSeekId !== null) {
+        window.cancelAnimationFrame(rafSeekId);
+        rafSeekId = null;
+      }
+      pendingClientX = null;
+      pendingShowTip = false;
+    };
+
+    const cacheControlRect = () => {
+      const rect = control.getBoundingClientRect();
+      dragRectLeft = rect.left;
+      dragRectWidth = rect.width;
+      return rect.width > 0;
+    };
+
+    const hidePreviewTip = () => {
+      if (!tip) return;
+      clearHideTipTimer();
+      tip.classList.remove('art-mobile-mouse-tip-visible');
+      hideTipTimer = setTimeout(() => {
+        tip.style.display = 'none';
+      }, 140);
+    };
+
+    const showPreviewTip = (snapshot: SeekSnapshot) => {
+      if (!tip) return;
+      clearHideTipTimer();
+      tip.textContent = formatTime(snapshot.second);
+      tip.style.display = 'flex';
+      tip.classList.add('art-mobile-mouse-tip-visible');
+      const tipWidth = tip.offsetWidth || 0;
+      const maxLeft = Math.max(snapshot.width - tipWidth, 0);
+      const left = Math.min(Math.max(snapshot.x - tipWidth / 2, 0), maxLeft);
+      tip.style.left = `${left}px`;
+    };
+
+    const seekByClientX = (clientX: number): SeekSnapshot | null => {
+      const duration = Number(art.duration) || 0;
+      if (duration <= 0) return null;
+
+      if (dragRectWidth <= 0 && !cacheControlRect()) return null;
+
+      const clampedX = Math.min(
+        Math.max(clientX - dragRectLeft, 0),
+        dragRectWidth,
+      );
+      const ratio = clampedX / dragRectWidth;
+      const second = ratio * duration;
+
+      art.emit?.('setBar', 'played', ratio);
+      art.seek = second;
+      return {
+        second,
+        ratio,
+        x: clampedX,
+        width: dragRectWidth,
+      };
+    };
+
+    let lastSeekSecond: number | null = null;
+    const applySeekNow = (clientX: number, showTip = false) => {
+      const snapshot = seekByClientX(clientX);
+      if (!snapshot) return null;
+      lastSeekSecond = snapshot.second;
+      if (showTip) {
+        showPreviewTip(snapshot);
+      }
+      return snapshot;
+    };
+
+    const flushScheduledSeek = () => {
+      rafSeekId = null;
+      if (pendingClientX === null) return;
+      const clientX = pendingClientX;
+      const showTip = pendingShowTip;
+      pendingClientX = null;
+      pendingShowTip = false;
+      applySeekNow(clientX, showTip);
+    };
+
+    const scheduleSeek = (clientX: number, showTip = false) => {
+      pendingClientX = clientX;
+      pendingShowTip = pendingShowTip || showTip;
+      if (rafSeekId !== null) return;
+      rafSeekId = window.requestAnimationFrame(flushScheduledSeek);
+    };
+
+    const showSeekNotice = () => {
+      if (lastSeekSecond === null) return;
+      art.notice.show = `已定位到 ${formatTime(lastSeekSecond)}`;
+    };
+
+    const hasPointerEvent =
+      typeof window !== 'undefined' &&
+      typeof (window as any).PointerEvent !== 'undefined';
+
+    if (hasPointerEvent) {
+      let activePointerId: number | null = null;
+      let isDragging = false;
+
+      const stopPointerDrag = (event?: any, showNotice = false) => {
+        if (!isDragging) return;
+        if (
+          event &&
+          activePointerId !== null &&
+          event.pointerId !== activePointerId
+        ) {
+          return;
+        }
+        if (control.releasePointerCapture && activePointerId !== null) {
+          try {
+            control.releasePointerCapture(activePointerId);
+          } catch {
+            // ignored
+          }
+        }
+        cancelScheduledSeek();
+        isDragging = false;
+        activePointerId = null;
+        dragRectLeft = 0;
+        dragRectWidth = 0;
+        setMouseSeekingState(false);
+        hidePreviewTip();
+        if (showNotice) {
+          showSeekNotice();
+        }
+      };
+
+      const onPointerDown = (event: any) => {
+        if (event.pointerType === 'touch' || event.button !== 0) return;
+        markMouseMode();
+        isDragging = true;
+        setMouseSeekingState(true);
+        cacheControlRect();
+        activePointerId = event.pointerId;
+        applySeekNow(event.clientX, true);
+        if (control.setPointerCapture) {
+          try {
+            control.setPointerCapture(event.pointerId);
+          } catch {
+            // ignored
+          }
+        }
+        if (event.cancelable) event.preventDefault();
+      };
+
+      const onPointerMove = (event: any) => {
+        if (!isDragging) return;
+        if (activePointerId !== null && event.pointerId !== activePointerId) {
+          return;
+        }
+        scheduleSeek(event.clientX, true);
+        if (event.cancelable) event.preventDefault();
+      };
+
+      const onPointerUp = (event: any) => {
+        if (isDragging) {
+          applySeekNow(event.clientX, true);
+        }
+        stopPointerDrag(event, true);
+      };
+
+      const onPointerCancel = (event: any) => {
+        stopPointerDrag(event, false);
+      };
+
+      const onLostPointerCapture = (event: any) => {
+        stopPointerDrag(event, false);
+      };
+
+      control.addEventListener('pointerdown', onPointerDown);
+      control.addEventListener('pointermove', onPointerMove);
+      control.addEventListener('pointerup', onPointerUp);
+      control.addEventListener('pointercancel', onPointerCancel);
+      control.addEventListener('lostpointercapture', onLostPointerCapture);
+
+      return () => {
+        control.removeEventListener('pointerdown', onPointerDown);
+        control.removeEventListener('pointermove', onPointerMove);
+        control.removeEventListener('pointerup', onPointerUp);
+        control.removeEventListener('pointercancel', onPointerCancel);
+        control.removeEventListener('lostpointercapture', onLostPointerCapture);
+        clearHideTipTimer();
+        cancelScheduledSeek();
+        setMouseSeekingState(false);
+        player.classList.remove(mouseModeClass);
+        hidePreviewTip();
+      };
+    }
+
+    let isDragging = false;
+
+    const stopMouseDrag = (showNotice = false) => {
+      if (!isDragging) return;
+      cancelScheduledSeek();
+      isDragging = false;
+      dragRectLeft = 0;
+      dragRectWidth = 0;
+      setMouseSeekingState(false);
+      hidePreviewTip();
+      if (showNotice) {
+        showSeekNotice();
+      }
+    };
+
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      markMouseMode();
+      isDragging = true;
+      setMouseSeekingState(true);
+      cacheControlRect();
+      applySeekNow(event.clientX, true);
+      if (event.cancelable) event.preventDefault();
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (!isDragging) return;
+      scheduleSeek(event.clientX, true);
+      if (event.cancelable) event.preventDefault();
+    };
+
+    const onMouseUp = (event: MouseEvent) => {
+      if (!isDragging) return;
+      applySeekNow(event.clientX, true);
+      stopMouseDrag(true);
+    };
+
+    const onWindowBlur = () => {
+      stopMouseDrag(false);
+    };
+
+    control.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('blur', onWindowBlur);
+
+    return () => {
+      control.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onWindowBlur);
+      clearHideTipTimer();
+      cancelScheduledSeek();
+      setMouseSeekingState(false);
+      player.classList.remove(mouseModeClass);
+      hidePreviewTip();
+    };
+  };
+
   // 清理播放器资源的统一函数
   const cleanupPlayer = () => {
+    cleanupMobileMouseSeekPatch();
+
     if (artPlayerRef.current) {
       try {
         // 销毁 HLS 实例
@@ -2241,6 +2552,10 @@ function PlayPageClient() {
       // 监听播放器事件
       artPlayerRef.current.on('ready', () => {
         setError(null);
+        cleanupMobileMouseSeekPatch();
+        mobileMouseSeekCleanupRef.current = patchMobileProgressMouseSeek(
+          artPlayerRef.current,
+        );
 
         // 播放器就绪后，如果正在播放则请求 Wake Lock
         if (artPlayerRef.current && !artPlayerRef.current.paused) {
