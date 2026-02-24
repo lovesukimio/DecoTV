@@ -153,6 +153,7 @@ function TopNavbar() {
   const [activeTabKey, setActiveTabKey] = useState(() =>
     computeActiveKey(pathname, currentType),
   );
+  const [isNavOverflowing, setIsNavOverflowing] = useState(false);
   const [showLeftMask, setShowLeftMask] = useState(false);
   const [showRightMask, setShowRightMask] = useState(false);
 
@@ -164,6 +165,7 @@ function TopNavbar() {
   const updateScrollMask = useCallback(() => {
     const container = navScrollRef.current;
     if (!container) {
+      setIsNavOverflowing(false);
       setShowLeftMask(false);
       setShowRightMask(false);
       return;
@@ -173,10 +175,14 @@ function TopNavbar() {
       0,
       container.scrollWidth - container.clientWidth,
     );
+    const nextOverflowing = maxScrollLeft > 2;
 
     const nextLeft = container.scrollLeft > 2;
     const nextRight = maxScrollLeft - container.scrollLeft > 2;
 
+    setIsNavOverflowing((prev) =>
+      prev === nextOverflowing ? prev : nextOverflowing,
+    );
     setShowLeftMask((prev) => (prev === nextLeft ? prev : nextLeft));
     setShowRightMask((prev) => (prev === nextRight ? prev : nextRight));
   }, []);
@@ -288,7 +294,9 @@ function TopNavbar() {
 
               <div
                 ref={navScrollRef}
-                className='flex items-center gap-2 overflow-x-auto px-2 py-0.5 scroll-smooth whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                className={`flex items-center gap-2 overflow-x-auto px-2 py-0.5 scroll-smooth whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+                  isNavOverflowing ? 'justify-start' : 'justify-center'
+                }`}
               >
                 {NAV_ITEMS.map((item) => {
                   const Icon = item.icon;
